@@ -57,15 +57,21 @@ CREATE TABLE IF NOT EXISTS draws (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
   CONSTRAINT valid_winner_count
-    CHECK (winner_count <= total_numbers)
+    CHECK (winner_count <= total_numbers),
+
+  CONSTRAINT valid_draw_schedule
+    CHECK (
+      deadline_at IS NULL
+      OR starts_at IS NULL
+      OR deadline_at > starts_at
+    )
 );
 
 CREATE TABLE IF NOT EXISTS draw_prizes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   draw_id UUID NOT NULL
-    REFERENCES draws(id)
-    ON DELETE CASCADE,
+    REFERENCES draws(id),
 
   rank INTEGER NOT NULL
     CHECK (rank >= 1),
@@ -82,8 +88,7 @@ CREATE TABLE IF NOT EXISTS entries (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   draw_id UUID NOT NULL
-    REFERENCES draws(id)
-    ON DELETE CASCADE,
+    REFERENCES draws(id),
 
   user_id UUID NOT NULL
     REFERENCES users(id),
@@ -115,8 +120,7 @@ CREATE TABLE IF NOT EXISTS payments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   entry_id UUID NOT NULL
-    REFERENCES entries(id)
-    ON DELETE CASCADE,
+    REFERENCES entries(id),
 
   user_id UUID NOT NULL
     REFERENCES users(id),
@@ -155,8 +159,7 @@ CREATE TABLE IF NOT EXISTS winners (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   draw_id UUID NOT NULL
-    REFERENCES draws(id)
-    ON DELETE CASCADE,
+    REFERENCES draws(id),
 
   entry_id UUID NOT NULL
     REFERENCES entries(id),
@@ -180,8 +183,7 @@ CREATE TABLE IF NOT EXISTS draw_results (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   draw_id UUID NOT NULL UNIQUE
-    REFERENCES draws(id)
-    ON DELETE CASCADE,
+    REFERENCES draws(id),
 
   eligible_entry_count INTEGER NOT NULL
     CHECK (eligible_entry_count >= 0),
@@ -214,6 +216,9 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 CREATE INDEX IF NOT EXISTS idx_draws_status
   ON draws(status);
 
+CREATE INDEX IF NOT EXISTS idx_draws_deadline
+  ON draws(deadline_at);
+
 CREATE INDEX IF NOT EXISTS idx_entries_draw
   ON entries(draw_id);
 
@@ -223,11 +228,26 @@ CREATE INDEX IF NOT EXISTS idx_entries_user
 CREATE INDEX IF NOT EXISTS idx_entries_status
   ON entries(status);
 
+CREATE INDEX IF NOT EXISTS idx_entries_reservation
+  ON entries(reserved_until);
+
 CREATE INDEX IF NOT EXISTS idx_payments_status
   ON payments(status);
 
+CREATE INDEX IF NOT EXISTS idx_payments_user
+  ON payments(user_id);
+
+CREATE INDEX IF NOT EXISTS idx_payments_entry
+  ON payments(entry_id);
+
 CREATE INDEX IF NOT EXISTS idx_winners_draw
   ON winners(draw_id);
+
+CREATE INDEX IF NOT EXISTS idx_winners_user
+  ON winners(user_id);
+
+CREATE INDEX IF NOT EXISTS idx_draw_results_draw
+  ON draw_results(draw_id);
 
 CREATE INDEX IF NOT EXISTS idx_audit_logs_entity
   ON audit_logs(entity_type, entity_id);
