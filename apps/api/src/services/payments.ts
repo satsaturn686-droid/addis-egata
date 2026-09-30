@@ -18,6 +18,18 @@ type PaymentRow = {
   updated_at: string;
 };
 
+type EntryPaymentRow = {
+  id: string;
+  user_id: string;
+  draw_id: string;
+  status: string;
+  reserved_until: string | null;
+  entry_fee: string | number;
+  draw_status: string;
+  starts_at: string | null;
+  deadline_at: string | null;
+};
+
 function mapPayment(row: PaymentRow): Payment {
   return {
     id: row.id,
@@ -37,6 +49,22 @@ function mapPayment(row: PaymentRow): Payment {
   };
 }
 
+function isBeforeStart(startsAt: string | null): boolean {
+  if (!startsAt) {
+    return false;
+  }
+
+  return new Date(startsAt).getTime() > Date.now();
+}
+
+function isAfterDeadline(deadlineAt: string | null): boolean {
+  if (!deadlineAt) {
+    return false;
+  }
+
+  return new Date(deadlineAt).getTime() <= Date.now();
+}
+
 export async function createTelebirrPayment(
   entryId: string,
   userId: string,
@@ -46,6 +74,14 @@ export async function createTelebirrPayment(
 ): Promise<Payment> {
   if (!pool) {
     throw new Error("DATABASE_URL is not configured");
+  }
+
+  if (!entryId.trim()) {
+    throw new Error("INVALID_ENTRY_ID");
+  }
+
+  if (!userId.trim()) {
+    throw new Error("INVALID_USER_ID");
   }
 
   const reference = transactionReference.trim();
@@ -58,20 +94,26 @@ export async function createTelebirrPayment(
     throw new Error("TRANSACTION_REFERENCE_TOO_LONG");
   }
 
+  const normalizedSenderName = senderName?.trim() || null;
+  const normalizedReceiptImageUrl = receiptImageUrl?.trim() || null;
+
+  if (normalizedSenderName && normalizedSenderName.length > 200) {
+    throw new Error("SENDER_NAME_TOO_LONG");
+  }
+
+  if (
+    normalizedReceiptImageUrl &&
+    normalizedReceiptImageUrl.length > 2000
+  ) {
+    throw new Error("RECEIPT_IMAGE_URL_TOO_LONG");
+  }
+
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
 
-    const entryResult = await client.query<{
-      id: string;
-      user_id: string;
-      draw_id: string;
-      status: string;
-      reserved_until: string | null;
-      entry_fee: string;
-      draw_status: string;
-    }>(
+    const entryResult = await client.query<EntryPaymentRow>(
       `
         SELECT
           e.id,
@@ -80,7 +122,9 @@ export async function createTelebirrPayment(
           e.status,
           e.reserved_until,
           d.entry_fee,
-          d.status AS draw_status
+          d.status AS draw_status,
+          d.starts_at,
+          d.deadline_at
         FROM entries e
         INNER JOIN draws d
           ON d.id = e.draw_id
@@ -100,11 +144,35 @@ export async function createTelebirrPayment(
       throw new Error("ENTRY_NOT_OWNED");
     }
 
-    if (
-      entry.status !== "reserved" &&
-      entry.status !== "pending_payment"
-    ) {
+    if (entry.status !== "reserved") {
+      if (entry.status === "pending_payment") {
+        throw new Error("PAYMENT_ALREADY_PENDING");
+      }
+
       throw new Error("ENTRY_NOT_PAYABLE");
+    }
+
+    if (entry.draw_status !== "open") {
+      throw new Error("DRAW_NOT_PAYABLE");
+    }
+
+    if (isBeforeStart(entry.starts_at)) {
+      throw new Error("DRAW_NOT_STARTED");
+    }
+
+    if (isAfterDeadline(entry.deadline_at)) {
+      await client.query(
+        `
+          UPDATE entries
+          SET
+            status = 'expired',
+            updated_at = NOW()
+          WHERE id = $1
+        `,
+        [entryId],
+      );
+
+      throw new Error("DRAW_DEADLINE_PASSED");
     }
 
     if (
@@ -125,30 +193,39 @@ export async function createTelebirrPayment(
       throw new Error("RESERVATION_EXPIRED");
     }
 
-    if (
-      entry.draw_status !== "open" &&
-      entry.draw_status !== "full"
-    ) {
-      throw new Error("DRAW_NOT_PAYABLE");
+    /*
+     * One entry can have only one unresolved payment attempt.
+     * This also protects against a user submitting multiple
+     * transaction references for the same reserved number.
+     */
+    const pendingPaymentResult = await client.query<{
+      id: string;
+    }>(
+      `
+        SELECT id
+        FROM payments
+        WHERE entry_id = $1
+          AND status = 'pending'
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [entryId],
+    );
+
+    if (pendingPaymentResult.rows.length > 0) {
+      throw new Error("PAYMENT_ALREADY_PENDING");
     }
 
-    const existingPayment = await client.query<PaymentRow>(
+    /*
+     * Transaction references are globally unique.
+     * The database UNIQUE constraint provides the final
+     * protection against duplicate references.
+     */
+    const existingPayment = await client.query<{
+      id: string;
+    }>(
       `
-        SELECT
-          id,
-          entry_id,
-          user_id,
-          amount,
-          payment_method,
-          transaction_reference,
-          sender_name,
-          receipt_image_url,
-          status,
-          verified_by,
-          verified_at,
-          rejection_reason,
-          created_at,
-          updated_at
+        SELECT id
         FROM payments
         WHERE transaction_reference = $1
         LIMIT 1
@@ -159,6 +236,12 @@ export async function createTelebirrPayment(
 
     if (existingPayment.rows.length > 0) {
       throw new Error("DUPLICATE_TRANSACTION_REFERENCE");
+    }
+
+    const amount = Number(entry.entry_fee);
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error("INVALID_ENTRY_FEE");
     }
 
     const paymentResult = await client.query<PaymentRow>(
@@ -202,10 +285,10 @@ export async function createTelebirrPayment(
       [
         entryId,
         userId,
-        Number(entry.entry_fee),
+        amount,
         reference,
-        senderName?.trim() || null,
-        receiptImageUrl?.trim() || null,
+        normalizedSenderName,
+        normalizedReceiptImageUrl,
       ],
     );
 
