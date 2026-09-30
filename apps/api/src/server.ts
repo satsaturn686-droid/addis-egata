@@ -9,6 +9,7 @@ import entriesRouter from "./routes/entries.js";
 import paymentsRouter from "./routes/payments.js";
 import adminPaymentsRouter from "./routes/admin-payments.js";
 import adminDrawsRouter from "./routes/admin-draws.js";
+import adminDrawExecutionRouter from "./routes/admin-draw-execution.js";
 
 const app = express();
 
@@ -90,10 +91,25 @@ app.use(
  * Admin draw management
  *
  * POST /admin/draws
+ * POST /admin/draws/:drawId/open
+ * POST /admin/draws/:drawId/close
  */
 app.use(
   "/admin/draws",
   adminDrawsRouter,
+);
+
+/*
+ * Admin draw execution
+ *
+ * POST /admin/draw-execution/:drawId/execute
+ *
+ * The draw engine securely selects winners and
+ * publishes the immutable result.
+ */
+app.use(
+  "/admin/draw-execution",
+  adminDrawExecutionRouter,
 );
 
 app.use((_req, res) => {
