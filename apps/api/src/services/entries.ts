@@ -13,6 +13,13 @@ type EntryRow = {
   updated_at: string;
 };
 
+type DrawRow = {
+  total_numbers: number;
+  status: string;
+  starts_at: string | null;
+  deadline_at: string | null;
+};
+
 function mapEntry(row: EntryRow): Entry {
   return {
     id: row.id,
@@ -27,6 +34,22 @@ function mapEntry(row: EntryRow): Entry {
   };
 }
 
+function isBeforeStart(startsAt: string | null): boolean {
+  if (!startsAt) {
+    return false;
+  }
+
+  return new Date(startsAt).getTime() > Date.now();
+}
+
+function isAfterDeadline(deadlineAt: string | null): boolean {
+  if (!deadlineAt) {
+    return false;
+  }
+
+  return new Date(deadlineAt).getTime() <= Date.now();
+}
+
 export async function reserveNumber(
   drawId: string,
   userId: string,
@@ -35,6 +58,14 @@ export async function reserveNumber(
 ): Promise<Entry> {
   if (!pool) {
     throw new Error("DATABASE_URL is not configured");
+  }
+
+  if (!drawId.trim()) {
+    throw new Error("INVALID_DRAW_ID");
+  }
+
+  if (!userId.trim()) {
+    throw new Error("INVALID_USER_ID");
   }
 
   if (!Number.isInteger(number) || number < 1) {
@@ -54,16 +85,13 @@ export async function reserveNumber(
   try {
     await client.query("BEGIN");
 
-    const drawResult = await client.query<{
-      total_numbers: number;
-      status: string;
-      entry_fee: string;
-    }>(
+    const drawResult = await client.query<DrawRow>(
       `
         SELECT
           total_numbers,
           status,
-          entry_fee
+          starts_at,
+          deadline_at
         FROM draws
         WHERE id = $1
         FOR UPDATE
@@ -85,6 +113,21 @@ export async function reserveNumber(
       throw new Error("DRAW_NOT_OPEN");
     }
 
+    if (isBeforeStart(draw.starts_at)) {
+      throw new Error("DRAW_NOT_STARTED");
+    }
+
+    if (isAfterDeadline(draw.deadline_at)) {
+      throw new Error("DRAW_DEADLINE_PASSED");
+    }
+
+    /*
+     * Expired reservations become reusable.
+     *
+     * We do not delete these rows because an entry may already
+     * have payment history. Keeping the row preserves the audit
+     * trail and avoids destructive foreign-key behavior.
+     */
     await client.query(
       `
         UPDATE entries
@@ -131,13 +174,37 @@ export async function reserveNumber(
         throw new Error("NUMBER_UNAVAILABLE");
       }
 
-      await client.query(
+      /*
+       * Reuse the existing row instead of deleting it.
+       * This preserves any historical payment relationship.
+       */
+      const reusedResult = await client.query<EntryRow>(
         `
-          DELETE FROM entries
+          UPDATE entries
+          SET
+            user_id = $2,
+            status = 'reserved',
+            reserved_until = NOW() + ($3 * INTERVAL '1 minute'),
+            paid_at = NULL,
+            updated_at = NOW()
           WHERE id = $1
+          RETURNING
+            id,
+            draw_id,
+            user_id,
+            number,
+            status,
+            reserved_until,
+            paid_at,
+            created_at,
+            updated_at
         `,
-        [existing.id],
+        [existing.id, userId, reservationMinutes],
       );
+
+      await client.query("COMMIT");
+
+      return mapEntry(reusedResult.rows[0]);
     }
 
     const reservationResult = await client.query<EntryRow>(
