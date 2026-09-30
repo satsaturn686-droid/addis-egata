@@ -1,4 +1,5 @@
 import { Router } from "express";
+
 import { requireTelegramAuth } from "../middleware/auth.js";
 
 const router = Router();
@@ -15,6 +16,18 @@ router.get(
       return;
     }
 
+    if (
+      typeof req.telegramAuthDate !== "number" ||
+      !Number.isInteger(req.telegramAuthDate)
+    ) {
+      res.status(401).json({
+        error: "TELEGRAM_AUTH_METADATA_MISSING",
+        message:
+          "Telegram authentication metadata is missing.",
+      });
+      return;
+    }
+
     res.status(200).json({
       user: {
         id: req.user.id,
@@ -25,8 +38,8 @@ router.get(
         isAdmin: req.user.isAdmin,
       },
       telegram: {
-        authDate: undefined,
-        queryId: undefined,
+        authDate: req.telegramAuthDate,
+        queryId: req.telegramQueryId ?? null,
       },
     });
   },
