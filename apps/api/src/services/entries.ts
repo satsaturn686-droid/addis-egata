@@ -20,6 +20,8 @@ type DrawRow = {
   deadline_at: string | null;
 };
 
+const RESERVATION_MINUTES = 30;
+
 function mapEntry(row: EntryRow): Entry {
   return {
     id: row.id,
@@ -54,7 +56,6 @@ export async function reserveNumber(
   drawId: string,
   userId: string,
   number: number,
-  reservationMinutes = 15,
 ): Promise<Entry> {
   if (!pool) {
     throw new Error("DATABASE_URL is not configured");
@@ -72,19 +73,18 @@ export async function reserveNumber(
     throw new Error("INVALID_NUMBER");
   }
 
-  if (
-    !Number.isInteger(reservationMinutes) ||
-    reservationMinutes < 1 ||
-    reservationMinutes > 60
-  ) {
-    throw new Error("INVALID_RESERVATION_TIME");
-  }
-
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
 
+    /*
+     * Lock the draw while reserving a number.
+     *
+     * This serializes reservations for the same draw and
+     * prevents two concurrent users from successfully taking
+     * the same number.
+     */
     const drawResult = await client.query<DrawRow>(
       `
         SELECT
@@ -121,6 +121,11 @@ export async function reserveNumber(
       throw new Error("DRAW_DEADLINE_PASSED");
     }
 
+    /*
+     * Release expired reservations before checking the requested
+     * number. Historical rows are preserved; only their status
+     * changes to expired.
+     */
     await client.query(
       `
         UPDATE entries
@@ -161,6 +166,10 @@ export async function reserveNumber(
       throw new Error("NUMBER_UNAVAILABLE");
     }
 
+    /*
+     * Reservation duration is controlled by the server.
+     * The client cannot choose a shorter or longer reservation.
+     */
     const reservationResult = await client.query<EntryRow>(
       `
         INSERT INTO entries (
@@ -188,7 +197,7 @@ export async function reserveNumber(
           created_at,
           updated_at
       `,
-      [drawId, userId, number, reservationMinutes],
+      [drawId, userId, number, RESERVATION_MINUTES],
     );
 
     await client.query("COMMIT");
