@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import { checkDatabase } from "./db.js";
 
 const app = express();
 
@@ -15,10 +16,13 @@ app.use(
 
 app.use(express.json({ limit: "5mb" }));
 
-app.get("/health", (_req, res) => {
-  res.status(200).json({
-    ok: true,
+app.get("/health", async (_req, res) => {
+  const databaseOk = await checkDatabase();
+
+  res.status(databaseOk ? 200 : 503).json({
+    ok: databaseOk,
     service: "addis-egata-api",
+    database: databaseOk ? "connected" : "unavailable",
     timestamp: new Date().toISOString(),
   });
 });
