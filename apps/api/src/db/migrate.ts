@@ -34,68 +34,35 @@ async function migrate() {
     await client.query(schema);
 
     /*
+     * Existing installations may still have the original
+     * UNIQUE(draw_id, number) constraint on entries.
+     *
+     * That constraint prevents a released number from being
+     * reused while preserving the historical entry row.
+     *
+     * Remove only the old uniqueness constraint. Do not delete
+     * any entries or payment history.
+     */
+    await removeLegacyEntryNumberConstraint(client);
+
+    /*
+     * The new partial unique index allows historical entries
+     * with the same number while guaranteeing that only one
+     * active entry can hold a number at a time.
+     */
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_entries_active_number
+      ON entries(draw_id, number)
+      WHERE status IN ('reserved', 'pending_payment', 'paid')
+    `);
+
+    /*
      * Existing installations may have been created with
      * ON DELETE CASCADE relationships. Remove those
      * destructive cascades so historical payment, winner,
      * and result records cannot disappear accidentally.
      */
-
-    const constraintResult = await client.query<{
-      constraint_name: string;
-      table_name: string;
-    }>(`
-      SELECT
-        tc.constraint_name,
-        tc.table_name
-      FROM information_schema.table_constraints tc
-      WHERE tc.constraint_type = 'FOREIGN KEY'
-        AND tc.table_schema = 'public'
-        AND tc.table_name IN (
-          'payments',
-          'winners',
-          'draw_results'
-        )
-    `);
-
-    for (const constraint of constraintResult.rows) {
-      const constraintName = constraint.constraint_name;
-      const tableName = constraint.table_name;
-
-      const definitionResult = await client.query<{
-        definition: string;
-      }>(
-        `
-          SELECT pg_get_constraintdef(oid) AS definition
-          FROM pg_constraint
-          WHERE conname = $1
-            AND conrelid = $2::regclass
-        `,
-        [constraintName, `public.${tableName}`],
-      );
-
-      if (definitionResult.rows.length === 0) {
-        continue;
-      }
-
-      const definition = definitionResult.rows[0].definition;
-
-      if (definition.includes("ON DELETE CASCADE")) {
-        await client.query(
-          `
-            ALTER TABLE ${quoteIdentifier(tableName)}
-            DROP CONSTRAINT ${quoteIdentifier(constraintName)}
-          `,
-        );
-
-        await client.query(
-          `
-            ALTER TABLE ${quoteIdentifier(tableName)}
-            ADD CONSTRAINT ${quoteIdentifier(constraintName)}
-            ${definition.replace(/\s+ON DELETE CASCADE/gi, "")}
-          `,
-        );
-      }
-    }
+    await removeDestructiveCascades(client);
 
     await client.query("COMMIT");
 
@@ -107,6 +74,129 @@ async function migrate() {
   } finally {
     client.release();
     await pool.end();
+  }
+}
+
+async function removeLegacyEntryNumberConstraint(
+  client: import("pg").PoolClient,
+): Promise<void> {
+  const result = await client.query<{
+    constraint_name: string;
+  }>(`
+    SELECT
+      tc.constraint_name
+    FROM information_schema.table_constraints tc
+    WHERE tc.constraint_type = 'UNIQUE'
+      AND tc.table_schema = 'public'
+      AND tc.table_name = 'entries'
+  `);
+
+  for (const row of result.rows) {
+    const constraintName = row.constraint_name;
+
+    const columnsResult = await client.query<{
+      column_name: string;
+    }>(
+      `
+        SELECT
+          kcu.column_name
+        FROM information_schema.key_column_usage kcu
+        WHERE kcu.constraint_schema = 'public'
+          AND kcu.constraint_name = $1
+          AND kcu.table_name = 'entries'
+        ORDER BY kcu.ordinal_position
+      `,
+      [constraintName],
+    );
+
+    const columns = columnsResult.rows.map(
+      (column) => column.column_name,
+    );
+
+    if (
+      columns.length === 2 &&
+      columns[0] === "draw_id" &&
+      columns[1] === "number"
+    ) {
+      await client.query(
+        `
+          ALTER TABLE entries
+          DROP CONSTRAINT ${quoteIdentifier(constraintName)}
+        `,
+      );
+
+      console.log(
+        `Removed legacy entries constraint: ${constraintName}`,
+      );
+    }
+  }
+}
+
+async function removeDestructiveCascades(
+  client: import("pg").PoolClient,
+): Promise<void> {
+  const constraintResult = await client.query<{
+    constraint_name: string;
+    table_name: string;
+  }>(`
+    SELECT
+      tc.constraint_name,
+      tc.table_name
+    FROM information_schema.table_constraints tc
+    WHERE tc.constraint_type = 'FOREIGN KEY'
+      AND tc.table_schema = 'public'
+      AND tc.table_name IN (
+        'payments',
+        'winners',
+        'draw_results'
+      )
+  `);
+
+  for (const constraint of constraintResult.rows) {
+    const constraintName = constraint.constraint_name;
+    const tableName = constraint.table_name;
+
+    const definitionResult = await client.query<{
+      definition: string;
+    }>(
+      `
+        SELECT pg_get_constraintdef(oid) AS definition
+        FROM pg_constraint
+        WHERE conname = $1
+          AND conrelid = $2::regclass
+      `,
+      [constraintName, `public.${tableName}`],
+    );
+
+    if (definitionResult.rows.length === 0) {
+      continue;
+    }
+
+    const definition = definitionResult.rows[0].definition;
+
+    if (!/ON DELETE CASCADE/i.test(definition)) {
+      continue;
+    }
+
+    await client.query(
+      `
+        ALTER TABLE ${quoteIdentifier(tableName)}
+        DROP CONSTRAINT ${quoteIdentifier(constraintName)}
+      `,
+    );
+
+    const safeDefinition = definition.replace(
+      /\s+ON DELETE CASCADE/gi,
+      "",
+    );
+
+    await client.query(
+      `
+        ALTER TABLE ${quoteIdentifier(tableName)}
+        ADD CONSTRAINT ${quoteIdentifier(constraintName)}
+        ${safeDefinition}
+      `,
+    );
   }
 }
 
