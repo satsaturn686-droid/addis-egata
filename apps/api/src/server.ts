@@ -5,6 +5,7 @@ import cors from "cors";
 import { checkDatabase } from "./db.js";
 import authRouter from "./routes/auth.js";
 import drawsRouter from "./routes/draws.js";
+import entriesRouter from "./routes/entries.js";
 
 const app = express();
 
@@ -51,6 +52,15 @@ app.use("/auth", authRouter);
  * GET /draws/:drawId
  */
 app.use("/draws", drawsRouter);
+
+/*
+ * Entries and number reservations
+ *
+ * GET /entries/mine
+ * POST /entries/reserve
+ * GET /entries/:entryId
+ */
+app.use("/entries", entriesRouter);
 
 app.use((_req, res) => {
   res.status(404).json({
