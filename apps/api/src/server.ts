@@ -7,6 +7,7 @@ import authRouter from "./routes/auth.js";
 import drawsRouter from "./routes/draws.js";
 import entriesRouter from "./routes/entries.js";
 import paymentsRouter from "./routes/payments.js";
+import resultsRouter from "./routes/results.js";
 import adminPaymentsRouter from "./routes/admin-payments.js";
 import adminDrawsRouter from "./routes/admin-draws.js";
 import adminDrawExecutionRouter from "./routes/admin-draw-execution.js";
@@ -56,6 +57,14 @@ app.use("/auth", authRouter);
  * GET /draws/:drawId
  */
 app.use("/draws", drawsRouter);
+
+/*
+ * Public published results
+ *
+ * GET /results
+ * GET /results/:drawId
+ */
+app.use("/results", resultsRouter);
 
 /*
  * Entries and number reservations
