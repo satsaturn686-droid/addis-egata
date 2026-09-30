@@ -122,9 +122,15 @@ export async function reserveNumber(
     }
 
     /*
-     * Release expired reservations before checking the requested
-     * number. Historical rows are preserved; only their status
-     * changes to expired.
+     * Only an unpaid reservation expires after 30 minutes.
+     *
+     * A payment that has already been submitted becomes
+     * pending_payment and must keep its number locked until
+     * the payment is approved or rejected.
+     *
+     * This prevents a valid Telebirr payment from becoming
+     * impossible to verify merely because admin verification
+     * takes longer than 30 minutes.
      */
     await client.query(
       `
@@ -133,7 +139,7 @@ export async function reserveNumber(
           status = 'expired',
           updated_at = NOW()
         WHERE draw_id = $1
-          AND status IN ('reserved', 'pending_payment')
+          AND status = 'reserved'
           AND reserved_until IS NOT NULL
           AND reserved_until <= NOW()
       `,
