@@ -18,6 +18,19 @@ type PaymentRow = {
   updated_at: string;
 };
 
+type VerificationEntryRow = {
+  id: string;
+  draw_id: string;
+  user_id: string;
+  number: number;
+  status: string;
+  reserved_until: string | null;
+  entry_fee: string | number;
+  draw_status: string;
+  starts_at: string | null;
+  deadline_at: string | null;
+};
+
 function mapPayment(row: PaymentRow): Payment {
   return {
     id: row.id,
@@ -37,6 +50,90 @@ function mapPayment(row: PaymentRow): Payment {
   };
 }
 
+function isBeforeStart(startsAt: string | null): boolean {
+  if (!startsAt) {
+    return false;
+  }
+
+  return new Date(startsAt).getTime() > Date.now();
+}
+
+function isAfterDeadline(deadlineAt: string | null): boolean {
+  if (!deadlineAt) {
+    return false;
+  }
+
+  return new Date(deadlineAt).getTime() <= Date.now();
+}
+
+async function getPaymentForUpdate(
+  client: import("pg").PoolClient,
+  paymentId: string,
+): Promise<PaymentRow> {
+  const result = await client.query<PaymentRow>(
+    `
+      SELECT
+        id,
+        entry_id,
+        user_id,
+        amount,
+        payment_method,
+        transaction_reference,
+        sender_name,
+        receipt_image_url,
+        status,
+        verified_by,
+        verified_at,
+        rejection_reason,
+        created_at,
+        updated_at
+      FROM payments
+      WHERE id = $1
+      FOR UPDATE
+    `,
+    [paymentId],
+  );
+
+  if (result.rows.length === 0) {
+    throw new Error("PAYMENT_NOT_FOUND");
+  }
+
+  return result.rows[0];
+}
+
+async function getEntryForUpdate(
+  client: import("pg").PoolClient,
+  entryId: string,
+): Promise<VerificationEntryRow> {
+  const result = await client.query<VerificationEntryRow>(
+    `
+      SELECT
+        e.id,
+        e.draw_id,
+        e.user_id,
+        e.number,
+        e.status,
+        e.reserved_until,
+        d.entry_fee,
+        d.status AS draw_status,
+        d.starts_at,
+        d.deadline_at
+      FROM entries e
+      INNER JOIN draws d
+        ON d.id = e.draw_id
+      WHERE e.id = $1
+      FOR UPDATE
+    `,
+    [entryId],
+  );
+
+  if (result.rows.length === 0) {
+    throw new Error("ENTRY_NOT_FOUND");
+  }
+
+  return result.rows[0];
+}
+
 export async function approvePayment(
   paymentId: string,
   adminUserId: string,
@@ -45,77 +142,28 @@ export async function approvePayment(
     throw new Error("DATABASE_URL is not configured");
   }
 
+  if (!adminUserId.trim()) {
+    throw new Error("INVALID_ADMIN_USER_ID");
+  }
+
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
 
-    const paymentResult = await client.query<PaymentRow>(
-      `
-        SELECT
-          p.id,
-          p.entry_id,
-          p.user_id,
-          p.amount,
-          p.payment_method,
-          p.transaction_reference,
-          p.sender_name,
-          p.receipt_image_url,
-          p.status,
-          p.verified_by,
-          p.verified_at,
-          p.rejection_reason,
-          p.created_at,
-          p.updated_at
-        FROM payments p
-        WHERE p.id = $1
-        FOR UPDATE
-      `,
-      [paymentId],
+    const payment = await getPaymentForUpdate(
+      client,
+      paymentId,
     );
-
-    if (paymentResult.rows.length === 0) {
-      throw new Error("PAYMENT_NOT_FOUND");
-    }
-
-    const payment = paymentResult.rows[0];
 
     if (payment.status !== "pending") {
       throw new Error("PAYMENT_ALREADY_PROCESSED");
     }
 
-    const entryResult = await client.query<{
-      id: string;
-      draw_id: string;
-      user_id: string;
-      status: string;
-      reserved_until: string | null;
-      entry_fee: string;
-      draw_status: string;
-    }>(
-      `
-        SELECT
-          e.id,
-          e.draw_id,
-          e.user_id,
-          e.status,
-          e.reserved_until,
-          d.entry_fee,
-          d.status AS draw_status
-        FROM entries e
-        INNER JOIN draws d
-          ON d.id = e.draw_id
-        WHERE e.id = $1
-        FOR UPDATE
-      `,
-      [payment.entry_id],
+    const entry = await getEntryForUpdate(
+      client,
+      payment.entry_id,
     );
-
-    if (entryResult.rows.length === 0) {
-      throw new Error("ENTRY_NOT_FOUND");
-    }
-
-    const entry = entryResult.rows[0];
 
     if (entry.user_id !== payment.user_id) {
       throw new Error("PAYMENT_ENTRY_MISMATCH");
@@ -130,6 +178,77 @@ export async function approvePayment(
       entry.status !== "reserved"
     ) {
       throw new Error("ENTRY_NOT_VERIFIABLE");
+    }
+
+    if (entry.draw_status !== "open") {
+      throw new Error("DRAW_NOT_VERIFIABLE");
+    }
+
+    if (isBeforeStart(entry.starts_at)) {
+      throw new Error("DRAW_NOT_STARTED");
+    }
+
+    /*
+     * A payment must not be approved after the draw deadline.
+     */
+    if (isAfterDeadline(entry.deadline_at)) {
+      await client.query(
+        `
+          UPDATE entries
+          SET
+            status = 'expired',
+            reserved_until = NULL,
+            updated_at = NOW()
+          WHERE id = $1
+        `,
+        [entry.id],
+      );
+
+      throw new Error("DRAW_DEADLINE_PASSED");
+    }
+
+    /*
+     * A pending payment is valid only while its reservation
+     * is still active.
+     */
+    if (
+      !entry.reserved_until ||
+      new Date(entry.reserved_until).getTime() <= Date.now()
+    ) {
+      await client.query(
+        `
+          UPDATE entries
+          SET
+            status = 'expired',
+            reserved_until = NULL,
+            updated_at = NOW()
+          WHERE id = $1
+        `,
+        [entry.id],
+      );
+
+      throw new Error("RESERVATION_EXPIRED");
+    }
+
+    /*
+     * Prevent approval if another approved payment somehow
+     * already exists for the same entry.
+     */
+    const approvedPaymentResult = await client.query<{
+      id: string;
+    }>(
+      `
+        SELECT id
+        FROM payments
+        WHERE entry_id = $1
+          AND status = 'approved'
+        LIMIT 1
+      `,
+      [entry.id],
+    );
+
+    if (approvedPaymentResult.rows.length > 0) {
+      throw new Error("ENTRY_ALREADY_PAID");
     }
 
     const updatedPaymentResult = await client.query<PaymentRow>(
@@ -171,7 +290,7 @@ export async function approvePayment(
           updated_at = NOW()
         WHERE id = $1
       `,
-      [payment.entry_id],
+      [entry.id],
     );
 
     await client.query(
@@ -196,6 +315,8 @@ export async function approvePayment(
         paymentId,
         JSON.stringify({
           entryId: payment.entry_id,
+          drawId: entry.draw_id,
+          number: entry.number,
           transactionReference: payment.transaction_reference,
           amount: Number(payment.amount),
         }),
@@ -222,6 +343,10 @@ export async function rejectPayment(
     throw new Error("DATABASE_URL is not configured");
   }
 
+  if (!adminUserId.trim()) {
+    throw new Error("INVALID_ADMIN_USER_ID");
+  }
+
   const reason = rejectionReason.trim();
 
   if (!reason) {
@@ -237,62 +362,19 @@ export async function rejectPayment(
   try {
     await client.query("BEGIN");
 
-    const paymentResult = await client.query<PaymentRow>(
-      `
-        SELECT
-          id,
-          entry_id,
-          user_id,
-          amount,
-          payment_method,
-          transaction_reference,
-          sender_name,
-          receipt_image_url,
-          status,
-          verified_by,
-          verified_at,
-          rejection_reason,
-          created_at,
-          updated_at
-        FROM payments
-        WHERE id = $1
-        FOR UPDATE
-      `,
-      [paymentId],
+    const payment = await getPaymentForUpdate(
+      client,
+      paymentId,
     );
-
-    if (paymentResult.rows.length === 0) {
-      throw new Error("PAYMENT_NOT_FOUND");
-    }
-
-    const payment = paymentResult.rows[0];
 
     if (payment.status !== "pending") {
       throw new Error("PAYMENT_ALREADY_PROCESSED");
     }
 
-    const entryResult = await client.query<{
-      id: string;
-      user_id: string;
-      status: string;
-    }>(
-      `
-        SELECT
-          id,
-          user_id,
-          status
-        FROM entries
-        WHERE id = $1
-        FOR UPDATE
-      `,
-      [payment.entry_id],
+    const entry = await getEntryForUpdate(
+      client,
+      payment.entry_id,
     );
-
-    if (entryResult.rows.length === 0) {
-      throw new Error("ENTRY_NOT_FOUND");
-    }
-
-    const entry = entryResult.rows[0];
 
     if (entry.user_id !== payment.user_id) {
       throw new Error("PAYMENT_ENTRY_MISMATCH");
@@ -334,6 +416,11 @@ export async function rejectPayment(
       [paymentId, adminUserId, reason],
     );
 
+    /*
+     * Rejected entries become inactive and the number can later
+     * be reserved by another user. The old entry/payment history
+     * remains intact.
+     */
     await client.query(
       `
         UPDATE entries
@@ -368,6 +455,8 @@ export async function rejectPayment(
         paymentId,
         JSON.stringify({
           entryId: payment.entry_id,
+          drawId: entry.draw_id,
+          number: entry.number,
           transactionReference: payment.transaction_reference,
           amount: Number(payment.amount),
           rejectionReason: reason,
