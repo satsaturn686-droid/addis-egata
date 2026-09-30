@@ -1,7 +1,9 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+
 import { checkDatabase } from "./db.js";
+import authRouter from "./routes/auth.js";
 
 const app = express();
 
@@ -33,6 +35,13 @@ app.get("/", (_req, res) => {
     message: "API is running",
   });
 });
+
+/*
+ * Telegram authentication
+ *
+ * GET /auth/me
+ */
+app.use("/auth", authRouter);
 
 app.use((_req, res) => {
   res.status(404).json({
