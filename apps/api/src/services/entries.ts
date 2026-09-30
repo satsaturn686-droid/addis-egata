@@ -122,11 +122,10 @@ export async function reserveNumber(
     }
 
     /*
-     * Expired reservations become reusable.
+     * Expired reservations become inactive.
      *
-     * We do not delete these rows because an entry may already
-     * have payment history. Keeping the row preserves the audit
-     * trail and avoids destructive foreign-key behavior.
+     * We keep the old entry row so that any payment history
+     * remains attached to the original user and entry.
      */
     await client.query(
       `
@@ -142,6 +141,12 @@ export async function reserveNumber(
       [drawId],
     );
 
+    /*
+     * Only active entries block a number.
+     *
+     * The partial unique index on the database guarantees
+     * that two active entries cannot own the same number.
+     */
     const existingResult = await client.query<EntryRow>(
       `
         SELECT
@@ -157,6 +162,7 @@ export async function reserveNumber(
         FROM entries
         WHERE draw_id = $1
           AND number = $2
+          AND status IN ('reserved', 'pending_payment', 'paid')
         LIMIT 1
         FOR UPDATE
       `,
@@ -164,49 +170,16 @@ export async function reserveNumber(
     );
 
     if (existingResult.rows.length > 0) {
-      const existing = existingResult.rows[0];
-
-      if (
-        existing.status === "reserved" ||
-        existing.status === "pending_payment" ||
-        existing.status === "paid"
-      ) {
-        throw new Error("NUMBER_UNAVAILABLE");
-      }
-
-      /*
-       * Reuse the existing row instead of deleting it.
-       * This preserves any historical payment relationship.
-       */
-      const reusedResult = await client.query<EntryRow>(
-        `
-          UPDATE entries
-          SET
-            user_id = $2,
-            status = 'reserved',
-            reserved_until = NOW() + ($3 * INTERVAL '1 minute'),
-            paid_at = NULL,
-            updated_at = NOW()
-          WHERE id = $1
-          RETURNING
-            id,
-            draw_id,
-            user_id,
-            number,
-            status,
-            reserved_until,
-            paid_at,
-            created_at,
-            updated_at
-        `,
-        [existing.id, userId, reservationMinutes],
-      );
-
-      await client.query("COMMIT");
-
-      return mapEntry(reusedResult.rows[0]);
+      throw new Error("NUMBER_UNAVAILABLE");
     }
 
+    /*
+     * Do not reuse an old entry row.
+     *
+     * A previous entry may already have a payment record.
+     * Creating a new row preserves the complete historical
+     * relationship between the old payment and old user.
+     */
     const reservationResult = await client.query<EntryRow>(
       `
         INSERT INTO entries (
