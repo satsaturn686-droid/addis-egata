@@ -6,6 +6,7 @@ import { checkDatabase } from "./db.js";
 import authRouter from "./routes/auth.js";
 import drawsRouter from "./routes/draws.js";
 import entriesRouter from "./routes/entries.js";
+import paymentsRouter from "./routes/payments.js";
 
 const app = express();
 
@@ -61,6 +62,15 @@ app.use("/draws", drawsRouter);
  * GET /entries/:entryId
  */
 app.use("/entries", entriesRouter);
+
+/*
+ * Manual Telebirr payments
+ *
+ * GET /payments/mine
+ * POST /payments/telebirr
+ * GET /payments/:paymentId
+ */
+app.use("/payments", paymentsRouter);
 
 app.use((_req, res) => {
   res.status(404).json({
