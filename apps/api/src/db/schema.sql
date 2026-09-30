@@ -111,9 +111,7 @@ CREATE TABLE IF NOT EXISTS entries (
   paid_at TIMESTAMPTZ,
 
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-  UNIQUE(draw_id, number)
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS payments (
@@ -230,6 +228,10 @@ CREATE INDEX IF NOT EXISTS idx_entries_status
 
 CREATE INDEX IF NOT EXISTS idx_entries_reservation
   ON entries(reserved_until);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_entries_active_number
+  ON entries(draw_id, number)
+  WHERE status IN ('reserved', 'pending_payment', 'paid');
 
 CREATE INDEX IF NOT EXISTS idx_payments_status
   ON payments(status);
