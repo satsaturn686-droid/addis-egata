@@ -10,6 +10,7 @@
     "start": "node dist/server.js",
     "migrate": "tsx src/db/migrate.ts",
     "migrate:build": "node dist/db/migrate.js",
+    "cron:expire-draws": "node dist/jobs/expire-draws.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
