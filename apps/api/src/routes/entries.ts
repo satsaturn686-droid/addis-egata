@@ -9,8 +9,7 @@ import {
 
 const router = Router();
 
-const DEFAULT_RESERVATION_MINUTES = 30;
-const MAX_RESERVATION_MINUTES = 60;
+const RESERVATION_MINUTES = 30;
 
 function getNumber(value: unknown): number | null {
   if (
@@ -32,30 +31,6 @@ function getNumber(value: unknown): number | null {
   }
 
   return null;
-}
-
-function getReservationMinutes(
-  value: unknown,
-): number {
-  if (
-    typeof value === "number" &&
-    Number.isInteger(value)
-  ) {
-    return value;
-  }
-
-  if (
-    typeof value === "string" &&
-    value.trim()
-  ) {
-    const parsed = Number(value);
-
-    if (Number.isInteger(parsed)) {
-      return parsed;
-    }
-  }
-
-  return DEFAULT_RESERVATION_MINUTES;
 }
 
 router.get(
@@ -115,11 +90,6 @@ router.post(
         req.body?.number,
       );
 
-      const reservationMinutes =
-        getReservationMinutes(
-          req.body?.reservationMinutes,
-        );
-
       if (!drawId) {
         res.status(400).json({
           error: "INVALID_DRAW_ID",
@@ -137,30 +107,20 @@ router.post(
         return;
       }
 
-      if (
-        reservationMinutes < 1 ||
-        reservationMinutes >
-          MAX_RESERVATION_MINUTES
-      ) {
-        res.status(400).json({
-          error:
-            "INVALID_RESERVATION_TIME",
-          message:
-            "Reservation time must be between 1 and 60 minutes.",
-        });
-        return;
-      }
-
+      /*
+       * Reservation time is intentionally not accepted
+       * from the client. The server always uses 30 minutes.
+       */
       const entry = await reserveNumber(
         drawId,
         req.user.id,
         number,
-        reservationMinutes,
       );
 
       res.status(201).json({
         entry,
-        reservationMinutes,
+        reservationMinutes:
+          RESERVATION_MINUTES,
       });
     } catch (error) {
       const message =
@@ -178,7 +138,6 @@ router.post(
         "INVALID_DRAW_ID",
         "INVALID_USER_ID",
         "INVALID_NUMBER",
-        "INVALID_RESERVATION_TIME",
       ]);
 
       if (clientErrors.has(message)) {
