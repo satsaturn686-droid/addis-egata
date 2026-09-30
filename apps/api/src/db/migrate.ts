@@ -30,7 +30,73 @@ async function migrate() {
     const schema = await readFile(schemaPath, "utf8");
 
     await client.query("BEGIN");
+
     await client.query(schema);
+
+    /*
+     * Existing installations may have been created with
+     * ON DELETE CASCADE relationships. Remove those
+     * destructive cascades so historical payment, winner,
+     * and result records cannot disappear accidentally.
+     */
+
+    const constraintResult = await client.query<{
+      constraint_name: string;
+      table_name: string;
+    }>(`
+      SELECT
+        tc.constraint_name,
+        tc.table_name
+      FROM information_schema.table_constraints tc
+      WHERE tc.constraint_type = 'FOREIGN KEY'
+        AND tc.table_schema = 'public'
+        AND tc.table_name IN (
+          'payments',
+          'winners',
+          'draw_results'
+        )
+    `);
+
+    for (const constraint of constraintResult.rows) {
+      const constraintName = constraint.constraint_name;
+      const tableName = constraint.table_name;
+
+      const definitionResult = await client.query<{
+        definition: string;
+      }>(
+        `
+          SELECT pg_get_constraintdef(oid) AS definition
+          FROM pg_constraint
+          WHERE conname = $1
+            AND conrelid = $2::regclass
+        `,
+        [constraintName, `public.${tableName}`],
+      );
+
+      if (definitionResult.rows.length === 0) {
+        continue;
+      }
+
+      const definition = definitionResult.rows[0].definition;
+
+      if (definition.includes("ON DELETE CASCADE")) {
+        await client.query(
+          `
+            ALTER TABLE ${quoteIdentifier(tableName)}
+            DROP CONSTRAINT ${quoteIdentifier(constraintName)}
+          `,
+        );
+
+        await client.query(
+          `
+            ALTER TABLE ${quoteIdentifier(tableName)}
+            ADD CONSTRAINT ${quoteIdentifier(constraintName)}
+            ${definition.replace(/\s+ON DELETE CASCADE/gi, "")}
+          `,
+        );
+      }
+    }
+
     await client.query("COMMIT");
 
     console.log("Database migration completed successfully.");
@@ -42,6 +108,10 @@ async function migrate() {
     client.release();
     await pool.end();
   }
+}
+
+function quoteIdentifier(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
 }
 
 migrate().catch((error) => {
