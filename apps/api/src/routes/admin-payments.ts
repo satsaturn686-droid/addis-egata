@@ -59,6 +59,13 @@ router.get(
  * POST /admin/payments/:paymentId/approve
  *
  * Approves a pending Telebirr payment.
+ *
+ * Important:
+ * The 30-minute reservation applies to payment
+ * submission. Once the payment has been submitted
+ * and remains pending, it can still be approved
+ * after the reservation period, provided the draw
+ * deadline has not passed.
  */
 router.post(
   "/:paymentId/approve",
@@ -113,7 +120,6 @@ router.post(
         "DRAW_NOT_VERIFIABLE",
         "DRAW_NOT_STARTED",
         "DRAW_DEADLINE_PASSED",
-        "RESERVATION_EXPIRED",
         "ENTRY_ALREADY_PAID",
       ]);
 
