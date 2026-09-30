@@ -7,6 +7,11 @@ import {
 
 import { createDraw } from "../services/admin-draws.js";
 
+import {
+  closeDraw,
+  openDraw,
+} from "../services/draw-lifecycle.js";
+
 const router = Router();
 
 /*
@@ -127,6 +132,11 @@ function getPrizes(
   });
 }
 
+/*
+ * Create a new draw.
+ *
+ * POST /admin/draws
+ */
 router.post(
   "/",
   async (req, res) => {
@@ -177,7 +187,8 @@ router.post(
 
       if (!name) {
         res.status(400).json({
-          error: "DRAW_NAME_REQUIRED",
+          error:
+            "DRAW_NAME_REQUIRED",
           message:
             "Draw name is required.",
         });
@@ -199,7 +210,8 @@ router.post(
 
       if (!prizeName) {
         res.status(400).json({
-          error: "PRIZE_NAME_REQUIRED",
+          error:
+            "PRIZE_NAME_REQUIRED",
           message:
             "Prize name is required.",
         });
@@ -244,7 +256,8 @@ router.post(
 
       if (!prizes) {
         res.status(400).json({
-          error: "PRIZES_REQUIRED",
+          error:
+            "PRIZES_REQUIRED",
           message:
             "Prize distribution is required.",
         });
@@ -357,6 +370,173 @@ router.post(
           "DRAW_CREATION_FAILED",
         message:
           "The draw could not be created.",
+      });
+    }
+  },
+);
+
+/*
+ * Open a draft draw.
+ *
+ * POST /admin/draws/:drawId/open
+ */
+router.post(
+  "/:drawId/open",
+  async (req, res) => {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          error:
+            "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
+        });
+        return;
+      }
+
+      const drawId =
+        req.params.drawId?.trim();
+
+      if (!drawId) {
+        res.status(400).json({
+          error:
+            "INVALID_DRAW_ID",
+          message:
+            "Draw ID is required.",
+        });
+        return;
+      }
+
+      const draw =
+        await openDraw(
+          req.user.id,
+          drawId,
+        );
+
+      res.status(200).json({
+        draw,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "DRAW_OPEN_FAILED";
+
+      const clientErrors =
+        new Set([
+          "INVALID_ADMIN_USER_ID",
+          "INVALID_DRAW_ID",
+          "DRAW_NOT_FOUND",
+          "DRAW_NOT_EDITABLE",
+          "INVALID_TOTAL_NUMBERS",
+          "INVALID_ENTRY_FEE",
+          "INVALID_WINNER_COUNT",
+          "PRIZE_COUNT_MUST_MATCH_WINNERS",
+          "PRIZE_RANKS_MUST_BE_SEQUENTIAL",
+          "INVALID_PRIZE_AMOUNT",
+          "PRIZE_POOL_MUST_BE_GREATER_THAN_ZERO",
+          "DRAW_DEADLINE_ALREADY_PASSED",
+          "DRAW_TIME_ALREADY_PASSED",
+        ]);
+
+      if (clientErrors.has(message)) {
+        res.status(400).json({
+          error: message,
+          message:
+            "The draw could not be opened.",
+        });
+        return;
+      }
+
+      console.error(
+        "Open draw error:",
+        error,
+      );
+
+      res.status(500).json({
+        error:
+          "DRAW_OPEN_FAILED",
+        message:
+          "The draw could not be opened.",
+      });
+    }
+  },
+);
+
+/*
+ * Close an open/full draw.
+ *
+ * POST /admin/draws/:drawId/close
+ */
+router.post(
+  "/:drawId/close",
+  async (req, res) => {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          error:
+            "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
+        });
+        return;
+      }
+
+      const drawId =
+        req.params.drawId?.trim();
+
+      if (!drawId) {
+        res.status(400).json({
+          error:
+            "INVALID_DRAW_ID",
+          message:
+            "Draw ID is required.",
+        });
+        return;
+      }
+
+      const draw =
+        await closeDraw(
+          req.user.id,
+          drawId,
+        );
+
+      res.status(200).json({
+        draw,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "DRAW_CLOSE_FAILED";
+
+      const clientErrors =
+        new Set([
+          "INVALID_ADMIN_USER_ID",
+          "INVALID_DRAW_ID",
+          "DRAW_NOT_FOUND",
+          "DRAW_NOT_CLOSEABLE",
+        ]);
+
+      if (clientErrors.has(message)) {
+        res.status(400).json({
+          error: message,
+          message:
+            "The draw could not be closed.",
+        });
+        return;
+      }
+
+      console.error(
+        "Close draw error:",
+        error,
+      );
+
+      res.status(500).json({
+        error:
+          "DRAW_CLOSE_FAILED",
+        message:
+          "The draw could not be closed.",
       });
     }
   },
