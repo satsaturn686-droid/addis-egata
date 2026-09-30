@@ -121,12 +121,6 @@ export async function reserveNumber(
       throw new Error("DRAW_DEADLINE_PASSED");
     }
 
-    /*
-     * Expired reservations become inactive.
-     *
-     * We keep the old entry row so that any payment history
-     * remains attached to the original user and entry.
-     */
     await client.query(
       `
         UPDATE entries
@@ -141,12 +135,6 @@ export async function reserveNumber(
       [drawId],
     );
 
-    /*
-     * Only active entries block a number.
-     *
-     * The partial unique index on the database guarantees
-     * that two active entries cannot own the same number.
-     */
     const existingResult = await client.query<EntryRow>(
       `
         SELECT
@@ -173,13 +161,6 @@ export async function reserveNumber(
       throw new Error("NUMBER_UNAVAILABLE");
     }
 
-    /*
-     * Do not reuse an old entry row.
-     *
-     * A previous entry may already have a payment record.
-     * Creating a new row preserves the complete historical
-     * relationship between the old payment and old user.
-     */
     const reservationResult = await client.query<EntryRow>(
       `
         INSERT INTO entries (
@@ -228,6 +209,10 @@ export async function getEntryById(
     throw new Error("DATABASE_URL is not configured");
   }
 
+  if (!entryId.trim()) {
+    throw new Error("INVALID_ENTRY_ID");
+  }
+
   const result = await pool.query<EntryRow>(
     `
       SELECT
@@ -257,6 +242,10 @@ export async function getUserEntries(
 ): Promise<Entry[]> {
   if (!pool) {
     throw new Error("DATABASE_URL is not configured");
+  }
+
+  if (!userId.trim()) {
+    throw new Error("INVALID_USER_ID");
   }
 
   const result = await pool.query<EntryRow>(
