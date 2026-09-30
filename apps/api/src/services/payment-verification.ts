@@ -269,7 +269,11 @@ export async function approvePayment(
     }
 
     /*
-     * A payment must not be approved after the draw deadline.
+     * A payment may be approved after the 30-minute
+     * reservation period if the payment was already
+     * submitted and is still pending.
+     *
+     * The draw deadline remains the final approval cutoff.
      */
     if (isAfterDeadline(entry.deadline_at)) {
       await client.query(
@@ -288,31 +292,7 @@ export async function approvePayment(
     }
 
     /*
-     * A pending payment is valid only while its reservation
-     * is still active.
-     */
-    if (
-      !entry.reserved_until ||
-      new Date(entry.reserved_until).getTime() <=
-        Date.now()
-    ) {
-      await client.query(
-        `
-          UPDATE entries
-          SET
-            status = 'expired',
-            reserved_until = NULL,
-            updated_at = NOW()
-          WHERE id = $1
-        `,
-        [entry.id],
-      );
-
-      throw new Error("RESERVATION_EXPIRED");
-    }
-
-    /*
-     * Prevent approval if another approved payment somehow
+     * Prevent approval if another approved payment
      * already exists for the same entry.
      */
     const approvedPaymentResult =
@@ -329,9 +309,7 @@ export async function approvePayment(
         [entry.id],
       );
 
-    if (
-      approvedPaymentResult.rows.length > 0
-    ) {
+    if (approvedPaymentResult.rows.length > 0) {
       throw new Error("ENTRY_ALREADY_PAID");
     }
 
@@ -409,14 +387,6 @@ export async function approvePayment(
       ],
     );
 
-    /*
-     * When every available number has an approved payment,
-     * the draw automatically becomes full.
-     *
-     * The draw row is locked by getEntryForUpdate(),
-     * so concurrent payment approvals for the same draw
-     * are serialized safely.
-     */
     await markDrawFullIfComplete(
       client,
       entry.draw_id,
@@ -524,11 +494,6 @@ export async function rejectPayment(
         ],
       );
 
-    /*
-     * Rejected entries become inactive and the number can later
-     * be reserved by another user. The old entry/payment history
-     * remains intact.
-     */
     await client.query(
       `
         UPDATE entries
