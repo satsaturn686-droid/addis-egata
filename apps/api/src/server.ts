@@ -7,6 +7,7 @@ import authRouter from "./routes/auth.js";
 import drawsRouter from "./routes/draws.js";
 import entriesRouter from "./routes/entries.js";
 import paymentsRouter from "./routes/payments.js";
+import adminPaymentsRouter from "./routes/admin-payments.js";
 
 const app = express();
 
@@ -71,6 +72,18 @@ app.use("/entries", entriesRouter);
  * GET /payments/:paymentId
  */
 app.use("/payments", paymentsRouter);
+
+/*
+ * Admin payment verification
+ *
+ * GET /admin/payments/pending
+ * POST /admin/payments/:paymentId/approve
+ * POST /admin/payments/:paymentId/reject
+ */
+app.use(
+  "/admin/payments",
+  adminPaymentsRouter,
+);
 
 app.use((_req, res) => {
   res.status(404).json({
