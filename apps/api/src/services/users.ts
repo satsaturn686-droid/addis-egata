@@ -66,6 +66,42 @@ function validateTelegramUser(user: TelegramUser): void {
   }
 }
 
+function getConfiguredAdminTelegramIds(): Set<number> {
+  const raw = process.env.ADMIN_TELEGRAM_IDS ?? "";
+
+  const ids = new Set<number>();
+
+  for (const value of raw.split(",")) {
+    const normalized = value.trim();
+
+    if (!normalized) {
+      continue;
+    }
+
+    if (!/^\d+$/.test(normalized)) {
+      console.warn(
+        "Ignoring invalid ADMIN_TELEGRAM_IDS value.",
+      );
+      continue;
+    }
+
+    const parsed = Number(normalized);
+
+    if (
+      Number.isSafeInteger(parsed) &&
+      parsed > 0
+    ) {
+      ids.add(parsed);
+    } else {
+      console.warn(
+        "Ignoring unsafe ADMIN_TELEGRAM_IDS value.",
+      );
+    }
+  }
+
+  return ids;
+}
+
 export async function getUserById(
   userId: string,
 ): Promise<User | null> {
@@ -146,25 +182,35 @@ export async function upsertTelegramUser(
 
   validateTelegramUser(telegramUser);
 
+  const configuredAdminIds =
+    getConfiguredAdminTelegramIds();
+
+  const shouldBeAdmin =
+    configuredAdminIds.has(telegramUser.id);
+
   const result = await pool.query<UserRow>(
     `
       INSERT INTO users (
         telegram_id,
         username,
         first_name,
-        last_name
+        last_name,
+        is_admin
       )
       VALUES (
         $1,
         $2,
         $3,
-        $4
+        $4,
+        $5
       )
       ON CONFLICT (telegram_id)
       DO UPDATE SET
         username = EXCLUDED.username,
         first_name = EXCLUDED.first_name,
         last_name = EXCLUDED.last_name,
+        is_admin =
+          users.is_admin OR EXCLUDED.is_admin,
         updated_at = NOW()
       RETURNING
         id,
@@ -181,6 +227,7 @@ export async function upsertTelegramUser(
       telegramUser.username ?? null,
       telegramUser.first_name ?? null,
       telegramUser.last_name ?? null,
+      shouldBeAdmin,
     ],
   );
 
@@ -210,6 +257,8 @@ export async function isAdminUser(
     [userId],
   );
 
-  return result.rows.length > 0 &&
-    result.rows[0].is_admin === true;
+  return (
+    result.rows.length > 0 &&
+    result.rows[0].is_admin === true
+  );
 }
