@@ -8,6 +8,7 @@ import drawsRouter from "./routes/draws.js";
 import entriesRouter from "./routes/entries.js";
 import paymentsRouter from "./routes/payments.js";
 import adminPaymentsRouter from "./routes/admin-payments.js";
+import adminDrawsRouter from "./routes/admin-draws.js";
 
 const app = express();
 
@@ -48,7 +49,7 @@ app.get("/", (_req, res) => {
 app.use("/auth", authRouter);
 
 /*
- * Draws
+ * Public draws
  *
  * GET /draws
  * GET /draws/:drawId
@@ -85,6 +86,16 @@ app.use(
   adminPaymentsRouter,
 );
 
+/*
+ * Admin draw management
+ *
+ * POST /admin/draws
+ */
+app.use(
+  "/admin/draws",
+  adminDrawsRouter,
+);
+
 app.use((_req, res) => {
   res.status(404).json({
     error: "NOT_FOUND",
@@ -99,15 +110,21 @@ app.use(
     res: express.Response,
     _next: express.NextFunction,
   ) => {
-    console.error("Unhandled server error:", err);
+    console.error(
+      "Unhandled server error:",
+      err,
+    );
 
     res.status(500).json({
       error: "INTERNAL_SERVER_ERROR",
-      message: "An unexpected server error occurred.",
+      message:
+        "An unexpected server error occurred.",
     });
   },
 );
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Addis ዕጣ API running on port ${PORT}`);
+  console.log(
+    `Addis ዕጣ API running on port ${PORT}`,
+  );
 });
