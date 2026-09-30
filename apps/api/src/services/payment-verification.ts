@@ -27,6 +27,7 @@ type VerificationEntryRow = {
   reserved_until: string | null;
   entry_fee: string | number;
   draw_status: string;
+  total_numbers: number;
   starts_at: string | null;
   deadline_at: string | null;
 };
@@ -116,13 +117,14 @@ async function getEntryForUpdate(
         e.reserved_until,
         d.entry_fee,
         d.status AS draw_status,
+        d.total_numbers,
         d.starts_at,
         d.deadline_at
       FROM entries e
       INNER JOIN draws d
         ON d.id = e.draw_id
       WHERE e.id = $1
-      FOR UPDATE
+      FOR UPDATE OF e, d
     `,
     [entryId],
   );
@@ -132,6 +134,81 @@ async function getEntryForUpdate(
   }
 
   return result.rows[0];
+}
+
+async function markDrawFullIfComplete(
+  client: import("pg").PoolClient,
+  drawId: string,
+  totalNumbers: number,
+  adminUserId: string,
+): Promise<boolean> {
+  const paidResult = await client.query<{
+    paid_count: string;
+  }>(
+    `
+      SELECT COUNT(*)::text AS paid_count
+      FROM entries
+      WHERE draw_id = $1
+        AND status = 'paid'
+    `,
+    [drawId],
+  );
+
+  const paidCount = Number(
+    paidResult.rows[0]?.paid_count ?? 0,
+  );
+
+  if (paidCount < totalNumbers) {
+    return false;
+  }
+
+  const updateResult = await client.query<{
+    id: string;
+  }>(
+    `
+      UPDATE draws
+      SET
+        status = 'full',
+        updated_at = NOW()
+      WHERE id = $1
+        AND status = 'open'
+      RETURNING id
+    `,
+    [drawId],
+  );
+
+  if (updateResult.rows.length === 0) {
+    return false;
+  }
+
+  await client.query(
+    `
+      INSERT INTO audit_logs (
+        user_id,
+        action,
+        entity_type,
+        entity_id,
+        details
+      )
+      VALUES (
+        $1,
+        'DRAW_FULL',
+        'draw',
+        $2,
+        $3
+      )
+    `,
+    [
+      adminUserId,
+      drawId,
+      JSON.stringify({
+        paidCount,
+        totalNumbers,
+      }),
+    ],
+  );
+
+  return true;
 }
 
 export async function approvePayment(
@@ -169,7 +246,10 @@ export async function approvePayment(
       throw new Error("PAYMENT_ENTRY_MISMATCH");
     }
 
-    if (Number(payment.amount) !== Number(entry.entry_fee)) {
+    if (
+      Number(payment.amount) !==
+      Number(entry.entry_fee)
+    ) {
       throw new Error("PAYMENT_AMOUNT_MISMATCH");
     }
 
@@ -213,7 +293,8 @@ export async function approvePayment(
      */
     if (
       !entry.reserved_until ||
-      new Date(entry.reserved_until).getTime() <= Date.now()
+      new Date(entry.reserved_until).getTime() <=
+        Date.now()
     ) {
       await client.query(
         `
@@ -234,51 +315,55 @@ export async function approvePayment(
      * Prevent approval if another approved payment somehow
      * already exists for the same entry.
      */
-    const approvedPaymentResult = await client.query<{
-      id: string;
-    }>(
-      `
-        SELECT id
-        FROM payments
-        WHERE entry_id = $1
-          AND status = 'approved'
-        LIMIT 1
-      `,
-      [entry.id],
-    );
+    const approvedPaymentResult =
+      await client.query<{
+        id: string;
+      }>(
+        `
+          SELECT id
+          FROM payments
+          WHERE entry_id = $1
+            AND status = 'approved'
+          LIMIT 1
+        `,
+        [entry.id],
+      );
 
-    if (approvedPaymentResult.rows.length > 0) {
+    if (
+      approvedPaymentResult.rows.length > 0
+    ) {
       throw new Error("ENTRY_ALREADY_PAID");
     }
 
-    const updatedPaymentResult = await client.query<PaymentRow>(
-      `
-        UPDATE payments
-        SET
-          status = 'approved',
-          verified_by = $2,
-          verified_at = NOW(),
-          rejection_reason = NULL,
-          updated_at = NOW()
-        WHERE id = $1
-        RETURNING
-          id,
-          entry_id,
-          user_id,
-          amount,
-          payment_method,
-          transaction_reference,
-          sender_name,
-          receipt_image_url,
-          status,
-          verified_by,
-          verified_at,
-          rejection_reason,
-          created_at,
-          updated_at
-      `,
-      [paymentId, adminUserId],
-    );
+    const updatedPaymentResult =
+      await client.query<PaymentRow>(
+        `
+          UPDATE payments
+          SET
+            status = 'approved',
+            verified_by = $2,
+            verified_at = NOW(),
+            rejection_reason = NULL,
+            updated_at = NOW()
+          WHERE id = $1
+          RETURNING
+            id,
+            entry_id,
+            user_id,
+            amount,
+            payment_method,
+            transaction_reference,
+            sender_name,
+            receipt_image_url,
+            status,
+            verified_by,
+            verified_at,
+            rejection_reason,
+            created_at,
+            updated_at
+        `,
+        [paymentId, adminUserId],
+      );
 
     await client.query(
       `
@@ -317,15 +402,33 @@ export async function approvePayment(
           entryId: payment.entry_id,
           drawId: entry.draw_id,
           number: entry.number,
-          transactionReference: payment.transaction_reference,
+          transactionReference:
+            payment.transaction_reference,
           amount: Number(payment.amount),
         }),
       ],
     );
 
+    /*
+     * When every available number has an approved payment,
+     * the draw automatically becomes full.
+     *
+     * The draw row is locked by getEntryForUpdate(),
+     * so concurrent payment approvals for the same draw
+     * are serialized safely.
+     */
+    await markDrawFullIfComplete(
+      client,
+      entry.draw_id,
+      entry.total_numbers,
+      adminUserId,
+    );
+
     await client.query("COMMIT");
 
-    return mapPayment(updatedPaymentResult.rows[0]);
+    return mapPayment(
+      updatedPaymentResult.rows[0],
+    );
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -387,34 +490,39 @@ export async function rejectPayment(
       throw new Error("ENTRY_NOT_REJECTABLE");
     }
 
-    const updatedPaymentResult = await client.query<PaymentRow>(
-      `
-        UPDATE payments
-        SET
-          status = 'rejected',
-          verified_by = $2,
-          verified_at = NOW(),
-          rejection_reason = $3,
-          updated_at = NOW()
-        WHERE id = $1
-        RETURNING
-          id,
-          entry_id,
-          user_id,
-          amount,
-          payment_method,
-          transaction_reference,
-          sender_name,
-          receipt_image_url,
-          status,
-          verified_by,
-          verified_at,
-          rejection_reason,
-          created_at,
-          updated_at
-      `,
-      [paymentId, adminUserId, reason],
-    );
+    const updatedPaymentResult =
+      await client.query<PaymentRow>(
+        `
+          UPDATE payments
+          SET
+            status = 'rejected',
+            verified_by = $2,
+            verified_at = NOW(),
+            rejection_reason = $3,
+            updated_at = NOW()
+          WHERE id = $1
+          RETURNING
+            id,
+            entry_id,
+            user_id,
+            amount,
+            payment_method,
+            transaction_reference,
+            sender_name,
+            receipt_image_url,
+            status,
+            verified_by,
+            verified_at,
+            rejection_reason,
+            created_at,
+            updated_at
+        `,
+        [
+          paymentId,
+          adminUserId,
+          reason,
+        ],
+      );
 
     /*
      * Rejected entries become inactive and the number can later
@@ -457,7 +565,8 @@ export async function rejectPayment(
           entryId: payment.entry_id,
           drawId: entry.draw_id,
           number: entry.number,
-          transactionReference: payment.transaction_reference,
+          transactionReference:
+            payment.transaction_reference,
           amount: Number(payment.amount),
           rejectionReason: reason,
         }),
@@ -466,7 +575,9 @@ export async function rejectPayment(
 
     await client.query("COMMIT");
 
-    return mapPayment(updatedPaymentResult.rows[0]);
+    return mapPayment(
+      updatedPaymentResult.rows[0],
+    );
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -475,7 +586,9 @@ export async function rejectPayment(
   }
 }
 
-export async function getPendingPayments(): Promise<Payment[]> {
+export async function getPendingPayments(): Promise<
+  Payment[]
+> {
   if (!pool) {
     throw new Error("DATABASE_URL is not configured");
   }
