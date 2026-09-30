@@ -20,6 +20,8 @@ declare global {
     interface Request {
       user?: User;
       telegramUser?: TelegramUser;
+      telegramAuthDate?: number;
+      telegramQueryId?: string;
     }
   }
 }
@@ -76,6 +78,8 @@ export async function requireTelegramAuth(
 
     req.user = user;
     req.telegramUser = auth.user;
+    req.telegramAuthDate = auth.authDate;
+    req.telegramQueryId = auth.queryId;
 
     next();
   } catch (error) {
