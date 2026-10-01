@@ -5,11 +5,13 @@ import {
 import AdminDashboard from "./AdminDashboard";
 import AdminDrawCreate from "./AdminDrawCreate";
 import AdminDrawManage from "./AdminDrawManage";
+import AdminPaymentSettings from "./AdminPaymentSettings";
 
 type AdminSection =
   | "payments"
   | "create-draw"
-  | "draw-manage";
+  | "draw-manage"
+  | "payment-settings";
 
 export default function AdminHub() {
   const [section, setSection] =
@@ -53,7 +55,7 @@ export default function AdminHub() {
           .admin-hub-tabs {
             display: grid;
             grid-template-columns:
-              repeat(3, minmax(0, 1fr));
+              repeat(4, minmax(0, 1fr));
             gap: 8px;
           }
 
@@ -80,7 +82,7 @@ export default function AdminHub() {
             outline-offset: 2px;
           }
 
-          @media (max-width: 640px) {
+          @media (max-width: 760px) {
             .admin-hub-tabs {
               grid-template-columns:
                 repeat(2, minmax(0, 1fr));
@@ -156,6 +158,20 @@ export default function AdminHub() {
           >
             ዕጣ አስተዳደር
           </button>
+
+          <button
+            type="button"
+            className={
+              section === "payment-settings"
+                ? "admin-hub-tab active"
+                : "admin-hub-tab"
+            }
+            onClick={() =>
+              setSection("payment-settings")
+            }
+          >
+            Telebirr ቁጥር
+          </button>
         </div>
       </nav>
 
@@ -171,8 +187,10 @@ export default function AdminHub() {
             setSection("draw-manage")
           }
         />
-      ) : (
+      ) : section === "draw-manage" ? (
         <AdminDrawManage />
+      ) : (
+        <AdminPaymentSettings />
       )}
     </main>
   );
