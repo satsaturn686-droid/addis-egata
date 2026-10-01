@@ -9,6 +9,7 @@ import {
   getCurrentUser,
   getDraws,
   getMyEntries,
+  getPaymentSettings,
   reserveNumber,
   type Draw,
   type Entry,
@@ -108,8 +109,11 @@ function App() {
   const [user, setUser] =
     useState<TelegramAuthResponse["user"] | null>(null);
 
-  const [draws, setDraws] = useState<Draw[]>([]);
+    const [draws, setDraws] = useState<Draw[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
+
+  const [telebirrNumber, setTelebirrNumber] =
+    useState("");
 
   const [loading, setLoading] = useState(true);
   const [loadingEntries, setLoadingEntries] = useState(false);
@@ -182,7 +186,20 @@ function App() {
 
         setUser(userResponse.user);
         setDraws(drawsResponse.draws);
+                try {
+          const paymentSettingsResponse =
+            await getPaymentSettings(
+              controller.signal,
+            );
 
+          setTelebirrNumber(
+            paymentSettingsResponse.settings
+              .telebirrNumber,
+          );
+        } catch {
+          setTelebirrNumber("");
+        }
+        
         try {
           const entriesResponse =
             await getMyEntries(controller.signal);
@@ -969,8 +986,11 @@ function App() {
                     }}
                   >
                     1. {formatMoney(activeDraw.entryFee)}
-                    በAdmin የተሰጠው የTelebirr
-                    ቁጥር ላይ ይላኩ።
+በዚህ የTelebirr ቁጥር ላይ ይላኩ፦{" "}
+<strong>
+  {telebirrNumber || "የክፍያ ቁጥር አልተዘጋጀም"}
+</strong>
+።
                     <br />
                     2. ከክፍያው በኋላ የTransaction
                     Reference ቁጥሩን ከዚህ በታች
