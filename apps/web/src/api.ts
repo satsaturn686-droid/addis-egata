@@ -139,7 +139,12 @@ export type CreateTelebirrPaymentInput = {
 };
 
 export type ApiRequestOptions = {
-  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  method?:
+    | "GET"
+    | "POST"
+    | "PUT"
+    | "PATCH"
+    | "DELETE";
   body?: unknown;
   signal?: AbortSignal;
 };
@@ -163,8 +168,6 @@ function getTelegramInitData(): string {
   throw new Error(
     "Telegram authentication data is unavailable.",
   );
-}
-  return webApp.initData;
 }
 
 async function request<T>(
