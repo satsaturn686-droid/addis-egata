@@ -69,6 +69,38 @@ export type DrawListResponse = {
   draws: Draw[];
 };
 
+export type EntryStatus =
+  | "reserved"
+  | "pending_payment"
+  | "paid"
+  | "rejected"
+  | "expired";
+
+export type Entry = {
+  id: string;
+  drawId: string;
+  userId: string;
+  number: number;
+  status: EntryStatus;
+  reservedUntil: string | null;
+  paidAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type EntriesResponse = {
+  entries: Entry[];
+};
+
+export type EntryResponse = {
+  entry: Entry;
+};
+
+export type ReserveNumberResponse = {
+  entry: Entry;
+  reservationMinutes: number;
+};
+
 export type ApiRequestOptions = {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
@@ -171,6 +203,62 @@ export async function getDraw(
 
   return request<DrawResponse>(
     `/draws/${encodeURIComponent(drawId)}`,
+    {
+      signal,
+    },
+  );
+}
+
+export async function getMyEntries(
+  signal?: AbortSignal,
+): Promise<EntriesResponse> {
+  return request<EntriesResponse>(
+    "/entries/mine",
+    {
+      signal,
+    },
+  );
+}
+
+export async function reserveNumber(
+  drawId: string,
+  number: number,
+  signal?: AbortSignal,
+): Promise<ReserveNumberResponse> {
+  if (!drawId.trim()) {
+    throw new Error("Draw ID is required.");
+  }
+
+  if (
+    !Number.isInteger(number) ||
+    number < 1
+  ) {
+    throw new Error("A valid number is required.");
+  }
+
+  return request<ReserveNumberResponse>(
+    "/entries/reserve",
+    {
+      method: "POST",
+      body: {
+        drawId,
+        number,
+      },
+      signal,
+    },
+  );
+}
+
+export async function getEntry(
+  entryId: string,
+  signal?: AbortSignal,
+): Promise<EntryResponse> {
+  if (!entryId.trim()) {
+    throw new Error("Entry ID is required.");
+  }
+
+  return request<EntryResponse>(
+    `/entries/${encodeURIComponent(entryId)}`,
     {
       signal,
     },
