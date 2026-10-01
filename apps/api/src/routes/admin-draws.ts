@@ -351,15 +351,14 @@ router.post(
           "PRIZE_RANKS_MUST_BE_SEQUENTIAL",
         ]);
 
-      if (clientErrors.has(message)) {
-        res.status(400).json({
-          error: message,
-          message:
-            "The draw could not be created.",
-        });
-        return;
-      }
-
+      
+if (clientErrors.has(message)) {
+  res.status(400).json({
+    error: message,
+    message,
+  });
+  return;
+}
       console.error(
         "Create admin draw error:",
         error,
