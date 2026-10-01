@@ -6,8 +6,7 @@ services:
     plan: free
 
     buildCommand: npm --prefix apps/api install && npm run build:api
-    preDeployCommand: npm --prefix apps/api run migrate:build
-    startCommand: npm start
+    startCommand: npm --prefix apps/api run migrate:build && npm start
 
     healthCheckPath: /health
 
@@ -33,7 +32,6 @@ services:
   - type: web
     name: addis-egata-web
     runtime: static
-    region: oregon
 
     buildCommand: npm --prefix apps/web install && npm run build:web
     staticPublishPath: apps/web/dist
@@ -46,7 +44,6 @@ services:
     name: addis-egata-deadline-cleanup
     runtime: node
     region: oregon
-    plan: free
 
     schedule: "*/5 * * * *"
 
