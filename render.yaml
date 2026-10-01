@@ -39,20 +39,3 @@ services:
     envVars:
       - key: VITE_API_URL
         value: https://addis-egata-api.onrender.com
-
-  - type: cron
-    name: addis-egata-deadline-cleanup
-    runtime: node
-    region: oregon
-
-    schedule: "*/5 * * * *"
-
-    buildCommand: npm --prefix apps/api install && npm run build:api
-    startCommand: npm --prefix apps/api run cron:expire-draws
-
-    envVars:
-      - key: NODE_ENV
-        value: production
-
-      - key: DATABASE_URL
-        sync: false
