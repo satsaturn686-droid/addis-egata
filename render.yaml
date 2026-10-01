@@ -5,7 +5,8 @@ services:
     region: oregon
     plan: free
 
-    buildCommand: npm run build:api
+    buildCommand: npm --prefix apps/api install && npm run build:api
+    preDeployCommand: npm --prefix apps/api run migrate:build
     startCommand: npm start
 
     healthCheckPath: /health
@@ -33,7 +34,8 @@ services:
     name: addis-egata-web
     runtime: static
     region: oregon
-    buildCommand: npm run build:web
+
+    buildCommand: npm --prefix apps/web install && npm run build:web
     staticPublishPath: apps/web/dist
 
     envVars:
@@ -48,7 +50,7 @@ services:
 
     schedule: "*/5 * * * *"
 
-    buildCommand: npm run build:api
+    buildCommand: npm --prefix apps/api install && npm run build:api
     startCommand: npm --prefix apps/api run cron:expire-draws
 
     envVars:
