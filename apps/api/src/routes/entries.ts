@@ -12,17 +12,11 @@ const router = Router();
 const RESERVATION_MINUTES = 30;
 
 function getNumber(value: unknown): number | null {
-  if (
-    typeof value === "number" &&
-    Number.isInteger(value)
-  ) {
+  if (typeof value === "number" && Number.isInteger(value)) {
     return value;
   }
 
-  if (
-    typeof value === "string" &&
-    value.trim()
-  ) {
+  if (typeof value === "string" && value.trim()) {
     const parsed = Number(value);
 
     if (Number.isInteger(parsed)) {
@@ -46,23 +40,17 @@ router.get(
         return;
       }
 
-      const entries = await getUserEntries(
-        req.user.id,
-      );
+      const entries = await getUserEntries(req.user.id);
 
       res.status(200).json({
         entries,
       });
     } catch (error) {
-      console.error(
-        "Get user entries error:",
-        error,
-      );
+      console.error("Get user entries error:", error);
 
       res.status(500).json({
         error: "ENTRIES_LOAD_FAILED",
-        message:
-          "Your numbers could not be loaded.",
+        message: "Your numbers could not be loaded.",
       });
     }
   },
@@ -86,9 +74,7 @@ router.post(
           ? req.body.drawId.trim()
           : "";
 
-      const number = getNumber(
-        req.body?.number,
-      );
+      const number = getNumber(req.body?.number);
 
       if (!drawId) {
         res.status(400).json({
@@ -101,8 +87,7 @@ router.post(
       if (number === null) {
         res.status(400).json({
           error: "INVALID_NUMBER",
-          message:
-            "A valid number is required.",
+          message: "A valid number is required.",
         });
         return;
       }
@@ -119,8 +104,7 @@ router.post(
 
       res.status(201).json({
         entry,
-        reservationMinutes:
-          RESERVATION_MINUTES,
+        reservationMinutes: RESERVATION_MINUTES,
       });
     } catch (error) {
       const message =
@@ -143,21 +127,16 @@ router.post(
       if (clientErrors.has(message)) {
         res.status(400).json({
           error: message,
-          message:
-            "The number could not be reserved.",
+          message: "The number could not be reserved.",
         });
         return;
       }
 
-      console.error(
-        "Reserve number error:",
-        error,
-      );
+      console.error("Reserve number error:", error);
 
       res.status(500).json({
         error: "ENTRY_RESERVATION_FAILED",
-        message:
-          "The number could not be reserved.",
+        message: "The number could not be reserved.",
       });
     }
   },
@@ -176,39 +155,33 @@ router.get(
         return;
       }
 
-      const entryId =
-        req.params.entryId?.trim();
+      const rawEntryId = req.params.entryId;
+      const entryId = Array.isArray(rawEntryId)
+        ? rawEntryId[0]?.trim() ?? ""
+        : rawEntryId.trim();
 
       if (!entryId) {
         res.status(400).json({
           error: "INVALID_ENTRY_ID",
-          message:
-            "Entry ID is required.",
+          message: "Entry ID is required.",
         });
         return;
       }
 
-      const entry = await getEntryById(
-        entryId,
-      );
+      const entry = await getEntryById(entryId);
 
       if (!entry) {
         res.status(404).json({
           error: "ENTRY_NOT_FOUND",
-          message:
-            "The requested entry does not exist.",
+          message: "The requested entry does not exist.",
         });
         return;
       }
 
-      if (
-        entry.userId !== req.user.id
-      ) {
+      if (entry.userId !== req.user.id) {
         res.status(403).json({
-          error:
-            "ENTRY_ACCESS_DENIED",
-          message:
-            "You cannot access this entry.",
+          error: "ENTRY_ACCESS_DENIED",
+          message: "You cannot access this entry.",
         });
         return;
       }
@@ -217,15 +190,11 @@ router.get(
         entry,
       });
     } catch (error) {
-      console.error(
-        "Get entry error:",
-        error,
-      );
+      console.error("Get entry error:", error);
 
       res.status(500).json({
         error: "ENTRY_LOAD_FAILED",
-        message:
-          "The entry could not be loaded.",
+        message: "The entry could not be loaded.",
       });
     }
   },
