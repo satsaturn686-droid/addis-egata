@@ -61,6 +61,10 @@ export async function requireTelegramAuth(
     const initData = getInitData(req);
 
     if (!initData) {
+      console.error(
+        "Telegram authentication validation failed: TELEGRAM_AUTH_REQUIRED",
+      );
+
       res.status(401).json({
         error: "TELEGRAM_AUTH_REQUIRED",
         message: "Telegram authentication is required.",
@@ -104,6 +108,11 @@ export async function requireTelegramAuth(
     ]);
 
     if (authErrors.has(message)) {
+      console.error(
+        "Telegram authentication validation failed:",
+        message,
+      );
+
       res.status(401).json({
         error: message,
         message: "Telegram authentication failed.",
