@@ -11,6 +11,11 @@ import {
   rejectPayment,
 } from "../services/payment-verification.js";
 
+import {
+  getPaymentSettings,
+  updateTelebirrNumber,
+} from "../services/payment-settings.js";
+
 const router = Router();
 
 /*
@@ -22,6 +27,127 @@ const router = Router();
 router.use(
   requireTelegramAuth,
   requireAdmin,
+);
+
+/*
+ * GET /admin/payments/settings
+ *
+ * Returns the current Telebirr payment settings.
+ */
+router.get(
+  "/settings",
+  async (_req, res) => {
+    try {
+      const settings =
+        await getPaymentSettings();
+
+      res.status(200).json({
+        settings,
+      });
+    } catch (error) {
+      console.error(
+        "Get payment settings error:",
+        error,
+      );
+
+      res.status(500).json({
+        error:
+          "PAYMENT_SETTINGS_LOAD_FAILED",
+        message:
+          "Payment settings could not be loaded.",
+      });
+    }
+  },
+);
+
+/*
+ * POST /admin/payments/settings
+ *
+ * Updates the Telebirr receiving number.
+ */
+router.post(
+  "/settings",
+  async (req, res) => {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          error:
+            "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
+        });
+        return;
+      }
+
+      const telebirrNumber =
+        typeof req.body?.telebirrNumber ===
+        "string"
+          ? req.body.telebirrNumber.trim()
+          : "";
+
+      if (!telebirrNumber) {
+        res.status(400).json({
+          error:
+            "TELEBIRR_NUMBER_REQUIRED",
+          message:
+            "Telebirr number is required.",
+        });
+        return;
+      }
+
+      if (telebirrNumber.length > 100) {
+        res.status(400).json({
+          error:
+            "TELEBIRR_NUMBER_TOO_LONG",
+          message:
+            "Telebirr number is too long.",
+        });
+        return;
+      }
+
+      const settings =
+        await updateTelebirrNumber(
+          telebirrNumber,
+          req.user.id,
+        );
+
+      res.status(200).json({
+        settings,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "PAYMENT_SETTINGS_UPDATE_FAILED";
+
+      const clientErrors = new Set([
+        "INVALID_ADMIN_USER_ID",
+        "TELEBIRR_NUMBER_REQUIRED",
+        "TELEBIRR_NUMBER_TOO_LONG",
+      ]);
+
+      if (clientErrors.has(message)) {
+        res.status(400).json({
+          error: message,
+          message:
+            "The Telebirr number could not be saved.",
+        });
+        return;
+      }
+
+      console.error(
+        "Update payment settings error:",
+        error,
+      );
+
+      res.status(500).json({
+        error:
+          "PAYMENT_SETTINGS_UPDATE_FAILED",
+        message:
+          "The Telebirr number could not be saved.",
+      });
+    }
+  },
 );
 
 /*
