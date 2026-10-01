@@ -1,4 +1,4 @@
-import { Pool } from "pg";
+import { Pool, type QueryResultRow } from "pg";
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -21,7 +21,7 @@ export const pool = databaseUrl
     })
   : null;
 
-export async function query<T = unknown>(
+export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
   values: unknown[] = [],
 ): Promise<T[]> {
