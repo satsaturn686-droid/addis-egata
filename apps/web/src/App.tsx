@@ -620,6 +620,18 @@ function App() {
         >
           👤
         </button>
+        {user?.isAdmin && (
+  <button
+    type="button"
+    className="profile-button"
+    aria-label="Admin"
+    onClick={() => {
+      window.location.href = "/admin.html";
+    }}
+  >
+    🔐
+  </button>
+)}
       </header>
 
       <section className="hero">
