@@ -5,7 +5,7 @@ services:
     region: oregon
     plan: free
 
-    buildCommand: npm --prefix apps/api install && npm run build:api
+    buildCommand: npm --prefix apps/api install --include=dev && npm run build:api
     startCommand: npm --prefix apps/api run migrate:build && npm start
 
     healthCheckPath: /health
