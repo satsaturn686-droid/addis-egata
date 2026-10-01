@@ -2,8 +2,10 @@ import {
   useEffect,
   useMemo,
   useState,
+  type FormEvent,
 } from "react";
 import {
+  createTelebirrPayment,
   getCurrentUser,
   getDraws,
   getMyEntries,
@@ -45,9 +47,7 @@ function formatTime(totalSeconds: number): string {
   const minutes = Math.floor(safeSeconds / 60);
   const seconds = safeSeconds % 60;
 
-  return `${String(minutes).padStart(2, "0")}:${String(
-    seconds,
-  ).padStart(2, "0")}`;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 function getEntryLabel(entry: Entry): string {
@@ -67,6 +67,43 @@ function getEntryLabel(entry: Entry): string {
   }
 }
 
+function getFriendlyPaymentError(error: unknown): string {
+  const message =
+    error instanceof Error ? error.message : "";
+
+  const normalized = message.toUpperCase();
+
+  if (normalized.includes("DUPLICATE_TRANSACTION_REFERENCE")) {
+    return "ይህ የTelebirr transaction reference ከዚህ በፊት ጥቅም ላይ ውሏል።";
+  }
+
+  if (normalized.includes("PAYMENT_ALREADY_PENDING")) {
+    return "የዚህ ቁጥር ክፍያ አስቀድሞ ተልኳል።";
+  }
+
+  if (normalized.includes("RESERVATION_EXPIRED")) {
+    return "የ30 ደቂቃ reservation ጊዜ አልፏል። እባክዎ ሌላ ቁጥር ይምረጡ።";
+  }
+
+  if (normalized.includes("DRAW_DEADLINE_PASSED")) {
+    return "የዕጣው deadline አልፏል።";
+  }
+
+  if (normalized.includes("ENTRY_NOT_PAYABLE")) {
+    return "ይህ ቁጥር ለክፍያ አይገኝም።";
+  }
+
+  if (normalized.includes("INVALID_TRANSACTION_REFERENCE")) {
+    return "ትክክለኛ የTelebirr transaction reference ያስገቡ።";
+  }
+
+  if (normalized.includes("TRANSACTION_REFERENCE_TOO_LONG")) {
+    return "የtransaction reference መረጃው በጣም ረጅም ነው።";
+  }
+
+  return message || "ክፍያውን ማስገባት አልተቻለም።";
+}
+
 function App() {
   const [user, setUser] =
     useState<TelegramAuthResponse["user"] | null>(null);
@@ -76,14 +113,32 @@ function App() {
 
   const [loading, setLoading] = useState(true);
   const [loadingEntries, setLoadingEntries] = useState(false);
+
   const [reservingNumber, setReservingNumber] =
     useState<number | null>(null);
+
+  const [paymentSubmitting, setPaymentSubmitting] =
+    useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [reservationError, setReservationError] =
     useState<string | null>(null);
 
-  const [telegramReady, setTelegramReady] = useState(false);
+  const [paymentError, setPaymentError] =
+    useState<string | null>(null);
+
+  const [paymentSuccess, setPaymentSuccess] =
+    useState(false);
+
+  const [paymentReference, setPaymentReference] =
+    useState("");
+
+  const [senderName, setSenderName] =
+    useState("");
+
+  const [telegramReady, setTelegramReady] =
+    useState(false);
+
   const [selectedEntry, setSelectedEntry] =
     useState<Entry | null>(null);
 
@@ -144,12 +199,11 @@ function App() {
           return;
         }
 
-        const message =
+        setError(
           loadError instanceof Error
             ? loadError.message
-            : "መረጃውን መጫን አልተቻለም።";
-
-        setError(message);
+            : "መረጃውን መጫን አልተቻለም።",
+        );
       } finally {
         setLoading(false);
       }
@@ -237,7 +291,8 @@ function App() {
           Math.ceil(
             (new Date(
               selectedEntry.reservedUntil,
-            ).getTime() - now) /
+            ).getTime() -
+              now) /
               1000,
           ),
         )
@@ -246,6 +301,18 @@ function App() {
   const selectedReservationExpired =
     selectedEntry?.status === "reserved" &&
     selectedSecondsRemaining <= 0;
+
+  function selectEntry(entry: Entry) {
+    setSelectedEntry(entry);
+    setReservationError(null);
+    setPaymentError(null);
+    setPaymentSuccess(false);
+
+    if (entry.status !== "reserved") {
+      setPaymentReference("");
+      setSenderName("");
+    }
+  }
 
   async function handleReserveNumber(number: number) {
     if (!activeDraw) {
@@ -256,8 +323,7 @@ function App() {
       myEntryByNumber.get(number);
 
     if (existingEntry) {
-      setSelectedEntry(existingEntry);
-      setReservationError(null);
+      selectEntry(existingEntry);
       return;
     }
 
@@ -267,6 +333,8 @@ function App() {
 
     setReservingNumber(number);
     setReservationError(null);
+    setPaymentError(null);
+    setPaymentSuccess(false);
 
     try {
       const response = await reserveNumber(
@@ -281,16 +349,98 @@ function App() {
         response.entry,
       ]);
 
-      setSelectedEntry(response.entry);
+      selectEntry(response.entry);
     } catch (reserveError) {
-      const message =
+      setReservationError(
         reserveError instanceof Error
           ? reserveError.message
-          : "ይህን ቁጥር መያዝ አልተቻለም።";
-
-      setReservationError(message);
+          : "ይህን ቁጥር መያዝ አልተቻለም።",
+      );
     } finally {
       setReservingNumber(null);
+    }
+  }
+
+  async function handleSubmitPayment(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    if (!selectedEntry) {
+      return;
+    }
+
+    if (selectedEntry.status !== "reserved") {
+      return;
+    }
+
+    if (selectedReservationExpired) {
+      setPaymentError(
+        "የ30 ደቂቃ reservation ጊዜ አልፏል።",
+      );
+      return;
+    }
+
+    const reference = paymentReference.trim();
+    const sender = senderName.trim();
+
+    if (!reference) {
+      setPaymentError(
+        "የTelebirr transaction reference ያስገቡ።",
+      );
+      return;
+    }
+
+    if (reference.length > 200) {
+      setPaymentError(
+        "የtransaction reference መረጃው በጣም ረጅም ነው።",
+      );
+      return;
+    }
+
+    if (sender.length > 200) {
+      setPaymentError(
+        "የላኪው ስም በጣም ረጅም ነው።",
+      );
+      return;
+    }
+
+    setPaymentSubmitting(true);
+    setPaymentError(null);
+    setPaymentSuccess(false);
+
+    try {
+      await createTelebirrPayment({
+        entryId: selectedEntry.id,
+        transactionReference: reference,
+        senderName: sender || undefined,
+      });
+
+      const updatedEntry: Entry = {
+        ...selectedEntry,
+        status: "pending_payment",
+      };
+
+      setEntries((current) =>
+        current.map((entry) =>
+          entry.id === selectedEntry.id
+            ? updatedEntry
+            : entry,
+        ),
+      );
+
+      setSelectedEntry(updatedEntry);
+      setPaymentReference("");
+      setSenderName("");
+      setPaymentSuccess(true);
+    } catch (paymentSubmitError) {
+      setPaymentError(
+        getFriendlyPaymentError(
+          paymentSubmitError,
+        ),
+      );
+    } finally {
+      setPaymentSubmitting(false);
     }
   }
 
@@ -313,7 +463,7 @@ function App() {
         }
       }
     } catch {
-      // Keep the current UI state if refresh fails.
+      // Keep current state if refresh fails.
     } finally {
       setLoadingEntries(false);
     }
@@ -336,9 +486,7 @@ function App() {
             በመጫን ላይ
           </span>
 
-          <h1>
-            እንኳን ደህና መጡ
-          </h1>
+          <h1>እንኳን ደህና መጡ</h1>
 
           <p className="hero-description">
             የዕጣ መረጃዎን በመጫን ላይ...
@@ -346,18 +494,11 @@ function App() {
         </section>
 
         <section className="draw-card">
-          <div className="prize-placeholder">
-            🎁
-          </div>
+          <div className="prize-placeholder">🎁</div>
 
           <div className="draw-info">
-            <p className="eyebrow">
-              ADDIS ዕጣ
-            </p>
-
-            <h2>
-              እባክዎ ትንሽ ይጠብቁ
-            </h2>
+            <p className="eyebrow">ADDIS ዕጣ</p>
+            <h2>እባክዎ ትንሽ ይጠብቁ</h2>
           </div>
         </section>
       </main>
@@ -381,9 +522,7 @@ function App() {
             ማስጠንቀቂያ
           </span>
 
-          <h1>
-            መረጃው አልተገኘም
-          </h1>
+          <h1>መረጃው አልተገኘም</h1>
 
           <p className="hero-description">
             {error}
@@ -392,13 +531,9 @@ function App() {
 
         <section className="draw-card">
           <div className="draw-info">
-            <p className="eyebrow">
-              እባክዎ
-            </p>
+            <p className="eyebrow">እባክዎ</p>
 
-            <h2>
-              App ውስጥ እንደገና ይክፈቱ
-            </h2>
+            <h2>App ውስጥ እንደገና ይክፈቱ</h2>
 
             <p className="hero-description">
               Telegram ላይ ወደ Addis ዕጣ
@@ -436,9 +571,7 @@ function App() {
             {telegramReady ? "ዝግጁ" : "Telegram"}
           </span>
 
-          <h1>
-            ሰላም {displayName} 👋
-          </h1>
+          <h1>ሰላም {displayName} 👋</h1>
 
           <p className="hero-description">
             በአሁኑ ጊዜ ክፍት የሆነ ዕጣ የለም።
@@ -448,18 +581,11 @@ function App() {
         </section>
 
         <section className="draw-card">
-          <div className="prize-placeholder">
-            🎟️
-          </div>
+          <div className="prize-placeholder">🎟️</div>
 
           <div className="draw-info">
-            <p className="eyebrow">
-              ADDIS ዕጣ
-            </p>
-
-            <h2>
-              ቀጣዩን ዕጣ ይጠብቁ
-            </h2>
+            <p className="eyebrow">ADDIS ዕጣ</p>
+            <h2>ቀጣዩን ዕጣ ይጠብቁ</h2>
           </div>
         </section>
       </main>
@@ -471,7 +597,6 @@ function App() {
       <header className="topbar">
         <div>
           <p className="brand">ADDIS ዕጣ</p>
-
           <p className="tagline">
             እድልህን ዲጂታል አድርግ
           </p>
@@ -493,14 +618,11 @@ function App() {
             : "ክፍት"}
         </span>
 
-        <h1>
-          {activeDraw.name}
-        </h1>
+        <h1>{activeDraw.name}</h1>
 
         <p className="hero-description">
           ሰላም {displayName}። ቁጥርህን ምረጥ፣
-          የTelebirr ክፍያህን አረጋግጥ፣
-          ዕጣውን ተጠባበቅ።
+          ክፍያህን አስገባ፣ ዕጣውን ተጠባበቅ።
         </p>
       </section>
 
@@ -525,13 +647,9 @@ function App() {
         )}
 
         <div className="draw-info">
-          <p className="eyebrow">
-            የሽልማት
-          </p>
+          <p className="eyebrow">የሽልማት</p>
 
-          <h2>
-            {activeDraw.prizeName}
-          </h2>
+          <h2>{activeDraw.prizeName}</h2>
 
           {activeDraw.prizeDescription && (
             <p className="hero-description">
@@ -541,23 +659,15 @@ function App() {
 
           <div className="stats">
             <div>
-              <span>
-                የመግቢያ ክፍያ
-              </span>
-
+              <span>የመግቢያ ክፍያ</span>
               <strong>
                 {formatMoney(activeDraw.entryFee)}
               </strong>
             </div>
 
             <div>
-              <span>
-                አሸናፊዎች
-              </span>
-
-              <strong>
-                {activeDraw.winnerCount}
-              </strong>
+              <span>አሸናፊዎች</span>
+              <strong>{activeDraw.winnerCount}</strong>
             </div>
           </div>
         </div>
@@ -569,9 +679,7 @@ function App() {
               {activeDraw.totalNumbers} ቁጥሮች
             </span>
 
-            <strong>
-              {remaining} ቀሪ
-            </strong>
+            <strong>{remaining} ቀሪ</strong>
           </div>
 
           <div
@@ -590,13 +698,9 @@ function App() {
 
       <section className="draw-card">
         <div className="draw-info">
-          <p className="eyebrow">
-            ቁጥር ምርጫ
-          </p>
+          <p className="eyebrow">ቁጥር ምርጫ</p>
 
-          <h2>
-            ቁጥርህን ምረጥ
-          </h2>
+          <h2>ቁጥርህን ምረጥ</h2>
 
           <p className="hero-description">
             ቁጥር ከመረጥክ በኋላ ለ30 ደቂቃ
@@ -643,8 +747,6 @@ function App() {
             const entry =
               myEntryByNumber.get(number);
 
-            const isMine = Boolean(entry);
-
             const isSelected =
               selectedEntry?.id === entry?.id;
 
@@ -657,32 +759,29 @@ function App() {
             let border =
               "1px solid rgba(255,255,255,0.10)";
 
-            let color = "inherit";
-
             if (entry?.status === "paid") {
               background =
-                "rgba(52, 211, 153, 0.12)";
+                "rgba(52,211,153,0.12)";
               border =
-                "1px solid rgba(52, 211, 153, 0.35)";
+                "1px solid rgba(52,211,153,0.35)";
             } else if (
               entry?.status === "pending_payment"
             ) {
               background =
-                "rgba(251, 191, 36, 0.12)";
+                "rgba(251,191,36,0.12)";
               border =
-                "1px solid rgba(251, 191, 36, 0.35)";
+                "1px solid rgba(251,191,36,0.35)";
             } else if (
               entry?.status === "reserved"
             ) {
               background =
-                "rgba(96, 165, 250, 0.12)";
+                "rgba(96,165,250,0.12)";
               border =
-                "1px solid rgba(96, 165, 250, 0.35)";
+                "1px solid rgba(96,165,250,0.35)";
             }
 
             if (isSelected) {
-              border =
-                "2px solid currentColor";
+              border = "2px solid currentColor";
             }
 
             return (
@@ -697,9 +796,9 @@ function App() {
                   void handleReserveNumber(number)
                 }
                 aria-label={
-                  isMine
+                  entry
                     ? `ቁጥር ${number} ${getEntryLabel(
-                        entry!,
+                        entry,
                       )}`
                     : `ቁጥር ${number}`
                 }
@@ -708,7 +807,6 @@ function App() {
                   borderRadius: "12px",
                   border,
                   background,
-                  color,
                   fontSize: "16px",
                   fontWeight: 700,
                   cursor:
@@ -716,13 +814,9 @@ function App() {
                       ? "not-allowed"
                       : "pointer",
                   opacity: isReserving ? 0.55 : 1,
-                  transition:
-                    "transform 0.15s ease, opacity 0.15s ease",
                 }}
               >
-                {isReserving
-                  ? "..."
-                  : number}
+                {isReserving ? "..." : number}
               </button>
             );
           })}
@@ -738,30 +832,18 @@ function App() {
             opacity: 0.78,
           }}
         >
-          <span>
-            🟦 予約済み
-          </span>
-
-          <span>
-            🟨 支払い確認待ち
-          </span>
-
-          <span>
-            🟩 支払い済み
-          </span>
+          <span>🟦 የእኔ ተይዟል</span>
+          <span>🟨 ክፍያ በመጠባበቅ ላይ</span>
+          <span>🟩 ክፍያ ተረጋግጧል</span>
         </div>
       </section>
 
       {selectedEntry && (
         <section className="draw-card">
           <div className="draw-info">
-            <p className="eyebrow">
-              የእኔ ቁጥር
-            </p>
+            <p className="eyebrow">የእኔ ቁጥር</p>
 
-            <h2>
-              #{selectedEntry.number}
-            </h2>
+            <h2>#{selectedEntry.number}</h2>
 
             <p className="hero-description">
               {getEntryLabel(selectedEntry)}
@@ -812,6 +894,206 @@ function App() {
               </div>
             )}
 
+          {selectedEntry.status === "reserved" &&
+            !selectedReservationExpired && (
+              <form
+                onSubmit={handleSubmitPayment}
+                style={{
+                  marginTop: "16px",
+                  display: "grid",
+                  gap: "12px",
+                }}
+              >
+                <div
+                  style={{
+                    padding: "14px",
+                    borderRadius: "14px",
+                    background:
+                      "rgba(255,255,255,0.04)",
+                    border:
+                      "1px solid rgba(255,255,255,0.10)",
+                  }}
+                >
+                  <strong>
+                    የክፍያ መመሪያ
+                  </strong>
+
+                  <p
+                    className="hero-description"
+                    style={{
+                      marginBottom: 0,
+                      marginTop: "8px",
+                    }}
+                  >
+                    1. {formatMoney(activeDraw.entryFee)}
+                    በAdmin የተሰጠው የTelebirr
+                    ቁጥር ላይ ይላኩ።
+                    <br />
+                    2. ከክፍያው በኋላ የTransaction
+                    Reference ቁጥሩን ከዚህ በታች
+                    ያስገቡ።
+                    <br />
+                    3. Admin ክፍያውን ካረጋገጠ
+                    ቁጥርዎ ይቆለፋል።
+                  </p>
+                </div>
+
+                <label
+                  style={{
+                    display: "grid",
+                    gap: "7px",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: "13px",
+                      fontWeight: 700,
+                    }}
+                  >
+                    Telebirr Transaction Reference *
+                  </span>
+
+                  <input
+                    type="text"
+                    value={paymentReference}
+                    onChange={(event) =>
+                      setPaymentReference(
+                        event.target.value,
+                      )
+                    }
+                    placeholder="ለምሳሌ TXN123456"
+                    maxLength={200}
+                    autoComplete="off"
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      minHeight: "48px",
+                      padding: "12px",
+                      borderRadius: "12px",
+                      border:
+                        "1px solid rgba(255,255,255,0.14)",
+                      background:
+                        "rgba(255,255,255,0.05)",
+                      color: "inherit",
+                      fontSize: "16px",
+                    }}
+                  />
+                </label>
+
+                <label
+                  style={{
+                    display: "grid",
+                    gap: "7px",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: "13px",
+                      fontWeight: 700,
+                    }}
+                  >
+                    የላኪው ስም
+                    <span
+                      style={{
+                        opacity: 0.55,
+                        fontWeight: 400,
+                      }}
+                    >
+                      {" "}
+                      (አማራጭ)
+                    </span>
+                  </span>
+
+                  <input
+                    type="text"
+                    value={senderName}
+                    onChange={(event) =>
+                      setSenderName(
+                        event.target.value,
+                      )
+                    }
+                    placeholder="የTelebirr አካውንት ስም"
+                    maxLength={200}
+                    autoComplete="name"
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      minHeight: "48px",
+                      padding: "12px",
+                      borderRadius: "12px",
+                      border:
+                        "1px solid rgba(255,255,255,0.14)",
+                      background:
+                        "rgba(255,255,255,0.05)",
+                      color: "inherit",
+                      fontSize: "16px",
+                    }}
+                  />
+                </label>
+
+                {paymentError && (
+                  <div
+                    role="alert"
+                    style={{
+                      padding: "12px",
+                      borderRadius: "12px",
+                      background:
+                        "rgba(255,80,80,0.10)",
+                      border:
+                        "1px solid rgba(255,80,80,0.25)",
+                      color: "#ffb4b4",
+                      fontSize: "14px",
+                    }}
+                  >
+                    {paymentError}
+                  </div>
+                )}
+
+                <button
+                  className="primary-button"
+                  type="submit"
+                  disabled={paymentSubmitting}
+                >
+                  {paymentSubmitting
+                    ? "ክፍያውን በማስገባት ላይ..."
+                    : `${formatMoney(
+                        activeDraw.entryFee,
+                      )} ክፍያ አስገባ`}
+                </button>
+              </form>
+            )}
+
+          {paymentSuccess && (
+            <div
+              role="status"
+              style={{
+                marginTop: "14px",
+                padding: "14px",
+                borderRadius: "14px",
+                background:
+                  "rgba(52,211,153,0.10)",
+                border:
+                  "1px solid rgba(52,211,153,0.25)",
+              }}
+            >
+              <strong>
+                ✓ ክፍያ ተልኳል
+              </strong>
+
+              <p
+                className="hero-description"
+                style={{
+                  marginBottom: 0,
+                  marginTop: "6px",
+                }}
+              >
+                የክፍያ መረጃው ተመዝግቧል።
+                Admin ክፍያውን እስኪያረጋግጥ
+                ድረስ ቁጥርዎ በመጠባበቅ ላይ ነው።
+              </p>
+            </div>
+          )}
+
           {selectedEntry.status ===
             "pending_payment" && (
             <div
@@ -826,13 +1108,14 @@ function App() {
               }}
             >
               <strong>
-                ክፍያ በመጠባበቅ ላይ
+                ⏳ ክፍያ በመጠባበቅ ላይ
               </strong>
 
               <p
                 className="hero-description"
                 style={{
                   marginBottom: 0,
+                  marginTop: "6px",
                 }}
               >
                 ክፍያህ ተልኳል። Admin
@@ -862,58 +1145,56 @@ function App() {
                 className="hero-description"
                 style={{
                   marginBottom: 0,
+                  marginTop: "6px",
                 }}
               >
-                ይህ ቁጥር ለዕጣው
-                ተመዝግቧል።
+                ይህ ቁጥር ለዕጣው ተመዝግቧል።
               </p>
             </div>
           )}
 
-          <button
-            className="primary-button"
-            type="button"
-            disabled={
-              selectedEntry.status !== "reserved" ||
-              selectedReservationExpired
-            }
-            onClick={() => {
-              alert(
-                "የTelebirr ክፍያ ማስገቢያ በቀጣዩ ደረጃ ይጨመራል።",
-              );
-            }}
-            style={{
-              marginTop: "14px",
-            }}
-          >
-            {selectedEntry.status === "paid"
-              ? "ክፍያ ተጠናቋል"
-              : selectedEntry.status ===
-                  "pending_payment"
-                ? "ክፍያ በማረጋገጥ ላይ"
-                : selectedReservationExpired
-                  ? "Reservation ጊዜው አልፏል"
-                  : `የ${formatMoney(
-                      activeDraw.entryFee,
-                    )} ክፍያ አስገባ`}
-          </button>
+          {selectedEntry.status === "reserved" &&
+            selectedReservationExpired && (
+              <div
+                style={{
+                  marginTop: "14px",
+                  padding: "14px",
+                  borderRadius: "14px",
+                  background:
+                    "rgba(255,80,80,0.10)",
+                  border:
+                    "1px solid rgba(255,80,80,0.25)",
+                }}
+              >
+                <strong>
+                  የReservation ጊዜ አልፏል
+                </strong>
+
+                <p
+                  className="hero-description"
+                  style={{
+                    marginBottom: 0,
+                    marginTop: "6px",
+                  }}
+                >
+                  ይህን ቁጥር ለክፍያ መጠቀም
+                  አይችሉም። እባክዎ ሌላ ቁጥር
+                  ይምረጡ።
+                </p>
+              </div>
+            )}
         </section>
       )}
 
       <section className="draw-card">
         <div className="draw-info">
-          <p className="eyebrow">
-            የእኔ ቁጥሮች
-          </p>
+          <p className="eyebrow">የእኔ ቁጥሮች</p>
 
-          <h2>
-            {myActiveEntries.length} ቁጥር
-          </h2>
+          <h2>{myActiveEntries.length} ቁጥር</h2>
 
           {myActiveEntries.length === 0 ? (
             <p className="hero-description">
-              እስካሁን ምንም ቁጥር
-              አልመረጥክም።
+              እስካሁን ምንም ቁጥር አልመረጥክም።
             </p>
           ) : (
             <div
@@ -929,7 +1210,7 @@ function App() {
                   key={entry.id}
                   type="button"
                   onClick={() =>
-                    setSelectedEntry(entry)
+                    selectEntry(entry)
                   }
                   style={{
                     padding: "8px 12px",
@@ -971,23 +1252,17 @@ function App() {
       <section className="quick-links">
         <button type="button">
           <span>🔢</span>
-          <small>
-            የእኔ ቁጥሮች
-          </small>
+          <small>የእኔ ቁጥሮች</small>
         </button>
 
         <button type="button">
           <span>🏆</span>
-          <small>
-            አሸናፊዎች
-          </small>
+          <small>አሸናፊዎች</small>
         </button>
 
         <button type="button">
           <span>ℹ️</span>
-          <small>
-            እንዴት ይሰራል?
-          </small>
+          <small>እንዴት ይሰራል?</small>
         </button>
       </section>
 
