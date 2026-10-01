@@ -130,8 +130,13 @@ async function validateDrawReady(
     );
   }
 
+  const entryFee = Number(
+    draw.entry_fee,
+  );
+
   if (
-    draw.entry_fee <= 0
+    !Number.isFinite(entryFee) ||
+    entryFee <= 0
   ) {
     throw new Error(
       "INVALID_ENTRY_FEE",
