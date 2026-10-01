@@ -10,6 +10,7 @@ import paymentsRouter from "./routes/payments.js";
 import resultsRouter from "./routes/results.js";
 import adminPaymentsRouter from "./routes/admin-payments.js";
 import adminDrawsRouter from "./routes/admin-draws.js";
+import adminDrawListRouter from "./routes/admin-draw-list.js";
 import adminDrawExecutionRouter from "./routes/admin-draw-execution.js";
 
 const app = express();
@@ -106,6 +107,20 @@ app.use(
 app.use(
   "/admin/draws",
   adminDrawsRouter,
+);
+
+/*
+ * Admin draw list
+ *
+ * GET /admin/draw-list
+ *
+ * Returns all draws for administrators,
+ * including draft, open, full, closed,
+ * drawing, completed, and cancelled draws.
+ */
+app.use(
+  "/admin/draw-list",
+  adminDrawListRouter,
 );
 
 /*
