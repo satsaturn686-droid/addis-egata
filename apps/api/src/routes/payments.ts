@@ -22,23 +22,17 @@ router.get(
         return;
       }
 
-      const payments = await getUserPayments(
-        req.user.id,
-      );
+      const payments = await getUserPayments(req.user.id);
 
       res.status(200).json({
         payments,
       });
     } catch (error) {
-      console.error(
-        "Get user payments error:",
-        error,
-      );
+      console.error("Get user payments error:", error);
 
       res.status(500).json({
         error: "PAYMENTS_LOAD_FAILED",
-        message:
-          "Your payments could not be loaded.",
+        message: "Your payments could not be loaded.",
       });
     }
   },
@@ -63,8 +57,7 @@ router.post(
           : "";
 
       const transactionReference =
-        typeof req.body?.transactionReference ===
-        "string"
+        typeof req.body?.transactionReference === "string"
           ? req.body.transactionReference.trim()
           : "";
 
@@ -74,8 +67,7 @@ router.post(
           : undefined;
 
       const receiptImageUrl =
-        typeof req.body?.receiptImageUrl ===
-        "string"
+        typeof req.body?.receiptImageUrl === "string"
           ? req.body.receiptImageUrl.trim()
           : undefined;
 
@@ -89,22 +81,19 @@ router.post(
 
       if (!transactionReference) {
         res.status(400).json({
-          error:
-            "INVALID_TRANSACTION_REFERENCE",
-          message:
-            "Telebirr transaction reference is required.",
+          error: "INVALID_TRANSACTION_REFERENCE",
+          message: "Telebirr transaction reference is required.",
         });
         return;
       }
 
-      const payment =
-        await createTelebirrPayment(
-          entryId,
-          req.user.id,
-          transactionReference,
-          senderName,
-          receiptImageUrl,
-        );
+      const payment = await createTelebirrPayment(
+        entryId,
+        req.user.id,
+        transactionReference,
+        senderName,
+        receiptImageUrl,
+      );
 
       res.status(201).json({
         payment,
@@ -137,21 +126,16 @@ router.post(
       if (clientErrors.has(message)) {
         res.status(400).json({
           error: message,
-          message:
-            "The Telebirr payment could not be submitted.",
+          message: "The Telebirr payment could not be submitted.",
         });
         return;
       }
 
-      console.error(
-        "Create Telebirr payment error:",
-        error,
-      );
+      console.error("Create Telebirr payment error:", error);
 
       res.status(500).json({
         error: "PAYMENT_CREATION_FAILED",
-        message:
-          "The Telebirr payment could not be submitted.",
+        message: "The Telebirr payment could not be submitted.",
       });
     }
   },
@@ -170,37 +154,33 @@ router.get(
         return;
       }
 
-      const paymentId =
-        req.params.paymentId?.trim();
+      const rawPaymentId = req.params.paymentId;
+      const paymentId = Array.isArray(rawPaymentId)
+        ? rawPaymentId[0]?.trim() ?? ""
+        : rawPaymentId.trim();
 
       if (!paymentId) {
         res.status(400).json({
           error: "INVALID_PAYMENT_ID",
-          message:
-            "Payment ID is required.",
+          message: "Payment ID is required.",
         });
         return;
       }
 
-      const payment =
-        await getPaymentById(paymentId);
+      const payment = await getPaymentById(paymentId);
 
       if (!payment) {
         res.status(404).json({
           error: "PAYMENT_NOT_FOUND",
-          message:
-            "The requested payment does not exist.",
+          message: "The requested payment does not exist.",
         });
         return;
       }
 
-      if (
-        payment.userId !== req.user.id
-      ) {
+      if (payment.userId !== req.user.id) {
         res.status(403).json({
           error: "PAYMENT_ACCESS_DENIED",
-          message:
-            "You cannot access this payment.",
+          message: "You cannot access this payment.",
         });
         return;
       }
@@ -209,15 +189,11 @@ router.get(
         payment,
       });
     } catch (error) {
-      console.error(
-        "Get payment error:",
-        error,
-      );
+      console.error("Get payment error:", error);
 
       res.status(500).json({
         error: "PAYMENT_LOAD_FAILED",
-        message:
-          "The payment could not be loaded.",
+        message: "The payment could not be loaded.",
       });
     }
   },
