@@ -11,6 +11,30 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS payment_settings (
+  id INTEGER PRIMARY KEY DEFAULT 1,
+
+  telebirr_number TEXT NOT NULL DEFAULT '',
+
+  updated_by UUID REFERENCES users(id),
+
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT payment_settings_single_row
+    CHECK (id = 1)
+);
+
+INSERT INTO payment_settings (
+  id,
+  telebirr_number
+)
+VALUES (
+  1,
+  ''
+)
+ON CONFLICT (id) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS draws (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
