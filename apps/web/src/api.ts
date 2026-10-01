@@ -147,12 +147,23 @@ export type ApiRequestOptions = {
 function getTelegramInitData(): string {
   const webApp = window.Telegram?.WebApp;
 
-  if (!webApp?.initData) {
-    throw new Error(
-      "Telegram authentication data is unavailable.",
-    );
+  if (webApp?.initData) {
+    return webApp.initData;
   }
 
+  const storedInitData =
+    sessionStorage.getItem(
+      "addis-egata-telegram-init-data",
+    );
+
+  if (storedInitData) {
+    return storedInitData;
+  }
+
+  throw new Error(
+    "Telegram authentication data is unavailable.",
+  );
+}
   return webApp.initData;
 }
 
