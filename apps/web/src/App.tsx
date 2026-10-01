@@ -636,8 +636,18 @@ function App() {
     className="profile-button"
     aria-label="Admin"
     onClick={() => {
-      window.location.href = "/admin.html";
-    }}
+  const initData =
+    window.Telegram?.WebApp?.initData;
+
+  if (initData) {
+    sessionStorage.setItem(
+      "addis-egata-telegram-init-data",
+      initData,
+    );
+  }
+
+  window.location.href = "/admin.html";
+}}
   >
     🔐
   </button>
