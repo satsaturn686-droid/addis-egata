@@ -14,13 +14,22 @@ const API_BASE_URL =
 function getTelegramInitData(): string {
   const webApp = window.Telegram?.WebApp;
 
-  if (!webApp?.initData) {
-    throw new Error(
-      "Telegram authentication data is unavailable.",
-    );
+  if (webApp?.initData) {
+    return webApp.initData;
   }
 
-  return webApp.initData;
+  const storedInitData =
+    sessionStorage.getItem(
+      "addis-egata-telegram-init-data",
+    );
+
+  if (storedInitData) {
+    return storedInitData;
+  }
+
+  throw new Error(
+    "Telegram authentication data is unavailable.",
+  );
 }
 
 async function adminRequest<T>(
@@ -86,108 +95,4 @@ async function adminRequest<T>(
 export async function getPendingPayments(
   signal?: AbortSignal,
 ): Promise<PaymentsResponse> {
-  return adminRequest<PaymentsResponse>(
-    "/admin/payments/pending",
-    {
-      signal,
-    },
-  );
-}
-
-/**
- * Approve a pending Telebirr payment.
- */
-export async function approvePayment(
-  paymentId: string,
-  signal?: AbortSignal,
-): Promise<PaymentResponse> {
-  const normalizedPaymentId =
-    paymentId.trim();
-
-  if (!normalizedPaymentId) {
-    throw new Error(
-      "Payment ID is required.",
-    );
-  }
-
-  return adminRequest<PaymentResponse>(
-    `/admin/payments/${encodeURIComponent(
-      normalizedPaymentId,
-    )}/approve`,
-    {
-      method: "POST",
-      signal,
-    },
-  );
-}
-
-/**
- * Reject a pending Telebirr payment.
- *
- * The backend requires a rejection reason.
- */
-export async function rejectPayment(
-  paymentId: string,
-  rejectionReason: string,
-  signal?: AbortSignal,
-): Promise<PaymentResponse> {
-  const normalizedPaymentId =
-    paymentId.trim();
-
-  const normalizedReason =
-    rejectionReason.trim();
-
-  if (!normalizedPaymentId) {
-    throw new Error(
-      "Payment ID is required.",
-    );
-  }
-
-  if (!normalizedReason) {
-    throw new Error(
-      "Rejection reason is required.",
-    );
-  }
-
-  return adminRequest<PaymentResponse>(
-    `/admin/payments/${encodeURIComponent(
-      normalizedPaymentId,
-    )}/reject`,
-    {
-      method: "POST",
-      body: {
-        rejectionReason:
-          normalizedReason,
-      },
-      signal,
-    },
-  );
-}
-
-/**
- * Type guard for a payment object.
- */
-export function isPayment(
-  value: unknown,
-): value is Payment {
-  if (
-    typeof value !== "object" ||
-    value === null
-  ) {
-    return false;
-  }
-
-  const payment =
-    value as Record<string, unknown>;
-
-  return (
-    typeof payment.id === "string" &&
-    typeof payment.entryId === "string" &&
-    typeof payment.userId === "string" &&
-    typeof payment.amount === "number" &&
-    payment.paymentMethod === "telebirr" &&
-    typeof payment.transactionReference ===
-      "string" &&
-    typeof payment.status === "string"
-  );
-}
+ 
