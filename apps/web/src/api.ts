@@ -101,6 +101,43 @@ export type ReserveNumberResponse = {
   reservationMinutes: number;
 };
 
+export type PaymentStatus =
+  | "pending"
+  | "approved"
+  | "rejected";
+
+export type Payment = {
+  id: string;
+  entryId: string;
+  userId: string;
+  amount: number;
+  paymentMethod: "telebirr";
+  transactionReference: string;
+  senderName: string | null;
+  receiptImageUrl: string | null;
+  status: PaymentStatus;
+  verifiedBy: string | null;
+  verifiedAt: string | null;
+  rejectionReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PaymentsResponse = {
+  payments: Payment[];
+};
+
+export type PaymentResponse = {
+  payment: Payment;
+};
+
+export type CreateTelebirrPaymentInput = {
+  entryId: string;
+  transactionReference: string;
+  senderName?: string;
+  receiptImageUrl?: string;
+};
+
 export type ApiRequestOptions = {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
@@ -259,6 +296,98 @@ export async function getEntry(
 
   return request<EntryResponse>(
     `/entries/${encodeURIComponent(entryId)}`,
+    {
+      signal,
+    },
+  );
+}
+
+export async function createTelebirrPayment(
+  input: CreateTelebirrPaymentInput,
+  signal?: AbortSignal,
+): Promise<PaymentResponse> {
+  const entryId = input.entryId.trim();
+  const transactionReference =
+    input.transactionReference.trim();
+  const senderName =
+    input.senderName?.trim() || undefined;
+  const receiptImageUrl =
+    input.receiptImageUrl?.trim() || undefined;
+
+  if (!entryId) {
+    throw new Error("Entry ID is required.");
+  }
+
+  if (!transactionReference) {
+    throw new Error(
+      "Telebirr transaction reference is required.",
+    );
+  }
+
+  if (transactionReference.length > 200) {
+    throw new Error(
+      "Transaction reference is too long.",
+    );
+  }
+
+  if (
+    senderName &&
+    senderName.length > 200
+  ) {
+    throw new Error(
+      "Sender name is too long.",
+    );
+  }
+
+  if (
+    receiptImageUrl &&
+    receiptImageUrl.length > 2000
+  ) {
+    throw new Error(
+      "Receipt image URL is too long.",
+    );
+  }
+
+  return request<PaymentResponse>(
+    "/payments/telebirr",
+    {
+      method: "POST",
+      body: {
+        entryId,
+        transactionReference,
+        ...(senderName
+          ? { senderName }
+          : {}),
+        ...(receiptImageUrl
+          ? { receiptImageUrl }
+          : {}),
+      },
+      signal,
+    },
+  );
+}
+
+export async function getMyPayments(
+  signal?: AbortSignal,
+): Promise<PaymentsResponse> {
+  return request<PaymentsResponse>(
+    "/payments/mine",
+    {
+      signal,
+    },
+  );
+}
+
+export async function getPayment(
+  paymentId: string,
+  signal?: AbortSignal,
+): Promise<PaymentResponse> {
+  if (!paymentId.trim()) {
+    throw new Error("Payment ID is required.");
+  }
+
+  return request<PaymentResponse>(
+    `/payments/${encodeURIComponent(paymentId)}`,
     {
       signal,
     },
