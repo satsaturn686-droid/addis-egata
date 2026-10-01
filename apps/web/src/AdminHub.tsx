@@ -4,10 +4,12 @@ import {
 
 import AdminDashboard from "./AdminDashboard";
 import AdminDrawCreate from "./AdminDrawCreate";
+import AdminDrawManage from "./AdminDrawManage";
 
 type AdminSection =
   | "payments"
-  | "create-draw";
+  | "create-draw"
+  | "draw-manage";
 
 export default function AdminHub() {
   const [section, setSection] =
@@ -51,7 +53,7 @@ export default function AdminHub() {
           .admin-hub-tabs {
             display: grid;
             grid-template-columns:
-              repeat(2, minmax(0, 1fr));
+              repeat(3, minmax(0, 1fr));
             gap: 8px;
           }
 
@@ -76,6 +78,13 @@ export default function AdminHub() {
           .admin-hub-tab:focus-visible {
             outline: 2px solid #8aa2ff;
             outline-offset: 2px;
+          }
+
+          @media (max-width: 640px) {
+            .admin-hub-tabs {
+              grid-template-columns:
+                repeat(2, minmax(0, 1fr));
+            }
           }
 
           @media (max-width: 560px) {
@@ -133,21 +142,37 @@ export default function AdminHub() {
           >
             አዲስ ዕጣ ፍጠር
           </button>
+
+          <button
+            type="button"
+            className={
+              section === "draw-manage"
+                ? "admin-hub-tab active"
+                : "admin-hub-tab"
+            }
+            onClick={() =>
+              setSection("draw-manage")
+            }
+          >
+            ዕጣ አስተዳደር
+          </button>
         </div>
       </nav>
 
       {section === "payments" ? (
         <AdminDashboard
           onBack={() =>
-            setSection("create-draw")
+            setSection("draw-manage")
+          }
+        />
+      ) : section === "create-draw" ? (
+        <AdminDrawCreate
+          onCreated={() =>
+            setSection("draw-manage")
           }
         />
       ) : (
-        <AdminDrawCreate
-          onCreated={() =>
-            setSection("payments")
-          }
-        />
+        <AdminDrawManage />
       )}
     </main>
   );
