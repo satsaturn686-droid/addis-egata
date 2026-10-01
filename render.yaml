@@ -1,0 +1,59 @@
+services:
+  - type: web
+    name: addis-egata-api
+    runtime: node
+    region: oregon
+    plan: free
+
+    buildCommand: npm run build:api
+    startCommand: npm start
+
+    healthCheckPath: /health
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      - key: PORT
+        value: "10000"
+
+      - key: DATABASE_URL
+        sync: false
+
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+
+      - key: TELEGRAM_MAX_AUTH_AGE_SECONDS
+        value: "86400"
+
+      - key: ADMIN_TELEGRAM_IDS
+        sync: false
+
+  - type: web
+    name: addis-egata-web
+    runtime: static
+    region: oregon
+    buildCommand: npm run build:web
+    staticPublishPath: apps/web/dist
+
+    envVars:
+      - key: VITE_API_URL
+        value: https://addis-egata-api.onrender.com
+
+  - type: cron
+    name: addis-egata-deadline-cleanup
+    runtime: node
+    region: oregon
+    plan: free
+
+    schedule: "*/5 * * * *"
+
+    buildCommand: npm run build:api
+    startCommand: npm --prefix apps/api run cron:expire-draws
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      - key: DATABASE_URL
+        sync: false
