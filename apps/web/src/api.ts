@@ -131,6 +131,14 @@ export type PaymentResponse = {
   payment: Payment;
 };
 
+export type PaymentSettings = {
+  telebirrNumber: string;
+};
+
+export type PaymentSettingsResponse = {
+  settings: PaymentSettings;
+};
+
 export type CreateTelebirrPaymentInput = {
   entryId: string;
   transactionReference: string;
@@ -386,6 +394,17 @@ export async function getMyPayments(
 ): Promise<PaymentsResponse> {
   return request<PaymentsResponse>(
     "/payments/mine",
+    {
+      signal,
+    },
+  );
+}
+
+export async function getPaymentSettings(
+  signal?: AbortSignal,
+): Promise<PaymentSettingsResponse> {
+  return request<PaymentSettingsResponse>(
+    "/payments/settings",
     {
       signal,
     },
