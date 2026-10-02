@@ -277,11 +277,26 @@ function App() {
     return map;
   }, [myActiveEntries]);
 
+    const filledNumbers =
+    activeDraw && Number.isFinite(activeDraw.filledNumbers)
+      ? activeDraw.filledNumbers
+      : 0;
+
   const remaining = activeDraw
     ? Math.max(
         0,
-        activeDraw.totalNumbers -
-          activeDraw.filledNumbers,
+        activeDraw.totalNumbers - filledNumbers,
+      )
+    : 0;
+
+  const progress = activeDraw
+    ? Math.min(
+        100,
+        Math.round(
+          (filledNumbers /
+            Math.max(1, activeDraw.totalNumbers)) *
+            100,
+        ),
       )
     : 0;
 
