@@ -17,7 +17,10 @@ import {
 import {
   closeManagedDraw,
   executeManagedDraw,
+  getAdminDrawNumbers,
   type AdminDrawExecutionResponse,
+  type AdminDrawNumber,
+  type AdminDrawNumbersResponse,
 } from "./admin-draw-manage-api";
 
 const STATUS_LABELS: Record<
@@ -44,6 +47,24 @@ const STATUS_CLASS: Record<
   drawing: "status-drawing",
   completed: "status-completed",
   cancelled: "status-cancelled",
+};
+
+type NumberFilter =
+  | "all"
+  | "paid"
+  | "reserved"
+  | "pending_payment"
+  | "available";
+
+const NUMBER_STATUS_LABELS: Record<
+  NumberFilter,
+  string
+> = {
+  all: "ሁሉም",
+  paid: "🟢 Paid",
+  reserved: "🟡 Reserved",
+  pending_payment: "🔵 Pending Payment",
+  available: "⚪ Available",
 };
 
 function formatMoney(
@@ -127,6 +148,45 @@ function canExecute(
   );
 }
 
+function getNumberStatusLabel(
+  status: AdminDrawNumber["status"],
+): string {
+  return (
+    NUMBER_STATUS_LABELS[status] ??
+    "⚪ Available"
+  );
+}
+
+function getNumberStatusClass(
+  status: AdminDrawNumber["status"],
+): string {
+  return `number-status-${status}`;
+}
+
+function formatNumber(
+  number: number,
+  totalNumbers: number,
+): string {
+  const width = Math.max(
+    2,
+    String(totalNumbers).length,
+  );
+
+  return `#${String(number).padStart(
+    width,
+    "0",
+  )}`;
+}
+
+function normalizeSearch(
+  value: string,
+): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/^#/, "");
+}
+
 export default function AdminDrawManage() {
   const [draws, setDraws] = useState<
     AdminDrawListItem[]
@@ -151,6 +211,48 @@ export default function AdminDrawManage() {
     useState<
       AdminDrawExecutionResponse["result"] | null
     >(null);
+
+  const [
+    selectedNumberDrawId,
+    setSelectedNumberDrawId,
+  ] = useState<string | null>(null);
+
+  const [
+    numberData,
+    setNumberData,
+  ] = useState<
+    AdminDrawNumbersResponse | null
+  >(null);
+
+  const [
+    numberLoading,
+    setNumberLoading,
+  ] = useState(false);
+
+  const [
+    numberRefreshing,
+    setNumberRefreshing,
+  ] = useState(false);
+
+  const [
+    numberError,
+    setNumberError,
+  ] = useState<string | null>(null);
+
+  const [
+    numberSearch,
+    setNumberSearch,
+  ] = useState("");
+
+  const [
+    userSearch,
+    setUserSearch,
+  ] = useState("");
+
+  const [
+    numberFilter,
+    setNumberFilter,
+  ] = useState<NumberFilter>("all");
 
   const loadDraws = useCallback(
     async (
@@ -187,6 +289,69 @@ export default function AdminDrawManage() {
     void loadDraws();
   }, [loadDraws]);
 
+  const loadNumberData = useCallback(
+    async (
+      drawId: string,
+      showLoading = true,
+    ) => {
+      if (showLoading) {
+        setNumberLoading(true);
+      } else {
+        setNumberRefreshing(true);
+      }
+
+      setNumberError(null);
+
+      try {
+        const response =
+          await getAdminDrawNumbers(
+            drawId,
+          );
+
+        setNumberData(response);
+        setSelectedNumberDrawId(
+          drawId,
+        );
+      } catch (loadError) {
+        setNumberError(
+          loadError instanceof Error
+            ? loadError.message
+            : "የቁጥሮችን ዝርዝር መጫን አልተቻለም።",
+        );
+      } finally {
+        setNumberLoading(false);
+        setNumberRefreshing(false);
+      }
+    },
+    [],
+  );
+
+  function handleToggleNumberList(
+    drawId: string,
+  ) {
+    if (
+      selectedNumberDrawId === drawId
+    ) {
+      setSelectedNumberDrawId(null);
+      setNumberData(null);
+      setNumberError(null);
+      setNumberSearch("");
+      setUserSearch("");
+      setNumberFilter("all");
+      return;
+    }
+
+    setNumberData(null);
+    setNumberSearch("");
+    setUserSearch("");
+    setNumberFilter("all");
+
+    void loadNumberData(
+      drawId,
+      true,
+    );
+  }
+
   const summary = useMemo(() => {
     return {
       total: draws.length,
@@ -205,6 +370,77 @@ export default function AdminDrawManage() {
       ).length,
     };
   }, [draws]);
+
+  const filteredNumbers =
+    useMemo(() => {
+      if (!numberData) {
+        return [];
+      }
+
+      const normalizedNumberSearch =
+        normalizeSearch(numberSearch);
+
+      const normalizedUserSearch =
+        userSearch
+          .trim()
+          .toLowerCase();
+
+      return numberData.numbers.filter(
+        (item) => {
+          if (
+            numberFilter !== "all" &&
+            item.status !== numberFilter
+          ) {
+            return false;
+          }
+
+          if (
+            normalizedNumberSearch
+          ) {
+            const exactNumber =
+              String(item.number);
+
+            if (
+              !exactNumber.includes(
+                normalizedNumberSearch,
+              )
+            ) {
+              return false;
+            }
+          }
+
+          if (
+            normalizedUserSearch
+          ) {
+            const displayName =
+              item.user?.displayName
+                ?.toLowerCase() ?? "";
+
+            const username =
+              item.user?.username
+                ?.toLowerCase() ?? "";
+
+            if (
+              !displayName.includes(
+                normalizedUserSearch,
+              ) &&
+              !username.includes(
+                normalizedUserSearch,
+              )
+            ) {
+              return false;
+            }
+          }
+
+          return true;
+        },
+      );
+    }, [
+      numberData,
+      numberFilter,
+      numberSearch,
+      userSearch,
+    ]);
 
   async function handleOpen(
     draw: AdminDrawListItem,
@@ -242,6 +478,16 @@ export default function AdminDrawManage() {
       );
 
       await loadDraws(true);
+
+      if (
+        selectedNumberDrawId ===
+        draw.id
+      ) {
+        await loadNumberData(
+          draw.id,
+          false,
+        );
+      }
     } catch (actionError) {
       setError(
         actionError instanceof Error
@@ -284,6 +530,16 @@ export default function AdminDrawManage() {
       );
 
       await loadDraws(true);
+
+      if (
+        selectedNumberDrawId ===
+        draw.id
+      ) {
+        await loadNumberData(
+          draw.id,
+          false,
+        );
+      }
     } catch (actionError) {
       setError(
         actionError instanceof Error
@@ -331,6 +587,16 @@ export default function AdminDrawManage() {
       );
 
       await loadDraws(true);
+
+      if (
+        selectedNumberDrawId ===
+        draw.id
+      ) {
+        await loadNumberData(
+          draw.id,
+          false,
+        );
+      }
     } catch (actionError) {
       setError(
         actionError instanceof Error
@@ -427,6 +693,420 @@ export default function AdminDrawManage() {
       <span className="action-note">
         ምንም እርምጃ የለም
       </span>
+    );
+  }
+
+  function renderNumberList(
+    draw: AdminDrawListItem,
+  ) {
+    const isSelected =
+      selectedNumberDrawId ===
+      draw.id;
+
+    if (!isSelected) {
+      return null;
+    }
+
+    if (numberLoading) {
+      return (
+        <section className="number-panel">
+          <div className="number-loading">
+            የቁጥሮች ዝርዝርን በመጫን ላይ...
+          </div>
+        </section>
+      );
+    }
+
+    if (numberError) {
+      return (
+        <section className="number-panel">
+          <div className="number-panel-header">
+            <div>
+              <h3 className="number-panel-title">
+                🔢 የቁጥሮች ዝርዝር
+              </h3>
+              <p className="number-panel-subtitle">
+                {draw.name}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              className="number-refresh"
+              disabled={
+                numberRefreshing
+              }
+              onClick={() =>
+                void loadNumberData(
+                  draw.id,
+                  false,
+                )
+              }
+            >
+              {numberRefreshing
+                ? "..."
+                : "አድስ"}
+            </button>
+          </div>
+
+          <div className="message error">
+            {numberError}
+          </div>
+        </section>
+      );
+    }
+
+    if (!numberData) {
+      return null;
+    }
+
+    const width =
+      Math.max(
+        2,
+        String(
+          numberData.draw
+            .totalNumbers,
+        ).length,
+      );
+
+    return (
+      <section className="number-panel">
+        <div className="number-panel-header">
+          <div>
+            <h3 className="number-panel-title">
+              🔢 የቁጥሮች ዝርዝር
+            </h3>
+
+            <p className="number-panel-subtitle">
+              {numberData.draw.name}
+            </p>
+          </div>
+
+          <div className="number-panel-actions">
+            <button
+              type="button"
+              className="number-refresh"
+              disabled={
+                numberRefreshing
+              }
+              onClick={() =>
+                void loadNumberData(
+                  draw.id,
+                  false,
+                )
+              }
+            >
+              {numberRefreshing
+                ? "በመጫን..."
+                : "↻ አድስ"}
+            </button>
+
+            <button
+              type="button"
+              className="number-close"
+              onClick={() => {
+                setSelectedNumberDrawId(
+                  null,
+                );
+                setNumberData(null);
+                setNumberSearch("");
+                setUserSearch("");
+                setNumberFilter("all");
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <div className="number-summary-grid">
+          <div className="number-summary-card">
+            <span>
+              የተያዙ
+            </span>
+            <strong>
+              {
+                numberData.summary
+                  .occupiedNumbers
+              }
+              {" / "}
+              {
+                numberData.summary
+                  .totalNumbers
+              }
+            </strong>
+          </div>
+
+          <div className="number-summary-card">
+            <span>
+              ⚪ Available
+            </span>
+            <strong>
+              {
+                numberData.summary
+                  .availableNumbers
+              }
+            </strong>
+          </div>
+
+          <div className="number-summary-card">
+            <span>
+              🟢 Paid
+            </span>
+            <strong>
+              {
+                numberData.summary
+                  .paidCount
+              }
+            </strong>
+          </div>
+
+          <div className="number-summary-card">
+            <span>
+              🟡 Reserved
+            </span>
+            <strong>
+              {
+                numberData.summary
+                  .reservedCount
+              }
+            </strong>
+          </div>
+
+          <div className="number-summary-card">
+            <span>
+              🔵 Pending Payment
+            </span>
+            <strong>
+              {
+                numberData.summary
+                  .pendingPaymentCount
+              }
+            </strong>
+          </div>
+
+          <div className="number-summary-card collected">
+            <span>
+              💰 የተሰበሰበ
+            </span>
+            <strong>
+              {formatMoney(
+                numberData.summary
+                  .collectedAmount,
+              )}
+            </strong>
+          </div>
+        </div>
+
+        <div className="number-search-grid">
+          <label className="search-field">
+            <span>
+              🔢 ቁጥር ፈልግ
+            </span>
+
+            <input
+              type="search"
+              inputMode="numeric"
+              value={numberSearch}
+              onChange={(event) =>
+                setNumberSearch(
+                  event.target.value,
+                )
+              }
+              placeholder="#25"
+            />
+          </label>
+
+          <label className="search-field">
+            <span>
+              👤 በተጠቃሚ ፈልግ
+            </span>
+
+            <input
+              type="search"
+              value={userSearch}
+              onChange={(event) =>
+                setUserSearch(
+                  event.target.value,
+                )
+              }
+              placeholder="Pink"
+            />
+          </label>
+        </div>
+
+        <div className="number-filters">
+          {(
+            [
+              "all",
+              "paid",
+              "reserved",
+              "pending_payment",
+              "available",
+            ] as NumberFilter[]
+          ).map((filter) => (
+            <button
+              key={filter}
+              type="button"
+              className={`number-filter ${
+                numberFilter === filter
+                  ? "active"
+                  : ""
+              }`}
+              onClick={() =>
+                setNumberFilter(
+                  filter,
+                )
+              }
+            >
+              {
+                NUMBER_STATUS_LABELS[
+                  filter
+                ]
+              }
+            </button>
+          ))}
+        </div>
+
+        <div className="number-result-count">
+          {filteredNumbers.length} /{" "}
+          {numberData.numbers.length}{" "}
+          ቁጥሮች ታይተዋል
+        </div>
+
+        <div className="numbers-table-wrap">
+          <table className="numbers-table">
+            <thead>
+              <tr>
+                <th>ቁጥር</th>
+                <th>ተጠቃሚ</th>
+                <th>ሁኔታ</th>
+                <th>ክፍያ</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {filteredNumbers.map(
+                (item) => (
+                  <tr key={item.number}>
+                    <td>
+                      <strong>
+                        {formatNumber(
+                          item.number,
+                          numberData.draw
+                            .totalNumbers,
+                        )}
+                      </strong>
+                    </td>
+
+                    <td>
+                      {item.user ? (
+                        <div className="number-user">
+                          <strong>
+                            {
+                              item.user
+                                .displayName
+                            }
+                          </strong>
+
+                          {item.user
+                            .username ? (
+                            <span>
+                              @
+                              {
+                                item.user
+                                  .username
+                              }
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+
+                    <td>
+                      <span
+                        className={`number-status ${getNumberStatusClass(
+                          item.status,
+                        )}`}
+                      >
+                        {getNumberStatusLabel(
+                          item.status,
+                        )}
+                      </span>
+
+                      {item.status ===
+                        "reserved" &&
+                      item.reservedUntil ? (
+                        <small className="reserved-until">
+                          እስከ{" "}
+                          {formatDate(
+                            item.reservedUntil,
+                          )}
+                        </small>
+                      ) : null}
+                    </td>
+
+                    <td>
+                      {item.payment ? (
+                        <div className="number-payment">
+                          <strong>
+                            {formatMoney(
+                              item.payment
+                                .amount,
+                            )}
+                          </strong>
+
+                          {item.payment
+                            .transactionReference ? (
+                            <small>
+                              {
+                                item.payment
+                                  .transactionReference
+                              }
+                            </small>
+                          ) : null}
+                        </div>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                  </tr>
+                ),
+              )}
+
+              {filteredNumbers.length ===
+              0 ? (
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="no-number-results"
+                  >
+                    የፈለጉት ቁጥር ወይም
+                    ተጠቃሚ አልተገኘም።
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="number-legend">
+          <span>
+            🟢 Paid
+          </span>
+          <span>
+            🟡 Reserved
+          </span>
+          <span>
+            🔵 Pending Payment
+          </span>
+          <span>
+            ⚪ Available
+          </span>
+        </div>
+      </section>
     );
   }
 
@@ -737,7 +1417,279 @@ export default function AdminDrawManage() {
             font-size: 13px;
           }
 
-          button:focus-visible {
+          .number-panel {
+            margin-top: 15px;
+            padding: 14px;
+            border: 1px solid #293746;
+            border-radius: 14px;
+            background: #0c1219;
+          }
+
+          .number-panel-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 14px;
+          }
+
+          .number-panel-title {
+            margin: 0;
+            font-size: 15px;
+          }
+
+          .number-panel-subtitle {
+            margin: 4px 0 0;
+            color: #7f8b98;
+            font-size: 11px;
+          }
+
+          .number-panel-actions {
+            display: flex;
+            gap: 6px;
+          }
+
+          .number-refresh,
+          .number-close {
+            min-height: 38px;
+            padding: 0 10px;
+            border: 1px solid #2c3947;
+            border-radius: 9px;
+            background: #141c25;
+            color: #dce4ed;
+            font: inherit;
+            font-size: 11px;
+            font-weight: 800;
+            cursor: pointer;
+          }
+
+          .number-close {
+            width: 38px;
+            padding: 0;
+          }
+
+          .number-refresh:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+          }
+
+          .number-loading {
+            padding: 28px 10px;
+            text-align: center;
+            color: #84919f;
+            font-size: 12px;
+          }
+
+          .number-summary-grid {
+            display: grid;
+            grid-template-columns:
+              repeat(3, minmax(0, 1fr));
+            gap: 7px;
+            margin-bottom: 13px;
+          }
+
+          .number-summary-card {
+            padding: 10px;
+            border: 1px solid #202b36;
+            border-radius: 10px;
+            background: #111820;
+          }
+
+          .number-summary-card span {
+            display: block;
+            color: #7d8a98;
+            font-size: 10px;
+            line-height: 1.35;
+          }
+
+          .number-summary-card strong {
+            display: block;
+            margin-top: 4px;
+            font-size: 14px;
+          }
+
+          .number-summary-card.collected strong {
+            font-size: 13px;
+          }
+
+          .number-search-grid {
+            display: grid;
+            grid-template-columns:
+              repeat(2, minmax(0, 1fr));
+            gap: 8px;
+            margin-bottom: 9px;
+          }
+
+          .search-field {
+            display: grid;
+            gap: 5px;
+          }
+
+          .search-field span {
+            color: #8996a4;
+            font-size: 10px;
+            font-weight: 700;
+          }
+
+          .search-field input {
+            width: 100%;
+            min-height: 42px;
+            padding: 0 11px;
+            box-sizing: border-box;
+            border: 1px solid #2b3846;
+            border-radius: 9px;
+            outline: none;
+            background: #111820;
+            color: #eef3f8;
+            font: inherit;
+            font-size: 12px;
+          }
+
+          .search-field input::placeholder {
+            color: #5f6c79;
+          }
+
+          .search-field input:focus {
+            border-color: #647b99;
+          }
+
+          .number-filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 9px;
+          }
+
+          .number-filter {
+            min-height: 34px;
+            padding: 0 9px;
+            border: 1px solid #293644;
+            border-radius: 999px;
+            background: #111820;
+            color: #aeb9c5;
+            font: inherit;
+            font-size: 10px;
+            font-weight: 800;
+            cursor: pointer;
+          }
+
+          .number-filter.active {
+            background: #e7edf5;
+            color: #0b0f14;
+            border-color: #e7edf5;
+          }
+
+          .number-result-count {
+            margin: 4px 0 8px;
+            color: #657381;
+            font-size: 10px;
+          }
+
+          .numbers-table-wrap {
+            overflow-x: auto;
+            border: 1px solid #202b36;
+            border-radius: 10px;
+          }
+
+          .numbers-table {
+            width: 100%;
+            min-width: 540px;
+            border-collapse: collapse;
+          }
+
+          .numbers-table th {
+            padding: 9px 8px;
+            border-bottom: 1px solid #293440;
+            background: #131b24;
+            color: #7d8a98;
+            font-size: 9px;
+            font-weight: 800;
+            text-align: left;
+            white-space: nowrap;
+          }
+
+          .numbers-table td {
+            padding: 9px 8px;
+            border-bottom: 1px solid #1c2630;
+            color: #dce4ec;
+            font-size: 11px;
+            vertical-align: middle;
+          }
+
+          .numbers-table tbody tr:last-child td {
+            border-bottom: 0;
+          }
+
+          .number-user,
+          .number-payment {
+            display: grid;
+            gap: 2px;
+          }
+
+          .number-user strong,
+          .number-payment strong {
+            font-size: 11px;
+          }
+
+          .number-user span,
+          .number-payment small,
+          .reserved-until {
+            color: #687684;
+            font-size: 9px;
+          }
+
+          .number-status {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 7px;
+            border-radius: 999px;
+            font-size: 9px;
+            font-weight: 800;
+            white-space: nowrap;
+          }
+
+          .number-status-paid {
+            background: #12251b;
+            color: #a8e5bd;
+          }
+
+          .number-status-reserved {
+            background: #29251a;
+            color: #ead69d;
+          }
+
+          .number-status-pending_payment {
+            background: #18252e;
+            color: #a8d7ed;
+          }
+
+          .number-status-available {
+            background: #1b2026;
+            color: #a9b2bc;
+          }
+
+          .reserved-until {
+            display: block;
+            margin-top: 3px;
+          }
+
+          .no-number-results {
+            padding: 24px 10px !important;
+            text-align: center;
+            color: #6f7c89 !important;
+          }
+
+          .number-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+            color: #697785;
+            font-size: 9px;
+          }
+
+          button:focus-visible,
+          input:focus-visible {
             outline: 2px solid #8aa2ff;
             outline-offset: 2px;
           }
@@ -762,6 +1714,16 @@ export default function AdminDrawManage() {
               grid-template-columns:
                 1fr;
             }
+
+            .number-summary-grid {
+              grid-template-columns:
+                repeat(2, minmax(0, 1fr));
+            }
+
+            .number-search-grid {
+              grid-template-columns:
+                1fr;
+            }
           }
 
           @media (max-width: 460px) {
@@ -780,6 +1742,23 @@ export default function AdminDrawManage() {
             .status-badge {
               align-self: flex-start;
             }
+
+            .number-panel-header {
+              flex-direction: column;
+            }
+
+            .number-panel-actions {
+              width: 100%;
+            }
+
+            .number-refresh {
+              flex: 1;
+            }
+
+            .number-summary-grid {
+              grid-template-columns:
+                1fr 1fr;
+            }
           }
         `}
       </style>
@@ -791,9 +1770,9 @@ export default function AdminDrawManage() {
           </h1>
 
           <p className="manage-subtitle">
-            ዕጣዎችን ክፈት፣ ዝጋ እና
-            የተዘጋ ዕጣን በsecure random
-            ስርዓት አውጣ።
+            ዕጣዎችን ክፈት፣ ዝጋ፣
+            ውጤት አውጣ እና የቁጥሮችን
+            የክፍያ ሁኔታ በቀጥታ ተቆጣጠር።
           </p>
         </div>
 
@@ -1033,8 +2012,32 @@ export default function AdminDrawManage() {
               </div>
 
               <div className="draw-actions">
-                {renderAction(draw)}
+                <div className="action-row">
+                  {renderAction(draw)}
+
+                  <button
+                    type="button"
+                    className="draw-action secondary"
+                    disabled={
+                      numberLoading &&
+                      selectedNumberDrawId ===
+                        draw.id
+                    }
+                    onClick={() =>
+                      handleToggleNumberList(
+                        draw.id,
+                      )
+                    }
+                  >
+                    {selectedNumberDrawId ===
+                    draw.id
+                      ? "🔢 ዝርዝሩን ዝጋ"
+                      : "🔢 የቁጥሮች ዝርዝር"}
+                  </button>
+                </div>
               </div>
+
+              {renderNumberList(draw)}
             </article>
           ))}
         </section>
