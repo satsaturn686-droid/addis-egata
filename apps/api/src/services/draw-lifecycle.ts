@@ -114,6 +114,7 @@ async function getDrawForUpdate(
 async function validateDrawReady(
   client: import("pg").PoolClient,
   draw: DrawRow,
+  allowPastSchedule = false,
 ): Promise<void> {
   if (
     draw.status !== "draft" &&
@@ -217,6 +218,18 @@ async function validateDrawReady(
     );
   }
 
+  /*
+   * A closed draw may be reopened even when
+   * its original schedule has already passed.
+   *
+   * This is intentional: reopening an accidentally
+   * closed draw must not be blocked by the old
+   * deadline/draw time.
+   */
+  if (allowPastSchedule) {
+    return;
+  }
+
   const now = Date.now();
 
   if (
@@ -289,9 +302,14 @@ export async function openDraw(
         drawId,
       );
 
-    if (draw.status === "closed") {
+    const isReopen =
+      draw.status === "closed";
+
+    if (isReopen) {
       const resultCheck =
-        await client.query<{ exists: boolean }>(
+        await client.query<{
+          exists: boolean;
+        }>(
           `SELECT EXISTS (
              SELECT 1
              FROM draw_results
@@ -310,6 +328,7 @@ export async function openDraw(
     await validateDrawReady(
       client,
       draw,
+      isReopen,
     );
 
     const result =
