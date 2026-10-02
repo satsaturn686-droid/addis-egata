@@ -276,7 +276,15 @@ function App() {
 
     return map;
   }, [myActiveEntries]);
+  const occupiedNumbers = useMemo(() => {
+    if (!activeDraw) {
+      return new Set<number>();
+    }
 
+    return new Set(
+      activeDraw.occupiedNumbers ?? [],
+    );
+  }, [activeDraw]);
     const filledNumbers =
     activeDraw && Number.isFinite(activeDraw.filledNumbers)
       ? activeDraw.filledNumbers
@@ -817,7 +825,8 @@ function App() {
 
             const isReserving =
               reservingNumber === number;
-
+const isOccupied =
+  occupiedNumbers.has(number) && !entry;
             let background =
               "rgba(255,255,255,0.04)";
 
@@ -854,19 +863,22 @@ function App() {
                 key={number}
                 type="button"
                 disabled={
-                  activeDraw.status === "full" ||
-                  isReserving
-                }
+  activeDraw.status === "full" ||
+  isReserving ||
+  isOccupied
+}
                 onClick={() =>
                   void handleReserveNumber(number)
                 }
                 aria-label={
-                  entry
-                    ? `ቁጥር ${number} ${getEntryLabel(
-                        entry,
-                      )}`
-                    : `ቁጥር ${number}`
-                }
+  entry
+    ? `ቁጥር ${number} ${getEntryLabel(
+        entry,
+      )}`
+    : isOccupied
+      ? `ቁጥር ${number} ተይዟል`
+      : `ቁጥር ${number}`
+}
                 style={{
                   minHeight: "48px",
                   borderRadius: "12px",
@@ -881,7 +893,11 @@ function App() {
                   opacity: isReserving ? 0.55 : 1,
                 }}
               >
-                {isReserving ? "..." : number}
+                {isReserving
+  ? "..."
+  : isOccupied
+    ? "🔒"
+    : number}
               </button>
             );
           })}
