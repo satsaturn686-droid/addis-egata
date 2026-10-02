@@ -13,6 +13,7 @@ type DrawRow = {
   actual_prize_cost: string | number | null;
   total_numbers: number;
   filled_numbers: string | number;
+  occupied_numbers: number[];
   entry_fee: string | number;
   winner_count: number;
   unique_winners: boolean;
@@ -54,6 +55,7 @@ function mapDraw(row: DrawRow): Draw {
     actualPrizeCost: toNumber(row.actual_prize_cost),
     totalNumbers: row.total_numbers,
     filledNumbers: Number(row.filled_numbers),
+    occupiedNumbers: row.occupied_numbers ?? [],
     entryFee: Number(row.entry_fee),
     winnerCount: row.winner_count,
     uniqueWinners: row.unique_winners,
@@ -103,6 +105,19 @@ export async function getDrawById(
               'paid'
             )
         ) AS filled_numbers,
+        (
+          SELECT COALESCE(
+            ARRAY_AGG(e.number ORDER BY e.number),
+            ARRAY[]::INTEGER[]
+          )
+          FROM entries e
+          WHERE e.draw_id = d.id
+            AND e.status IN (
+              'reserved',
+              'pending_payment',
+              'paid'
+            )
+        ) AS occupied_numbers,
         d.entry_fee,
         d.winner_count,
         d.unique_winners,
@@ -147,6 +162,19 @@ export async function getOpenDraws(): Promise<Draw[]> {
               'paid'
             )
         ) AS filled_numbers,
+        (
+          SELECT COALESCE(
+            ARRAY_AGG(e.number ORDER BY e.number),
+            ARRAY[]::INTEGER[]
+          )
+          FROM entries e
+          WHERE e.draw_id = d.id
+            AND e.status IN (
+              'reserved',
+              'pending_payment',
+              'paid'
+            )
+        ) AS occupied_numbers,
         d.entry_fee,
         d.winner_count,
         d.unique_winners,
