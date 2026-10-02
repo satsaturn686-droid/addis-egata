@@ -884,8 +884,8 @@ export default function AdminDrawManage() {
                 አሸናፊዎች
               </span>
               <strong>
-                {executionResult.winnerCount}
-              </strong>
+  {executionResult.winners.length}
+</strong>
             </div>
 
             <div className="result-item">
