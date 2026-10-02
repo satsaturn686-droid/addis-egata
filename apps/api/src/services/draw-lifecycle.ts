@@ -55,6 +55,7 @@ function mapDraw(row: DrawRow): Draw {
       row.actual_prize_cost,
     ),
     totalNumbers: row.total_numbers,
+    filledNumbers: 0,
     entryFee: Number(row.entry_fee),
     winnerCount: row.winner_count,
     uniqueWinners: row.unique_winners,
