@@ -146,6 +146,39 @@ export type CreateTelebirrPaymentInput = {
   receiptImageUrl?: string;
 };
 
+export type PublicWinner = {
+  id: string;
+  rank: number;
+  number: number;
+  prizeAmount: number;
+  selectedAt: string;
+  firstName: string | null;
+  lastName: string | null;
+  username: string | null;
+};
+
+export type PublicDrawResult = {
+  drawId: string;
+  drawName: string;
+  prizeType: "cash" | "physical";
+  prizeName: string;
+  prizeImageUrl: string | null;
+  displayedPrizeValue: number | null;
+  winnerCount: number;
+  eligibleEntryCount: number;
+  executedAt: string;
+  publishedAt: string;
+  winners: PublicWinner[];
+};
+
+export type PublicDrawResultResponse = {
+  result: PublicDrawResult;
+};
+
+export type PublishedResultsResponse = {
+  results: PublicDrawResult[];
+};
+
 export type ApiRequestOptions = {
   method?:
     | "GET"
@@ -421,6 +454,33 @@ export async function getPayment(
 
   return request<PaymentResponse>(
     `/payments/${encodeURIComponent(paymentId)}`,
+    {
+      signal,
+    },
+  );
+}
+
+export async function getPublishedResults(
+  signal?: AbortSignal,
+): Promise<PublishedResultsResponse> {
+  return request<PublishedResultsResponse>(
+    "/results",
+    {
+      signal,
+    },
+  );
+}
+
+export async function getPublicDrawResult(
+  drawId: string,
+  signal?: AbortSignal,
+): Promise<PublicDrawResultResponse> {
+  if (!drawId.trim()) {
+    throw new Error("Draw ID is required.");
+  }
+
+  return request<PublicDrawResultResponse>(
+    `/results/${encodeURIComponent(drawId)}`,
     {
       signal,
     },
