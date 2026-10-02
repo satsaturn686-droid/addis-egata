@@ -8,6 +8,8 @@ import {
   type PublicDrawResult,
 } from "./api";
 
+import LiveDraw from "./LiveDraw";
+
 function formatMoney(
   value: number,
 ): string {
@@ -74,10 +76,13 @@ export default function PublicResults() {
     const controller =
       new AbortController();
 
+    let firstLoad = true;
+
     async function loadResults() {
       try {
-        setLoading(true);
-        setError(null);
+        if (firstLoad) {
+          setLoading(true);
+        }
 
         const response =
           await getPublishedResults(
@@ -86,11 +91,28 @@ export default function PublicResults() {
 
         setResults(response.results);
 
-        if (response.results.length > 0) {
-          setSelectedDrawId(
-            response.results[0].drawId,
-          );
-        }
+        setSelectedDrawId(
+          (currentSelectedId) => {
+            if (
+              currentSelectedId &&
+              response.results.some(
+                (result) =>
+                  result.drawId ===
+                  currentSelectedId,
+              )
+            ) {
+              return currentSelectedId;
+            }
+
+            return (
+              response.results[0]
+                ?.drawId ?? null
+            );
+          },
+        );
+
+        setError(null);
+        firstLoad = false;
       } catch (loadError) {
         if (
           loadError instanceof DOMException &&
@@ -99,20 +121,36 @@ export default function PublicResults() {
           return;
         }
 
-        setError(
-          loadError instanceof Error
-            ? loadError.message
-            : "የዕጣ ውጤቶችን መጫን አልተቻለም።",
-        );
+        if (firstLoad) {
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : "የዕጣ ውጤቶችን መጫን አልተቻለም።",
+          );
+        }
       } finally {
-        setLoading(false);
+        if (firstLoad) {
+          setLoading(false);
+          firstLoad = false;
+        }
       }
     }
 
     void loadResults();
 
+    const refreshTimer =
+      window.setInterval(
+        () => {
+          void loadResults();
+        },
+        2000,
+      );
+
     return () => {
       controller.abort();
+      window.clearInterval(
+        refreshTimer,
+      );
     };
   }, []);
 
@@ -131,7 +169,9 @@ export default function PublicResults() {
             በመጫን ላይ
           </span>
 
-          <h2>የዕጣ ውጤቶች</h2>
+          <h2>
+            የዕጣ ውጤቶች
+          </h2>
 
           <p>
             የታተሙ የዕጣ ውጤቶችን
@@ -150,7 +190,9 @@ export default function PublicResults() {
             ማስታወሻ
           </span>
 
-          <h2>የዕጣ ውጤቶች</h2>
+          <h2>
+            የዕጣ ውጤቶች
+          </h2>
 
           <p className="results-error">
             {error}
@@ -168,7 +210,9 @@ export default function PublicResults() {
             አሁን የለም
           </span>
 
-          <h2>የዕጣ ውጤቶች</h2>
+          <h2>
+            የዕጣ ውጤቶች
+          </h2>
 
           <p>
             እስካሁን የታተመ የዕጣ
@@ -186,7 +230,9 @@ export default function PublicResults() {
           የታተመ
         </span>
 
-        <h2>የዕጣ ውጤቶች</h2>
+        <h2>
+          የዕጣ ውጤቶች
+        </h2>
 
         <p>
           የተጠናቀቁ ዕጣዎችንና
@@ -194,45 +240,53 @@ export default function PublicResults() {
         </p>
       </div>
 
+      {selectedResult ? (
+        <LiveDraw
+          result={selectedResult}
+        />
+      ) : null}
+
       <div
         className="results-draw-list"
         role="tablist"
         aria-label="የዕጣ ውጤቶች"
       >
-        {results.map((result) => {
-          const active =
-            result.drawId ===
-            selectedDrawId;
+        {results.map(
+          (result) => {
+            const active =
+              result.drawId ===
+              selectedDrawId;
 
-          return (
-            <button
-              key={result.drawId}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              className={
-                active
-                  ? "results-draw-button active"
-                  : "results-draw-button"
-              }
-              onClick={() =>
-                setSelectedDrawId(
-                  result.drawId,
-                )
-              }
-            >
-              <span>
-                {result.drawName}
-              </span>
+            return (
+              <button
+                key={result.drawId}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                className={
+                  active
+                    ? "results-draw-button active"
+                    : "results-draw-button"
+                }
+                onClick={() =>
+                  setSelectedDrawId(
+                    result.drawId,
+                  )
+                }
+              >
+                <span>
+                  {result.drawName}
+                </span>
 
-              <small>
-                {formatDate(
-                  result.publishedAt,
-                )}
-              </small>
-            </button>
-          );
-        })}
+                <small>
+                  {formatDate(
+                    result.publishedAt,
+                  )}
+                </small>
+              </button>
+            );
+          },
+        )}
       </div>
 
       {selectedResult ? (
@@ -304,7 +358,9 @@ export default function PublicResults() {
               <strong>
                 {selectedResult
                   .eligibleEntryCount
-                  .toLocaleString("en-US")}
+                  .toLocaleString(
+                    "en-US",
+                  )}
               </strong>
             </div>
 
@@ -316,7 +372,9 @@ export default function PublicResults() {
               <strong>
                 {selectedResult
                   .winnerCount
-                  .toLocaleString("en-US")}
+                  .toLocaleString(
+                    "en-US",
+                  )}
               </strong>
             </div>
 
@@ -340,7 +398,11 @@ export default function PublicResults() {
               </h3>
 
               <span>
-                {selectedResult.winners.length}
+                {
+                  selectedResult
+                    .winners
+                    .length
+                }
               </span>
             </div>
 
