@@ -15,7 +15,7 @@ import {
   type Entry,
   type TelegramAuthResponse,
 } from "./api";
-
+import PublicResults from "./PublicResults";
 type TelegramWebApp = {
   ready: () => void;
   expand: () => void;
