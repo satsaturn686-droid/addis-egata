@@ -12,6 +12,7 @@ import adminPaymentsRouter from "./routes/admin-payments.js";
 import adminDrawsRouter from "./routes/admin-draws.js";
 import adminDrawListRouter from "./routes/admin-draw-list.js";
 import adminDrawExecutionRouter from "./routes/admin-draw-execution.js";
+import adminDrawNumbersRouter from "./routes/admin-draw-numbers.js";
 
 const app = express();
 
@@ -396,6 +397,16 @@ app.use(
 app.use(
   "/admin/draw-list",
   adminDrawListRouter,
+);
+
+/*
+ * Admin draw number list
+ *
+ * GET /admin/draw-numbers/:drawId/numbers
+ */
+app.use(
+  "/admin/draw-numbers",
+  adminDrawNumbersRouter,
 );
 
 /*
