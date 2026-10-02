@@ -9,7 +9,6 @@ const API_BASE_URL =
     "",
   ) || "";
 
-
 function getTelegramInitData(): string {
   const webApp = window.Telegram?.WebApp;
 
@@ -30,6 +29,7 @@ function getTelegramInitData(): string {
     "Telegram authentication data is unavailable.",
   );
 }
+
 async function adminManageRequest<T>(
   path: string,
   options: {
@@ -101,6 +101,55 @@ export type AdminDrawExecutionResponse = {
   };
 };
 
+export type AdminDrawNumberStatus =
+  | "available"
+  | "reserved"
+  | "pending_payment"
+  | "paid";
+
+export type AdminDrawNumber = {
+  number: number;
+  status: AdminDrawNumberStatus;
+  user: {
+    id: string;
+    username: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    displayName: string;
+  } | null;
+  reservedUntil: string | null;
+  payment: {
+    id: string;
+    amount: number;
+    status:
+      | "pending"
+      | "approved"
+      | "rejected";
+    transactionReference: string;
+    createdAt: string;
+  } | null;
+};
+
+export type AdminDrawNumbersResponse = {
+  draw: {
+    id: string;
+    name: string;
+    totalNumbers: number;
+    entryFee: number;
+    status: string;
+  };
+  summary: {
+    totalNumbers: number;
+    occupiedNumbers: number;
+    availableNumbers: number;
+    paidCount: number;
+    reservedCount: number;
+    pendingPaymentCount: number;
+    collectedAmount: number;
+  };
+  numbers: AdminDrawNumber[];
+};
+
 export async function getAdminOpenDraws(
   signal?: AbortSignal,
 ): Promise<AdminDrawListResponse> {
@@ -112,6 +161,7 @@ export async function getAdminOpenDraws(
     },
   );
 }
+
 export async function openAdminDraw(
   drawId: string,
   signal?: AbortSignal,
@@ -139,6 +189,7 @@ export async function openAdminDraw(
     },
   );
 }
+
 export async function closeManagedDraw(
   drawId: string,
   signal?: AbortSignal,
@@ -186,6 +237,30 @@ export async function executeManagedDraw(
     )}/execute`,
     {
       method: "POST",
+      signal,
+    },
+  );
+}
+
+export async function getAdminDrawNumbers(
+  drawId: string,
+  signal?: AbortSignal,
+): Promise<AdminDrawNumbersResponse> {
+  const normalizedDrawId =
+    drawId.trim();
+
+  if (!normalizedDrawId) {
+    throw new Error(
+      "Draw ID is required.",
+    );
+  }
+
+  return adminManageRequest<AdminDrawNumbersResponse>(
+    `/admin/draw-numbers/${encodeURIComponent(
+      normalizedDrawId,
+    )}/numbers`,
+    {
+      method: "GET",
       signal,
     },
   );
