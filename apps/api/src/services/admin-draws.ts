@@ -85,6 +85,7 @@ function mapDraw(row: DrawRow): Draw {
     ),
     totalNumbers: row.total_numbers,
     filledNumbers: 0,
+    occupiedNumbers: [],
     entryFee: Number(row.entry_fee),
     winnerCount: row.winner_count,
     uniqueWinners: row.unique_winners,
