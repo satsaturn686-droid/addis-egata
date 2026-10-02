@@ -35,6 +35,7 @@ export type Draw = {
   displayedPrizeValue: number | null;
   actualPrizeCost: number | null;
   totalNumbers: number;
+    occupiedNumbers: number[];
   entryFee: number;
   winnerCount: number;
   uniqueWinners: boolean;
