@@ -103,7 +103,33 @@ export async function getAdminOpenDraws(
     },
   );
 }
+export async function openAdminDraw(
+  drawId: string,
+  signal?: AbortSignal,
+): Promise<{
+  draw: Draw;
+}> {
+  const normalizedDrawId =
+    drawId.trim();
 
+  if (!normalizedDrawId) {
+    throw new Error(
+      "Draw ID is required.",
+    );
+  }
+
+  return adminManageRequest<{
+    draw: Draw;
+  }>(
+    `/admin/draws/${encodeURIComponent(
+      normalizedDrawId,
+    )}/open`,
+    {
+      method: "POST",
+      signal,
+    },
+  );
+}
 export async function closeManagedDraw(
   drawId: string,
   signal?: AbortSignal,
