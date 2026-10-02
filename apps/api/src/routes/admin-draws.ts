@@ -351,14 +351,14 @@ router.post(
           "PRIZE_RANKS_MUST_BE_SEQUENTIAL",
         ]);
 
-      
-if (clientErrors.has(message)) {
-  res.status(400).json({
-    error: message,
-    message,
-  });
-  return;
-}
+      if (clientErrors.has(message)) {
+        res.status(400).json({
+          error: message,
+          message,
+        });
+        return;
+      }
+
       console.error(
         "Create admin draw error:",
         error,
@@ -375,7 +375,7 @@ if (clientErrors.has(message)) {
 );
 
 /*
- * Open a draft draw.
+ * Open a draft or safely reopen a closed draw.
  *
  * POST /admin/draws/:drawId/open
  */
@@ -427,6 +427,7 @@ router.post(
           "INVALID_DRAW_ID",
           "DRAW_NOT_FOUND",
           "DRAW_NOT_EDITABLE",
+          "DRAW_ALREADY_EXECUTED",
           "INVALID_TOTAL_NUMBERS",
           "INVALID_ENTRY_FEE",
           "INVALID_WINNER_COUNT",
