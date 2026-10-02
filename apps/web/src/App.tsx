@@ -578,6 +578,7 @@ function App() {
     );
   }
 
+
   if (!activeDraw) {
     return (
       <main className="app-shell">
@@ -596,29 +597,31 @@ function App() {
           >
             👤
           </button>
+
           {user?.isAdmin && (
-  <button
-    type="button"
-    className="profile-button"
-    aria-label="Admin"
-    onClick={() => {
-  const initData =
-    window.Telegram?.WebApp?.initData;
+            <button
+              type="button"
+              className="profile-button"
+              aria-label="Admin"
+              onClick={() => {
+                const initData =
+                  window.Telegram?.WebApp?.initData;
 
-  if (initData) {
-    sessionStorage.setItem(
-      "addis-egata-telegram-init-data",
-      initData,
-    );
-  }
+                if (initData) {
+                  sessionStorage.setItem(
+                    "addis-egata-telegram-init-data",
+                    initData,
+                  );
+                }
 
-  window.location.href = "/admin.html";
-}}
-  >
-    🔐
-  </button>
-)}
+                window.location.href = "/admin.html";
+              }}
+            >
+              🔐
+            </button>
+          )}
         </header>
+
         <section className="hero">
           <span className="status-badge">
             {telegramReady ? "ዝግጁ" : "Telegram"}
@@ -641,10 +644,11 @@ function App() {
             <h2>ቀጣዩን ዕጣ ይጠብቁ</h2>
           </div>
         </section>
+
+        <PublicResults />
       </main>
     );
   }
-
   return (
     <main className="app-shell">
       <header className="topbar">
