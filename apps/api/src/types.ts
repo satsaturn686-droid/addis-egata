@@ -32,6 +32,7 @@ export interface Draw {
   displayedPrizeValue: number | null;
   actualPrizeCost: number | null;
   totalNumbers: number;
+  filledNumbers: number;
   entryFee: number;
   winnerCount: number;
   uniqueWinners: boolean;
