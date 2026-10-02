@@ -29,6 +29,24 @@ services:
       - key: ADMIN_TELEGRAM_IDS
         sync: false
 
+  - type: cron
+    name: addis-egata-expire-draws
+    runtime: node
+    region: oregon
+    plan: free
+
+    schedule: "*/5 * * * *"
+
+    buildCommand: npm --prefix apps/api install --include=dev && npm run build:api
+    startCommand: npm --prefix apps/api run cron:expire-draws
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      - key: DATABASE_URL
+        sync: false
+
   - type: web
     name: addis-egata-web
     runtime: static
