@@ -242,7 +242,24 @@ function App() {
       window.clearInterval(timer);
     };
   }, []);
+  useEffect(() => {
+    if (!selectedEntry) {
+      return;
+    }
 
+    if (
+      selectedEntry.status === "reserved" &&
+      selectedEntry.reservedUntil &&
+      new Date(selectedEntry.reservedUntil).getTime() <= now
+    ) {
+      setSelectedEntry(null);
+      setPaymentReference("");
+      setSenderName("");
+      setPaymentError(null);
+      setReservationError(null);
+      setPaymentSuccess(false);
+    }
+  }, [selectedEntry, now]);
   const activeDraw = useMemo(() => {
     return (
       draws.find(
