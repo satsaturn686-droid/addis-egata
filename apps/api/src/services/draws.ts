@@ -95,16 +95,24 @@ export async function getDrawById(
         d.displayed_prize_value,
         d.actual_prize_cost,
         d.total_numbers,
+
         (
           SELECT COUNT(*)
           FROM entries e
           WHERE e.draw_id = d.id
-            AND e.status IN (
-              'reserved',
-              'pending_payment',
-              'paid'
+            AND (
+              e.status IN (
+                'pending_payment',
+                'paid'
+              )
+              OR (
+                e.status = 'reserved'
+                AND e.reserved_until IS NOT NULL
+                AND e.reserved_until > NOW()
+              )
             )
         ) AS filled_numbers,
+
         (
           SELECT COALESCE(
             ARRAY_AGG(e.number ORDER BY e.number),
@@ -112,12 +120,19 @@ export async function getDrawById(
           )
           FROM entries e
           WHERE e.draw_id = d.id
-            AND e.status IN (
-              'reserved',
-              'pending_payment',
-              'paid'
+            AND (
+              e.status IN (
+                'pending_payment',
+                'paid'
+              )
+              OR (
+                e.status = 'reserved'
+                AND e.reserved_until IS NOT NULL
+                AND e.reserved_until > NOW()
+              )
             )
         ) AS occupied_numbers,
+
         d.entry_fee,
         d.winner_count,
         d.unique_winners,
@@ -152,16 +167,24 @@ export async function getOpenDraws(): Promise<Draw[]> {
         d.displayed_prize_value,
         d.actual_prize_cost,
         d.total_numbers,
+
         (
           SELECT COUNT(*)
           FROM entries e
           WHERE e.draw_id = d.id
-            AND e.status IN (
-              'reserved',
-              'pending_payment',
-              'paid'
+            AND (
+              e.status IN (
+                'pending_payment',
+                'paid'
+              )
+              OR (
+                e.status = 'reserved'
+                AND e.reserved_until IS NOT NULL
+                AND e.reserved_until > NOW()
+              )
             )
         ) AS filled_numbers,
+
         (
           SELECT COALESCE(
             ARRAY_AGG(e.number ORDER BY e.number),
@@ -169,12 +192,19 @@ export async function getOpenDraws(): Promise<Draw[]> {
           )
           FROM entries e
           WHERE e.draw_id = d.id
-            AND e.status IN (
-              'reserved',
-              'pending_payment',
-              'paid'
+            AND (
+              e.status IN (
+                'pending_payment',
+                'paid'
+              )
+              OR (
+                e.status = 'reserved'
+                AND e.reserved_until IS NOT NULL
+                AND e.reserved_until > NOW()
+              )
             )
         ) AS occupied_numbers,
+
         d.entry_fee,
         d.winner_count,
         d.unique_winners,
