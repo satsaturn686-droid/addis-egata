@@ -7,8 +7,8 @@
     "Noto Sans Ethiopic",
     sans-serif;
 
-  color: #f7f8fa;
-  background: #090c10;
+  color: #202124;
+  background: #f7f8fa;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -19,7 +19,7 @@
 
 html {
   min-width: 320px;
-  background: #090c10;
+  background: #f7f8fa;
 }
 
 body {
@@ -29,10 +29,10 @@ body {
   background:
     radial-gradient(
       circle at 50% -10%,
-      rgba(72, 91, 116, 0.22),
+      rgba(220, 174, 65, 0.14),
       transparent 42%
     ),
-    #090c10;
+    #f7f8fa;
 }
 
 button {
@@ -40,7 +40,7 @@ button {
 }
 
 button:focus-visible {
-  outline: 2px solid #ffffff;
+  outline: 2px solid #c8942e;
   outline-offset: 3px;
 }
 
@@ -59,6 +59,8 @@ button:focus-visible {
     calc(24px + env(safe-area-inset-bottom));
 }
 
+/* Header */
+
 .topbar {
   display: flex;
   align-items: center;
@@ -69,6 +71,7 @@ button:focus-visible {
 
 .brand {
   margin: 0;
+  color: #17191c;
   font-size: 17px;
   font-weight: 900;
   letter-spacing: 0.08em;
@@ -76,19 +79,22 @@ button:focus-visible {
 
 .tagline {
   margin: 4px 0 0;
-  color: #8993a1;
+  color: #777d86;
   font-size: 11px;
 }
 
 .profile-button {
   width: 40px;
   height: 40px;
-  border: 1px solid #242b35;
+  border: 1px solid #e2e4e8;
   border-radius: 50%;
-  color: #f7f8fa;
-  background: #11161d;
+  color: #30343a;
+  background: #ffffff;
+  box-shadow: 0 4px 14px rgba(25, 28, 32, 0.07);
   cursor: pointer;
 }
+
+/* Hero */
 
 .hero {
   margin-bottom: 18px;
@@ -97,18 +103,19 @@ button:focus-visible {
 .status-badge {
   display: inline-flex;
   align-items: center;
-  min-height: 26px;
-  padding: 4px 10px;
-  border: 1px solid rgba(67, 211, 142, 0.28);
+  min-height: 28px;
+  padding: 4px 11px;
+  border: 1px solid rgba(39, 161, 99, 0.2);
   border-radius: 999px;
-  color: #62dca0;
-  background: rgba(67, 211, 142, 0.09);
+  color: #218a55;
+  background: rgba(39, 161, 99, 0.08);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .hero h1 {
   margin: 10px 0 6px;
+  color: #17191c;
   font-size: clamp(26px, 7vw, 34px);
   line-height: 1.08;
   letter-spacing: -0.03em;
@@ -117,18 +124,22 @@ button:focus-visible {
 .hero-description {
   max-width: 390px;
   margin: 0;
-  color: #929ba8;
+  color: #737982;
   font-size: 14px;
   line-height: 1.55;
 }
 
+/* Main draw card */
+
 .draw-card {
   overflow: hidden;
   padding: 14px;
-  border: 1px solid #202731;
+  border: 1px solid #e4e6e9;
   border-radius: 22px;
-  background: rgba(16, 21, 28, 0.96);
-  box-shadow: 0 16px 45px rgba(0, 0, 0, 0.24);
+  background: #ffffff;
+  box-shadow:
+    0 12px 35px rgba(27, 31, 36, 0.08),
+    0 2px 8px rgba(27, 31, 36, 0.04);
 }
 
 .prize-placeholder {
@@ -139,10 +150,11 @@ button:focus-visible {
   background:
     linear-gradient(
       135deg,
-      rgba(255, 255, 255, 0.05),
-      rgba(255, 255, 255, 0.015)
+      rgba(220, 174, 65, 0.12),
+      rgba(255, 255, 255, 0.75)
     ),
-    #121820;
+    #f2f3f5;
+  color: #a57920;
   font-size: 54px;
 }
 
@@ -152,18 +164,21 @@ button:focus-visible {
 
 .eyebrow {
   margin: 0 0 5px;
-  color: #7f8997;
+  color: #8a9098;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .draw-info h2 {
   margin: 0;
+  color: #17191c;
   font-size: 20px;
   line-height: 1.25;
 }
+
+/* Stats */
 
 .stats {
   display: grid;
@@ -173,21 +188,25 @@ button:focus-visible {
 }
 
 .stats > div {
-  padding: 11px 12px;
+  padding: 12px;
+  border: 1px solid #eceef1;
   border-radius: 13px;
-  background: #0c1117;
+  background: #f8f9fa;
 }
 
 .stats span {
   display: block;
   margin-bottom: 4px;
-  color: #788290;
+  color: #858b94;
   font-size: 11px;
 }
 
 .stats strong {
+  color: #24272c;
   font-size: 15px;
 }
+
+/* Progress */
 
 .progress-section {
   padding: 6px 2px 16px;
@@ -198,41 +217,49 @@ button:focus-visible {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 8px;
-  color: #9ba4b0;
+  color: #777e87;
   font-size: 12px;
 }
 
 .progress-label strong {
-  color: #f1f3f5;
+  color: #292c31;
 }
 
 .progress-track {
   height: 7px;
   overflow: hidden;
   border-radius: 999px;
-  background: #252c35;
+  background: #e7e9ec;
 }
 
 .progress-value {
   height: 100%;
   border-radius: inherit;
-  background: #f1f3f5;
+  background: #c8942e;
   transition: width 0.3s ease;
 }
+
+/* Primary action */
 
 .primary-button {
   width: 100%;
   min-height: 50px;
   border: 0;
   border-radius: 14px;
-  color: #090c10;
-  background: #f4f5f6;
+  color: #ffffff;
+  background: linear-gradient(
+    135deg,
+    #d6a63b,
+    #b98220
+  );
+  box-shadow: 0 8px 20px rgba(185, 130, 32, 0.2);
   font-size: 15px;
   font-weight: 800;
   cursor: pointer;
   transition:
     transform 0.15s ease,
-    opacity 0.15s ease;
+    opacity 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .primary-button:active {
@@ -240,8 +267,11 @@ button:focus-visible {
 }
 
 .primary-button:hover {
-  opacity: 0.92;
+  opacity: 0.94;
+  box-shadow: 0 10px 24px rgba(185, 130, 32, 0.25);
 }
+
+/* Quick links */
 
 .quick-links {
   display: grid;
@@ -258,11 +288,16 @@ button:focus-visible {
   flex-direction: column;
   gap: 6px;
   padding: 8px 4px;
-  border: 1px solid #1d242d;
+  border: 1px solid #e3e5e8;
   border-radius: 15px;
-  color: #d6dbe1;
-  background: #0e1319;
+  color: #373b41;
+  background: #ffffff;
+  box-shadow: 0 4px 12px rgba(25, 28, 32, 0.04);
   cursor: pointer;
+}
+
+.quick-links button:active {
+  transform: scale(0.98);
 }
 
 .quick-links span {
@@ -270,18 +305,22 @@ button:focus-visible {
 }
 
 .quick-links small {
-  color: #8993a1;
+  color: #777e87;
   font-size: 10px;
   line-height: 1.2;
   text-align: center;
 }
 
+/* Notes */
+
 .development-note {
   margin: 18px 0 0;
-  color: #555e6b;
+  color: #9a9fa6;
   font-size: 10px;
   text-align: center;
 }
+
+/* Responsive */
 
 @media (max-width: 360px) {
   .app-shell {
