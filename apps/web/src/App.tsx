@@ -253,20 +253,36 @@ function App() {
     );
   }, [draws]);
 
+  
   const myActiveEntries = useMemo(() => {
     if (!activeDraw) {
       return [];
     }
 
-    return entries.filter(
-      (entry) =>
-        entry.drawId === activeDraw.id &&
-        (entry.status === "reserved" ||
-          entry.status === "pending_payment" ||
-          entry.status === "paid"),
-    );
-  }, [activeDraw, entries]);
+    const currentTime = Date.now();
 
+    return entries.filter((entry) => {
+      if (entry.drawId !== activeDraw.id) {
+        return false;
+      }
+
+      if (
+        entry.status === "pending_payment" ||
+        entry.status === "paid"
+      ) {
+        return true;
+      }
+
+      if (entry.status === "reserved") {
+        return (
+          !!entry.reservedUntil &&
+          new Date(entry.reservedUntil).getTime() > currentTime
+        );
+      }
+
+      return false;
+    });
+  }, [activeDraw, entries, now]);
   const myEntryByNumber = useMemo(() => {
     const map = new Map<number, Entry>();
 
