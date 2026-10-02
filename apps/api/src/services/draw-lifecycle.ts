@@ -1,5 +1,8 @@
 import { pool } from "../db.js";
 import type { Draw } from "../types.js";
+import {
+  notifyUsersAboutOpenedDraw,
+} from "./telegram-notifications.js";
 
 type DrawRow = {
   id: string;
@@ -106,7 +109,9 @@ async function getDrawForUpdate(
     );
 
   if (result.rows.length === 0) {
-    throw new Error("DRAW_NOT_FOUND");
+    throw new Error(
+      "DRAW_NOT_FOUND",
+    );
   }
 
   return result.rows[0];
@@ -292,7 +297,8 @@ export async function openDraw(
     );
   }
 
-  const client = await pool.connect();
+  const client =
+    await pool.connect();
 
   try {
     await client.query("BEGIN");
@@ -319,7 +325,9 @@ export async function openDraw(
           [drawId],
         );
 
-      if (resultCheck.rows[0]?.exists) {
+      if (
+        resultCheck.rows[0]?.exists
+      ) {
         throw new Error(
           "DRAW_ALREADY_EXECUTED",
         );
@@ -399,6 +407,24 @@ export async function openDraw(
 
     await client.query("COMMIT");
 
+    /*
+     * The database transaction must succeed before
+     * Telegram notifications are sent.
+     *
+     * A Telegram failure must never roll back
+     * an already-open draw.
+     */
+    try {
+      await notifyUsersAboutOpenedDraw(
+        updatedDraw,
+      );
+    } catch (notificationError) {
+      console.error(
+        "Draw opened, but Telegram notification failed:",
+        notificationError,
+      );
+    }
+
     return updatedDraw;
   } catch (error) {
     await client.query("ROLLBACK");
@@ -430,7 +456,8 @@ export async function closeDraw(
     );
   }
 
-  const client = await pool.connect();
+  const client =
+    await pool.connect();
 
   try {
     await client.query("BEGIN");
