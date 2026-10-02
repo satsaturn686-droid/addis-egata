@@ -356,7 +356,9 @@ function App() {
       selectEntry(existingEntry);
       return;
     }
-
+    if (occupiedNumbers.has(number)) {
+      return;
+    }
     if (activeDraw.status === "full") {
       return;
     }
