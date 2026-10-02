@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -72,6 +73,9 @@ export default function PublicResults() {
   const [selectedDrawId, setSelectedDrawId] =
     useState<string | null>(null);
 
+  const latestResultIdRef =
+    useRef<string | null>(null);
+
   useEffect(() => {
     const controller =
       new AbortController();
@@ -89,12 +93,50 @@ export default function PublicResults() {
             controller.signal,
           );
 
+        const latestResult =
+          response.results[0] ?? null;
+
+        const previousLatestResultId =
+          latestResultIdRef.current;
+
         setResults(response.results);
 
         setSelectedDrawId(
           (currentSelectedId) => {
+            if (!latestResult) {
+              return null;
+            }
+
+            /*
+             * First load:
+             * show the newest published result.
+             */
+            if (!currentSelectedId) {
+              return latestResult.drawId;
+            }
+
+            /*
+             * A new result has appeared.
+             *
+             * If the user was watching the previously
+             * newest result, automatically move them to
+             * the new Live Draw.
+             */
             if (
-              currentSelectedId &&
+              previousLatestResultId &&
+              currentSelectedId ===
+                previousLatestResultId &&
+              latestResult.drawId !==
+                previousLatestResultId
+            ) {
+              return latestResult.drawId;
+            }
+
+            /*
+             * Keep the user's manually selected
+             * historical result.
+             */
+            if (
               response.results.some(
                 (result) =>
                   result.drawId ===
@@ -104,12 +146,12 @@ export default function PublicResults() {
               return currentSelectedId;
             }
 
-            return (
-              response.results[0]
-                ?.drawId ?? null
-            );
+            return latestResult.drawId;
           },
         );
+
+        latestResultIdRef.current =
+          latestResult?.drawId ?? null;
 
         setError(null);
         firstLoad = false;
