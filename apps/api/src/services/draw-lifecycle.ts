@@ -116,7 +116,8 @@ async function validateDrawReady(
   draw: DrawRow,
 ): Promise<void> {
   if (
-    draw.status !== "draft"
+    draw.status !== "draft" &&
+    draw.status !== "closed"
   ) {
     throw new Error(
       "DRAW_NOT_EDITABLE",
@@ -287,6 +288,24 @@ export async function openDraw(
         client,
         drawId,
       );
+
+    if (draw.status === "closed") {
+      const resultCheck =
+        await client.query<{ exists: boolean }>(
+          `SELECT EXISTS (
+             SELECT 1
+             FROM draw_results
+             WHERE draw_id = $1
+           ) AS exists`,
+          [drawId],
+        );
+
+      if (resultCheck.rows[0]?.exists) {
+        throw new Error(
+          "DRAW_ALREADY_EXECUTED",
+        );
+      }
+    }
 
     await validateDrawReady(
       client,
