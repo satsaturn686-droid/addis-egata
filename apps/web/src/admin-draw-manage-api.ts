@@ -77,14 +77,15 @@ export type AdminDrawListResponse = {
 export type AdminDrawExecutionResponse = {
   result: {
     drawId: string;
-    drawName: string;
-    winnerCount: number;
     eligibleEntryCount: number;
     winners: Array<{
-      rank: number;
-      number: number;
+      id: string;
+      drawId: string;
+      entryId: string;
       userId: string;
+      rank: number;
       prizeAmount: number;
+      selectedAt: string;
     }>;
     executedAt: string;
     publishedAt: string;
