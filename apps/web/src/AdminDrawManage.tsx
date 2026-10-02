@@ -103,7 +103,10 @@ function getPrizeText(
 function canOpen(
   status: AdminDrawListItem["status"],
 ): boolean {
-  return status === "draft";
+  return (
+    status === "draft" ||
+    status === "closed"
+  );
 }
 
 function canClose(
@@ -210,9 +213,14 @@ export default function AdminDrawManage() {
       return;
     }
 
+    const isReopen =
+      draw.status === "closed";
+
     const confirmed =
       window.confirm(
-        `“${draw.name}” ዕጣን ለተሳታፊዎች ክፍት ማድረግ ይፈልጋሉ?`,
+        isReopen
+          ? `“${draw.name}” ዕጣን ድጋሚ ክፍት ማድረግ ይፈልጋሉ?\n\nየተከፈሉ መግቢያዎች አይሰረዙም።`
+          : `“${draw.name}” ዕጣን ለተሳታፊዎች ክፍት ማድረግ ይፈልጋሉ?`,
       );
 
     if (!confirmed) {
@@ -228,7 +236,9 @@ export default function AdminDrawManage() {
       await openAdminDraw(draw.id);
 
       setSuccess(
-        `“${draw.name}” ዕጣ ተከፍቷል።`,
+        isReopen
+          ? `“${draw.name}” ዕጣ ድጋሚ ተከፍቷል።`
+          : `“${draw.name}” ዕጣ ተከፍቷል።`,
       );
 
       await loadDraws(true);
@@ -338,7 +348,10 @@ export default function AdminDrawManage() {
     const busy =
       busyDrawId === draw.id;
 
-    if (draw.status === "draft") {
+    if (
+      draw.status === "draft" ||
+      draw.status === "closed"
+    ) {
       return (
         <button
           type="button"
@@ -350,7 +363,9 @@ export default function AdminDrawManage() {
         >
           {busy
             ? "በመክፈት ላይ..."
-            : "ዕጣውን ክፈት"}
+            : draw.status === "closed"
+              ? "ድጋሚ ክፈት"
+              : "ዕጣውን ክፈት"}
         </button>
       );
     }
@@ -389,23 +404,6 @@ export default function AdminDrawManage() {
             </button>
           ) : null}
         </div>
-      );
-    }
-
-    if (draw.status === "closed") {
-      return (
-        <button
-          type="button"
-          className="draw-action primary"
-          disabled={busy}
-          onClick={() =>
-            void handleExecute(draw)
-          }
-        >
-          {busy
-            ? "በማውጣት ላይ..."
-            : "ዕጣ አውጣ"}
-        </button>
       );
     }
 
@@ -888,8 +886,8 @@ export default function AdminDrawManage() {
                 አሸናፊዎች
               </span>
               <strong>
-  {executionResult.winners.length}
-</strong>
+                {executionResult.winners.length}
+              </strong>
             </div>
 
             <div className="result-item">
