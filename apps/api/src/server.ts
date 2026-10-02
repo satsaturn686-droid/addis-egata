@@ -17,6 +17,192 @@ const app = express();
 
 const PORT = Number(process.env.PORT) || 10000;
 
+const TELEGRAM_BOT_TOKEN =
+  process.env.TELEGRAM_BOT_TOKEN?.trim() ?? "";
+
+const MINI_APP_URL =
+  process.env.MINI_APP_URL?.trim() ||
+  "https://addis-egata-web.onrender.com";
+
+const TELEGRAM_WEBHOOK_SECRET =
+  process.env.TELEGRAM_WEBHOOK_SECRET?.trim() || "";
+
+const DEFAULT_API_URL =
+  "https://addis-egata-api.onrender.com";
+
+function getTelegramApiUrl(
+  method: string,
+): string {
+  return `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${method}`;
+}
+
+async function telegramApi(
+  method: string,
+  body: Record<string, unknown>,
+): Promise<boolean> {
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.warn(
+      "Telegram bot is not configured: TELEGRAM_BOT_TOKEN is missing.",
+    );
+
+    return false;
+  }
+
+  try {
+    const response = await fetch(
+      getTelegramApiUrl(method),
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+      },
+    );
+
+    const data = (await response.json()) as {
+      ok?: boolean;
+      description?: string;
+    };
+
+    if (!response.ok || !data.ok) {
+      console.error(
+        `Telegram API ${method} failed:`,
+        data.description ?? response.statusText,
+      );
+
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error(
+      `Telegram API ${method} request failed:`,
+      error,
+    );
+
+    return false;
+  }
+}
+
+async function sendTelegramWelcome(
+  chatId: number,
+): Promise<void> {
+  await telegramApi("sendMessage", {
+    chat_id: chatId,
+    text:
+      "🎟️ ADDIS ዕጣ\n\n" +
+      "እድልህን ዲጂታል አድርግ።\n\n" +
+      "🎯 የሚከፈቱ ዕጣዎችን ይመልከቱ\n" +
+      "🎟️ ቁጥርዎን ይምረጡ\n" +
+      "💳 በTelebirr ይክፈሉ\n" +
+      "🏆 አሸናናፊ ይሁኑ\n\n" +
+      "👇 ዕጣውን ለመጀመር ከታች ያለውን ይጫኑ።",
+    reply_markup: {
+      inline_keyboard: [
+        [
+          {
+            text: "🎟️ ADDIS ዕጣ ክፈት",
+            web_app: {
+              url: MINI_APP_URL,
+            },
+          },
+        ],
+      ],
+    },
+  });
+}
+
+async function sendTelegramHelp(
+  chatId: number,
+): Promise<void> {
+  await telegramApi("sendMessage", {
+    chat_id: chatId,
+    text:
+      "🎟️ ADDIS ዕጣ\n\n" +
+      "ዕጣዎችን ለማየት፣ ቁጥር ለመያዝ እና " +
+      "በTelebirr ለመክፈል ከታች ያለውን " +
+      "ADDIS ዕጣ ክፈት ይጫኑ።",
+    reply_markup: {
+      inline_keyboard: [
+        [
+          {
+            text: "🎟️ ADDIS ዕጣ ክፈት",
+            web_app: {
+              url: MINI_APP_URL,
+            },
+          },
+        ],
+      ],
+    },
+  });
+}
+
+async function configureTelegramBot(): Promise<void> {
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.warn(
+      "Telegram bot setup skipped because TELEGRAM_BOT_TOKEN is missing.",
+    );
+
+    return;
+  }
+
+  const webhookBaseUrl =
+    process.env.RENDER_EXTERNAL_URL?.trim() ||
+    process.env.PUBLIC_API_URL?.trim() ||
+    DEFAULT_API_URL;
+
+  const webhookUrl =
+    `${webhookBaseUrl.replace(/\/+$/, "")}/telegram/webhook`;
+
+  await telegramApi("setMyCommands", {
+    commands: [
+      {
+        command: "start",
+        description: "ADDIS ዕጣን ጀምር",
+      },
+      {
+        command: "help",
+        description: "እገዛ",
+      },
+    ],
+  });
+
+  await telegramApi("setChatMenuButton", {
+    menu_button: {
+      type: "web_app",
+      text: "🎟️ ADDIS ዕጣ",
+      web_app: {
+        url: MINI_APP_URL,
+      },
+    },
+  });
+
+  const webhookBody: Record<string, unknown> = {
+    url: webhookUrl,
+    allowed_updates: ["message"],
+  };
+
+  if (TELEGRAM_WEBHOOK_SECRET) {
+    webhookBody.secret_token =
+      TELEGRAM_WEBHOOK_SECRET;
+  }
+
+  const webhookConfigured = await telegramApi(
+    "setWebhook",
+    webhookBody,
+  );
+
+  if (webhookConfigured) {
+    console.log(
+      `Telegram webhook configured: ${webhookUrl}`,
+    );
+  }
+}
+
+/*
+ * CORS
+ */
 app.use(
   cors({
     origin: true,
@@ -24,19 +210,112 @@ app.use(
   }),
 );
 
-app.use(express.json({ limit: "5mb" }));
+/*
+ * JSON body parser
+ */
+app.use(
+  express.json({
+    limit: "5mb",
+  }),
+);
 
+/*
+ * Telegram bot webhook
+ *
+ * POST /telegram/webhook
+ */
+app.post(
+  "/telegram/webhook",
+  async (req, res) => {
+    if (TELEGRAM_WEBHOOK_SECRET) {
+      const receivedSecret =
+        req.header(
+          "x-telegram-bot-api-secret-token",
+        ) ?? "";
+
+      if (
+        receivedSecret !==
+        TELEGRAM_WEBHOOK_SECRET
+      ) {
+        res.status(401).json({
+          error: "UNAUTHORIZED",
+        });
+
+        return;
+      }
+    }
+
+    res.status(200).json({
+      ok: true,
+    });
+
+    const update = req.body as {
+      message?: {
+        chat?: {
+          id?: number;
+        };
+        text?: string;
+      };
+    };
+
+    const message = update.message;
+
+    if (
+      !message?.chat ||
+      typeof message.chat.id !== "number"
+    ) {
+      return;
+    }
+
+    const chatId = message.chat.id;
+    const text =
+      typeof message.text === "string"
+        ? message.text.trim()
+        : "";
+
+    if (
+      text === "/start" ||
+      text.startsWith("/start ")
+    ) {
+      await sendTelegramWelcome(chatId);
+      return;
+    }
+
+    if (
+      text === "/help" ||
+      text.startsWith("/help ")
+    ) {
+      await sendTelegramHelp(chatId);
+      return;
+    }
+
+    if (text) {
+      await sendTelegramWelcome(chatId);
+    }
+  },
+);
+
+/*
+ * Health check
+ *
+ * GET /health
+ */
 app.get("/health", async (_req, res) => {
   const databaseOk = await checkDatabase();
 
   res.status(databaseOk ? 200 : 503).json({
     ok: databaseOk,
     service: "addis-egata-api",
-    database: databaseOk ? "connected" : "unavailable",
+    database: databaseOk
+      ? "connected"
+      : "unavailable",
     timestamp: new Date().toISOString(),
   });
 });
 
+/*
+ * API root
+ */
 app.get("/", (_req, res) => {
   res.status(200).json({
     name: "Addis ዕጣ",
@@ -113,10 +392,6 @@ app.use(
  * Admin draw list
  *
  * GET /admin/draw-list
- *
- * Returns all draws for administrators,
- * including draft, open, full, closed,
- * drawing, completed, and cancelled draws.
  */
 app.use(
   "/admin/draw-list",
@@ -127,22 +402,26 @@ app.use(
  * Admin draw execution
  *
  * POST /admin/draw-execution/:drawId/execute
- *
- * The draw engine securely selects winners and
- * publishes the immutable result.
  */
 app.use(
   "/admin/draw-execution",
   adminDrawExecutionRouter,
 );
 
+/*
+ * 404
+ */
 app.use((_req, res) => {
   res.status(404).json({
     error: "NOT_FOUND",
-    message: "The requested endpoint does not exist.",
+    message:
+      "The requested endpoint does not exist.",
   });
 });
 
+/*
+ * Global error handler
+ */
 app.use(
   (
     err: unknown,
@@ -163,8 +442,17 @@ app.use(
   },
 );
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(
-    `Addis ዕጣ API running on port ${PORT}`,
-  );
-});
+/*
+ * Start API
+ */
+app.listen(
+  PORT,
+  "0.0.0.0",
+  () => {
+    console.log(
+      `Addis ዕጣ API running on port ${PORT}`,
+    );
+
+    void configureTelegramBot();
+  },
+);
