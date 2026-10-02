@@ -289,17 +289,7 @@ function App() {
       )
     : 0;
 
-  const progress = activeDraw
-    ? Math.min(
-        100,
-        Math.round(
-          (filledNumbers /
-            Math.max(1, activeDraw.totalNumbers)) *
-            100,
-        ),
-      )
-    : 0;
-
+  
   const progress = activeDraw
     ? Math.min(
         100,
