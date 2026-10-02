@@ -1316,7 +1316,7 @@ function App() {
           </button>
         </div>
       </section>
-
+      <PublicResults />
       <section className="quick-links">
         <button type="button">
           <span>🔢</span>
