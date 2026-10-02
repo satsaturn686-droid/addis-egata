@@ -12,6 +12,7 @@ type DrawRow = {
   displayed_prize_value: string | number | null;
   actual_prize_cost: string | number | null;
   total_numbers: number;
+  filled_numbers: string | number;
   entry_fee: string | number;
   winner_count: number;
   unique_winners: boolean;
@@ -52,6 +53,7 @@ function mapDraw(row: DrawRow): Draw {
     displayedPrizeValue: toNumber(row.displayed_prize_value),
     actualPrizeCost: toNumber(row.actual_prize_cost),
     totalNumbers: row.total_numbers,
+    filledNumbers: Number(row.filled_numbers),
     entryFee: Number(row.entry_fee),
     winnerCount: row.winner_count,
     uniqueWinners: row.unique_winners,
@@ -81,28 +83,38 @@ export async function getDrawById(
   const rows = await query<DrawRow>(
     `
       SELECT
-        id,
-        name,
-        description,
-        prize_type,
-        prize_name,
-        prize_image_url,
-        prize_description,
-        displayed_prize_value,
-        actual_prize_cost,
-        total_numbers,
-        entry_fee,
-        winner_count,
-        unique_winners,
-        status,
-        starts_at,
-        deadline_at,
-        draw_at,
-        created_by,
-        created_at,
-        updated_at
-      FROM draws
-      WHERE id = $1
+        d.id,
+        d.name,
+        d.description,
+        d.prize_type,
+        d.prize_name,
+        d.prize_image_url,
+        d.prize_description,
+        d.displayed_prize_value,
+        d.actual_prize_cost,
+        d.total_numbers,
+        (
+          SELECT COUNT(*)
+          FROM entries e
+          WHERE e.draw_id = d.id
+            AND e.status IN (
+              'reserved',
+              'pending_payment',
+              'paid'
+            )
+        ) AS filled_numbers,
+        d.entry_fee,
+        d.winner_count,
+        d.unique_winners,
+        d.status,
+        d.starts_at,
+        d.deadline_at,
+        d.draw_at,
+        d.created_by,
+        d.created_at,
+        d.updated_at
+      FROM draws d
+      WHERE d.id = $1
       LIMIT 1
     `,
     [drawId],
@@ -115,32 +127,42 @@ export async function getOpenDraws(): Promise<Draw[]> {
   const rows = await query<DrawRow>(
     `
       SELECT
-        id,
-        name,
-        description,
-        prize_type,
-        prize_name,
-        prize_image_url,
-        prize_description,
-        displayed_prize_value,
-        actual_prize_cost,
-        total_numbers,
-        entry_fee,
-        winner_count,
-        unique_winners,
-        status,
-        starts_at,
-        deadline_at,
-        draw_at,
-        created_by,
-        created_at,
-        updated_at
-      FROM draws
-      WHERE status IN ('open', 'full')
+        d.id,
+        d.name,
+        d.description,
+        d.prize_type,
+        d.prize_name,
+        d.prize_image_url,
+        d.prize_description,
+        d.displayed_prize_value,
+        d.actual_prize_cost,
+        d.total_numbers,
+        (
+          SELECT COUNT(*)
+          FROM entries e
+          WHERE e.draw_id = d.id
+            AND e.status IN (
+              'reserved',
+              'pending_payment',
+              'paid'
+            )
+        ) AS filled_numbers,
+        d.entry_fee,
+        d.winner_count,
+        d.unique_winners,
+        d.status,
+        d.starts_at,
+        d.deadline_at,
+        d.draw_at,
+        d.created_by,
+        d.created_at,
+        d.updated_at
+      FROM draws d
+      WHERE d.status IN ('open', 'full')
       ORDER BY
-        CASE WHEN draw_at IS NULL THEN 1 ELSE 0 END,
-        draw_at ASC NULLS LAST,
-        created_at DESC
+        CASE WHEN d.draw_at IS NULL THEN 1 ELSE 0 END,
+        d.draw_at ASC NULLS LAST,
+        d.created_at DESC
     `,
   );
 
