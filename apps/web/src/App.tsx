@@ -840,7 +840,7 @@ const numberBoardSummary = useMemo(() => {
               {activeDraw.totalNumbers} ቁጥሮች
             </span>
 
-            <strong>{remaining} ቀሪ</strong>
+            <strong>{numberBoardSummary.available} ቀሪ</strong>
           </div>
 
           <div
