@@ -217,10 +217,7 @@ export default function AdminDrawManage() {
     setConfirmingDraw,
   ] = useState<AdminDrawListItem | null>(null);
 
-  const [
-    selectedNumberDrawId,
-    setSelectedNumberDrawId,
-  ] = useState<string | null>(null);
+  
   const [
     selectedNumberDrawId,
     setSelectedNumberDrawId,
