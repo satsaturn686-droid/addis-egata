@@ -9,28 +9,129 @@ import {
   executeDraw,
 } from "../services/draw-engine.js";
 
+import {
+  scheduleDraw,
+} from "../services/scheduled-draws.js";
+
 const router = Router();
 
-/*
- * All admin draw execution routes require:
- * 1. Valid Telegram authentication
- * 2. Administrator privileges
- */
 router.use(
   requireTelegramAuth,
   requireAdmin,
 );
 
 /*
- * Execute a draw and select winners.
+ * POST /admin/draw-execution/:drawId/schedule
  *
+ * A draw must already be full.
+ * Scheduling does not execute the draw.
+ * It only sets draw_at.
+ */
+router.post(
+  "/:drawId/schedule",
+  async (req, res) => {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          error:
+            "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
+        });
+        return;
+      }
+
+      const drawId =
+        req.params.drawId?.trim();
+
+      const drawAt =
+        typeof req.body?.drawAt ===
+        "string"
+          ? req.body.drawAt.trim()
+          : "";
+
+      if (!drawId) {
+        res.status(400).json({
+          error:
+            "INVALID_DRAW_ID",
+          message:
+            "Draw ID is required.",
+        });
+        return;
+      }
+
+      if (!drawAt) {
+        res.status(400).json({
+          error:
+            "DRAW_TIME_REQUIRED",
+          message:
+            "Draw time is required.",
+        });
+        return;
+      }
+
+      const scheduledAt =
+        await scheduleDraw(
+          req.user.id,
+          drawId,
+          drawAt,
+        );
+
+      res.status(200).json({
+        drawId,
+        drawAt: scheduledAt,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "DRAW_SCHEDULE_FAILED";
+
+      const clientErrors =
+        new Set([
+          "INVALID_ADMIN_USER_ID",
+          "INVALID_DRAW_ID",
+          "DRAW_TIME_INVALID",
+          "DRAW_TIME_MUST_BE_IN_FUTURE",
+          "DRAW_NOT_FOUND",
+          "DRAW_MUST_BE_FULL_TO_SCHEDULE",
+          "DRAW_ALREADY_EXECUTED",
+        ]);
+
+      if (
+        clientErrors.has(message)
+      ) {
+        res.status(400).json({
+          error: message,
+          message:
+            "The draw could not be scheduled.",
+        });
+        return;
+      }
+
+      console.error(
+        "Schedule admin draw error:",
+        error,
+      );
+
+      res.status(500).json({
+        error:
+          "DRAW_SCHEDULE_FAILED",
+        message:
+          "The draw could not be scheduled.",
+      });
+    }
+  },
+);
+
+/*
  * POST /admin/draw-execution/:drawId/execute
  *
- * Only draws in "full" or "closed" status can
- * be executed by the draw engine.
+ * Existing Secure Random Draw.
  *
- * Winner selection is performed server-side using
- * cryptographically secure randomness.
+ * IMPORTANT:
+ * This endpoint and the underlying draw engine
+ * remain unchanged in behavior.
  */
 router.post(
   "/:drawId/execute",
@@ -92,7 +193,9 @@ router.post(
           "DRAW_HASH_FAILED",
         ]);
 
-      if (clientErrors.has(message)) {
+      if (
+        clientErrors.has(message)
+      ) {
         res.status(400).json({
           error: message,
           message:
