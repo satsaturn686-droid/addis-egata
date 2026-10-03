@@ -12,6 +12,10 @@ import {
   openDraw,
 } from "../services/draw-lifecycle.js";
 
+import {
+  notifyUsersAboutOpenedDraw,
+} from "../services/telegram-notifications.js";
+
 const router = Router();
 
 /*
@@ -415,6 +419,40 @@ router.post(
           req.user.id,
           drawId,
         );
+
+      /*
+       * The draw is already committed by
+       * openDraw() before this notification
+       * is attempted.
+       *
+       * A Telegram failure must never make
+       * the draw opening fail.
+       */
+      try {
+        await notifyUsersAboutOpenedDraw(
+          {
+            id: draw.id,
+            name: draw.name,
+            prizeName:
+              draw.prizeName,
+            prizeType:
+              draw.prizeType,
+            displayedPrizeValue:
+              draw.displayedPrizeValue,
+            totalNumbers:
+              draw.totalNumbers,
+            entryFee:
+              draw.entryFee,
+            winnerCount:
+              draw.winnerCount,
+          },
+        );
+      } catch (notificationError) {
+        console.error(
+          "Open draw notification error:",
+          notificationError,
+        );
+      }
 
       res.status(200).json({
         draw,
