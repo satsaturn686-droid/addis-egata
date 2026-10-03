@@ -78,8 +78,12 @@ router.get(
         return;
       }
 
+      /*
+       * Frontend LiveDraw API contract:
+       * { live: state }
+       */
       res.status(200).json({
-        state,
+        live: state,
       });
     } catch (error) {
       const message =
