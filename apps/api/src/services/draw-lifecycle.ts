@@ -229,45 +229,33 @@ async function validateDrawReady(
    * its original schedule has already passed.
    *
    * This is intentional: reopening an accidentally
-   * closed draw must not be blocked by the old
-   * deadline/draw time.
+   * closed draw must not be blocked by an old
+   * schedule.
    */
   if (allowPastSchedule) {
     return;
   }
 
-  const now = Date.now();
-
-  if (
-    draw.starts_at !== null &&
-    new Date(
-      draw.starts_at,
-    ).getTime() < now
-  ) {
-    /*
-     * A draw may still be opened after its
-     * configured start time. It becomes open
-     * immediately, which is safer than creating
-     * an unusable draw.
-     */
-  }
-
-  if (
-    draw.deadline_at !== null &&
-    new Date(
-      draw.deadline_at,
-    ).getTime() <= now
-  ) {
-    throw new Error(
-      "DRAW_DEADLINE_ALREADY_PASSED",
-    );
-  }
+  /*
+   * There is NO draw deadline.
+   *
+   * The draw remains open until all numbers
+   * are successfully paid and the payment flow
+   * changes the draw status to "full".
+   *
+   * starts_at is also not used as an opening
+   * blocker. If an admin opens a valid draw,
+   * it becomes open immediately.
+   *
+   * draw_at remains the actual draw execution
+   * schedule and is therefore still validated.
+   */
 
   if (
     draw.draw_at !== null &&
     new Date(
       draw.draw_at,
-    ).getTime() < now
+    ).getTime() < Date.now()
   ) {
     throw new Error(
       "DRAW_TIME_ALREADY_PASSED",
