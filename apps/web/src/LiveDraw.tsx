@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import type {
   LiveDrawState,
@@ -7,14 +7,8 @@ import type {
 } from "./api";
 
 type LiveDrawProps =
-  | {
-      live: LiveDrawState;
-      result?: never;
-    }
-  | {
-      result: PublicDrawResult;
-      live?: never;
-    };
+  | { live: LiveDrawState; result?: never }
+  | { result: PublicDrawResult; live?: never };
 
 function formatMoney(value: number): string {
   return `${value.toLocaleString("en-US")} ብር`;
@@ -25,13 +19,7 @@ function getWinnerName(
   lastName: string | null,
   username: string | null,
 ): string {
-  const fullName = [
-    firstName,
-    lastName,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
+  const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
 
   if (fullName) {
     return fullName;
@@ -44,7 +32,35 @@ function getWinnerName(
   return "ተሳታፊ";
 }
 
-function LiveWinnerRow({
+function WinnerBall({ winner }: { winner: PublicWinner }) {
+  return (
+    <div className="live-ball-stage" key={winner.id}>
+      <div className="live-ball-glow" />
+
+      <div className="live-ball">
+        <strong>{winner.number}</strong>
+      </div>
+
+      <span className="live-ball-label">
+        አሸናፊ ቁጥር
+      </span>
+
+      <strong className="live-ball-name">
+        {getWinnerName(
+          winner.firstName,
+          winner.lastName,
+          winner.username,
+        )}
+      </strong>
+
+      <span className="live-ball-prize">
+        #{winner.rank} · {formatMoney(winner.prizeAmount)}
+      </span>
+    </div>
+  );
+}
+
+function WinnerRow({
   winner,
   revealed,
   current,
@@ -57,31 +73,21 @@ function LiveWinnerRow({
     <article
       className={[
         "live-winner-row",
-        revealed
-          ? "revealed"
-          : "hidden",
-        current
-          ? "current"
-          : "",
+        revealed ? "revealed" : "hidden",
+        current ? "current" : "",
       ]
         .filter(Boolean)
         .join(" ")}
     >
       <div className="live-winner-rank">
-        {revealed
-          ? `#${winner.rank}`
-          : "?"}
+        {revealed ? `#${winner.rank}` : "?"}
       </div>
 
       <div className="live-winner-number">
-        <span>
-          ቁጥር
-        </span>
+        <span>ቁጥር</span>
 
         <strong>
-          {revealed
-            ? `#${winner.number}`
-            : "•••"}
+          {revealed ? `#${winner.number}` : "•••"}
         </strong>
       </div>
 
@@ -98,54 +104,11 @@ function LiveWinnerRow({
 
         <small>
           {revealed
-            ? formatMoney(
-                winner.prizeAmount,
-              )
+            ? formatMoney(winner.prizeAmount)
             : "በቅርቡ..."}
         </small>
       </div>
     </article>
-  );
-}
-
-function WinnerBall({
-  winner,
-}: {
-  winner: PublicWinner;
-}) {
-  return (
-    <div
-      className="live-ball-stage"
-      key={winner.id}
-    >
-      <div className="live-ball-glow" />
-
-      <div className="live-ball">
-        <strong>
-          {winner.number}
-        </strong>
-      </div>
-
-      <span className="live-ball-label">
-        አሸናፊ ቁጥር
-      </span>
-
-      <strong className="live-ball-name">
-        {getWinnerName(
-          winner.firstName,
-          winner.lastName,
-          winner.username,
-        )}
-      </strong>
-
-      <span className="live-ball-prize">
-        #{winner.rank}
-        {" · "}
-        {formatMoney(
-          winner.prizeAmount,
-        )}
-      </span>
-    </div>
   );
 }
 
@@ -154,8 +117,7 @@ function CompletedDraw({
 }: {
   result: PublicDrawResult;
 }) {
-  const [visibleCount, setVisibleCount] =
-    useState(0);
+  const [visibleCount, setVisibleCount] = useState(0);
 
   useEffect(() => {
     setVisibleCount(0);
@@ -164,38 +126,24 @@ function CompletedDraw({
       return;
     }
 
-    const firstTimer =
-      window.setTimeout(() => {
-        setVisibleCount(1);
-      }, 700);
+    const firstTimer = window.setTimeout(() => {
+      setVisibleCount(1);
+    }, 700);
 
-    const interval =
-      window.setInterval(() => {
-        setVisibleCount(
-          (current) => {
-            if (
-              current >=
-              result.winners.length
-            ) {
-              window.clearInterval(
-                interval,
-              );
-              return current;
-            }
+    const interval = window.setInterval(() => {
+      setVisibleCount((current) => {
+        if (current >= result.winners.length) {
+          window.clearInterval(interval);
+          return current;
+        }
 
-            return current + 1;
-          },
-        );
-      }, 700);
+        return current + 1;
+      });
+    }, 700);
 
     return () => {
-      window.clearTimeout(
-        firstTimer,
-      );
-
-      window.clearInterval(
-        interval,
-      );
+      window.clearTimeout(firstTimer);
+      window.clearInterval(interval);
     };
   }, [result.drawId, result.winners.length]);
 
@@ -220,9 +168,7 @@ function CompletedDraw({
             ✓ ዕጣው ተጠናቋል
           </span>
 
-          <h2>
-            {result.drawName}
-          </h2>
+          <h2>{result.drawName}</h2>
 
           <p>
             ሁሉም አሸናፊዎች ተገልጠዋል።
@@ -230,9 +176,7 @@ function CompletedDraw({
         </div>
 
         <div className="live-draw-counter">
-          <strong>
-            {result.winners.length}
-          </strong>
+          <strong>{result.winners.length}</strong>
 
           <span>
             {" / "}
@@ -242,9 +186,7 @@ function CompletedDraw({
       </div>
 
       {latestWinner ? (
-        <WinnerBall
-          winner={latestWinner}
-        />
+        <WinnerBall winner={latestWinner} />
       ) : (
         <div className="live-draw-waiting">
           <div className="live-draw-spinner">
@@ -258,26 +200,18 @@ function CompletedDraw({
       )}
 
       <div className="live-winners-list">
-        {result.winners.map(
-          (winner, index) => (
-            <LiveWinnerRow
-              key={winner.id}
-              winner={winner}
-              revealed={
-                index < visibleCount
-              }
-              current={
-                index ===
-                visibleCount - 1
-              }
-            />
-          ),
-        )}
+        {result.winners.map((winner, index) => (
+          <WinnerRow
+            key={winner.id}
+            winner={winner}
+            revealed={index < visibleCount}
+            current={index === visibleCount - 1}
+          />
+        ))}
       </div>
 
       <div className="live-draw-footer">
-        🔐 የአሸናፊ ምርጫው በbackend
-        በsecure random ተወስኗል።
+        🔐 የአሸናፊ ምርጫው በbackend በsecure random ተወስኗል።
       </div>
     </section>
   );
@@ -288,42 +222,31 @@ function LiveDrawing({
 }: {
   live: LiveDrawState;
 }) {
-  const [now, setNow] =
-    useState(Date.now());
+  const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
-    const timer =
-      window.setInterval(() => {
-        setNow(Date.now());
-      }, 250);
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+    }, 250);
 
     return () => {
       window.clearInterval(timer);
     };
   }, []);
 
-  const elapsedMs =
-    Math.max(
-      0,
-      now -
-        new Date(
-          live.executedAt,
-        ).getTime(),
-    );
+  const elapsedMs = Math.max(
+    0,
+    now - new Date(live.executedAt).getTime(),
+  );
 
-  const countdownSeconds =
-    Math.max(
-      0,
-      Math.ceil(
-        (3000 - elapsedMs) / 1000,
-      ),
-    );
+  const countdownSeconds = Math.max(
+    0,
+    Math.ceil((3000 - elapsedMs) / 1000),
+  );
 
   const currentWinner =
     live.winners.length > 0
-      ? live.winners[
-          live.winners.length - 1
-        ]
+      ? live.winners[live.winners.length - 1]
       : null;
 
   const progressPercent =
@@ -336,11 +259,8 @@ function LiveDrawing({
         )
       : 0;
 
-  const waitingForFirstWinner =
-    live.revealedWinnerCount === 0;
-
   const statusText =
-    waitingForFirstWinner
+    live.revealedWinnerCount === 0
       ? countdownSeconds > 0
         ? `የመጀመሪያው አሸናፊ በ${countdownSeconds} ሰከንድ ውስጥ...`
         : "የመጀመሪያው አሸናፊ እየተገለጠ ነው..."
@@ -360,9 +280,7 @@ function LiveDrawing({
             🔴 ቀጥታ ዕጣ
           </span>
 
-          <h2>
-            {live.drawName}
-          </h2>
+          <h2>{live.drawName}</h2>
 
           <p>
             አሸናፊዎቹ በቅደም ተከተል
@@ -401,9 +319,7 @@ function LiveDrawing({
       </div>
 
       {currentWinner ? (
-        <WinnerBall
-          winner={currentWinner}
-        />
+        <WinnerBall winner={currentWinner} />
       ) : (
         <div className="live-draw-waiting">
           <div className="live-draw-spinner">
@@ -414,39 +330,37 @@ function LiveDrawing({
             ዕጣው ተጀምሯል
           </strong>
 
-          <span>
-            {statusText}
-          </span>
+          <span>{statusText}</span>
         </div>
       )}
 
       {currentWinner ? (
         <div className="live-current-status">
-          <span>
-            {statusText}
-          </span>
+          <span>{statusText}</span>
         </div>
       ) : null}
 
       <div className="live-winners-list">
         {Array.from({
-          length:
-            live.totalWinnerCount,
+          length: live.totalWinnerCount,
         }).map((_, index) => {
-          const winner =
-            live.winners[index];
+          const winner = live.winners[index];
 
-          return winner ? (
-            <LiveWinnerRow
-              key={winner.id}
-              winner={winner}
-              revealed
-              current={
-                index ===
-                live.winners.length - 1
-              }
-            />
-          ) : (
+          if (winner) {
+            return (
+              <WinnerRow
+                key={winner.id}
+                winner={winner}
+                revealed
+                current={
+                  index ===
+                  live.winners.length - 1
+                }
+              />
+            );
+          }
+
+          return (
             <div
               key={`hidden-${index}`}
               className="live-winner-row hidden"
@@ -456,13 +370,9 @@ function LiveDrawing({
               </div>
 
               <div className="live-winner-number">
-                <span>
-                  ቁጥር
-                </span>
+                <span>ቁጥር</span>
 
-                <strong>
-                  •••
-                </strong>
+                <strong>•••</strong>
               </div>
 
               <div className="live-winner-user">
@@ -470,9 +380,7 @@ function LiveDrawing({
                   አሸናፊው እየተጠበቀ ነው
                 </strong>
 
-                <small>
-                  በቅርቡ...
-                </small>
+                <small>በቅርቡ...</small>
               </div>
             </div>
           );
@@ -488,3 +396,14 @@ function LiveDrawing({
       </div>
     </section>
   );
+}
+
+export default function LiveDraw(
+  props: LiveDrawProps,
+) {
+  if ("live" in props) {
+    return <LiveDrawing live={props.live} />;
+  }
+
+  return <CompletedDraw result={props.result} />;
+}
