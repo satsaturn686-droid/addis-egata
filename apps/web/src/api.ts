@@ -35,7 +35,7 @@ export type Draw = {
   displayedPrizeValue: number | null;
   actualPrizeCost: number | null;
   totalNumbers: number;
-    occupiedNumbers: number[];
+  occupiedNumbers: number[];
   entryFee: number;
   winnerCount: number;
   uniqueWinners: boolean;
@@ -178,6 +178,27 @@ export type PublicDrawResultResponse = {
 
 export type PublishedResultsResponse = {
   results: PublicDrawResult[];
+};
+
+export type LiveDrawState = {
+  drawId: string;
+  drawName: string;
+  status: "drawing" | "completed";
+  prizeType: "cash" | "physical";
+  prizeName: string;
+  prizeImageUrl: string | null;
+  displayedPrizeValue: number | null;
+  winnerCount: number;
+  eligibleEntryCount: number;
+  executedAt: string;
+  publishedAt: string | null;
+  revealedWinnerCount: number;
+  totalWinnerCount: number;
+  winners: PublicWinner[];
+};
+
+export type LiveDrawResponse = {
+  live: LiveDrawState;
 };
 
 export type ApiRequestOptions = {
@@ -482,6 +503,22 @@ export async function getPublicDrawResult(
 
   return request<PublicDrawResultResponse>(
     `/results/${encodeURIComponent(drawId)}`,
+    {
+      signal,
+    },
+  );
+}
+
+export async function getLiveDrawState(
+  drawId: string,
+  signal?: AbortSignal,
+): Promise<LiveDrawResponse> {
+  if (!drawId.trim()) {
+    throw new Error("Draw ID is required.");
+  }
+
+  return request<LiveDrawResponse>(
+    `/results/live/${encodeURIComponent(drawId)}`,
     {
       signal,
     },
