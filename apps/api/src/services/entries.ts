@@ -17,7 +17,6 @@ type DrawRow = {
   total_numbers: number;
   status: string;
   starts_at: string | null;
-  deadline_at: string | null;
 };
 
 const RESERVATION_MINUTES = 30;
@@ -42,14 +41,6 @@ function isBeforeStart(startsAt: string | null): boolean {
   }
 
   return new Date(startsAt).getTime() > Date.now();
-}
-
-function isAfterDeadline(deadlineAt: string | null): boolean {
-  if (!deadlineAt) {
-    return false;
-  }
-
-  return new Date(deadlineAt).getTime() <= Date.now();
 }
 
 export async function reserveNumber(
@@ -90,8 +81,7 @@ export async function reserveNumber(
         SELECT
           total_numbers,
           status,
-          starts_at,
-          deadline_at
+          starts_at
         FROM draws
         WHERE id = $1
         FOR UPDATE
@@ -117,9 +107,14 @@ export async function reserveNumber(
       throw new Error("DRAW_NOT_STARTED");
     }
 
-    if (isAfterDeadline(draw.deadline_at)) {
-      throw new Error("DRAW_DEADLINE_PASSED");
-    }
+    /*
+     * Addis ዕጣ has NO draw deadline.
+     *
+     * The draw remains open until all numbers are paid.
+     *
+     * Only an individual unpaid reservation expires after
+     * 30 minutes.
+     */
 
     /*
      * Only an unpaid reservation expires after 30 minutes.
@@ -137,6 +132,7 @@ export async function reserveNumber(
         UPDATE entries
         SET
           status = 'expired',
+          reserved_until = NULL,
           updated_at = NOW()
         WHERE draw_id = $1
           AND status = 'reserved'
