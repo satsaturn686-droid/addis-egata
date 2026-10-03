@@ -239,7 +239,41 @@ function App() {
       controller.abort();
     };
   }, []);
+  useEffect(() => {
+    if (!telegramReady) {
+      return;
+    }
 
+    let active = true;
+
+    const refreshPublicState = async () => {
+      try {
+        const [drawsResponse, entriesResponse] =
+          await Promise.all([
+            getDraws(),
+            getMyEntries(),
+          ]);
+
+        if (!active) {
+          return;
+        }
+
+        setDraws(drawsResponse.draws);
+        setEntries(entriesResponse.entries);
+      } catch {
+        // Keep the current UI state when a background refresh fails.
+      }
+    };
+
+    const timer = window.setInterval(() => {
+      void refreshPublicState();
+    }, 10000);
+
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [telegramReady]);
   useEffect(() => {
     const timer = window.setInterval(() => {
       setNow(Date.now());
