@@ -401,7 +401,7 @@ function LiveDrawing({
 export default function LiveDraw(
   props: LiveDrawProps,
 ) {
-  if ("live" in props) {
+  if (props.live) {
     return <LiveDrawing live={props.live} />;
   }
 
