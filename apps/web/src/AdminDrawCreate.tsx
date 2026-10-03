@@ -74,9 +74,6 @@ export default function AdminDrawCreate({
   const [startsAt, setStartsAt] =
     useState("");
 
-  const [deadlineAt, setDeadlineAt] =
-    useState("");
-
   const [drawAt, setDrawAt] =
     useState("");
 
@@ -259,8 +256,6 @@ export default function AdminDrawCreate({
           uniqueWinners,
           startsAt:
             startsAt || undefined,
-          deadlineAt:
-            deadlineAt || undefined,
           drawAt:
             drawAt || undefined,
           prizes,
@@ -536,6 +531,7 @@ export default function AdminDrawCreate({
               <label htmlFor="draw-name">
                 የዕጣ ስም
               </label>
+
               <input
                 id="draw-name"
                 value={name}
@@ -551,6 +547,7 @@ export default function AdminDrawCreate({
               <label htmlFor="draw-description">
                 መግለጫ
               </label>
+
               <textarea
                 id="draw-description"
                 value={description}
@@ -567,6 +564,7 @@ export default function AdminDrawCreate({
               <label htmlFor="total-numbers">
                 ጠቅላላ ቁጥሮች
               </label>
+
               <input
                 id="total-numbers"
                 type="number"
@@ -584,6 +582,7 @@ export default function AdminDrawCreate({
               <label htmlFor="entry-fee">
                 የመግቢያ ክፍያ (ETB)
               </label>
+
               <input
                 id="entry-fee"
                 type="number"
@@ -608,6 +607,7 @@ export default function AdminDrawCreate({
               <label htmlFor="prize-type">
                 የሽልማት አይነት
               </label>
+
               <select
                 id="prize-type"
                 value={prizeType}
@@ -622,6 +622,7 @@ export default function AdminDrawCreate({
                 <option value="cash">
                   ገንዘብ
                 </option>
+
                 <option value="physical">
                   እቃ / ንብረት
                 </option>
@@ -632,6 +633,7 @@ export default function AdminDrawCreate({
               <label htmlFor="prize-name">
                 የሽልማት ስም
               </label>
+
               <input
                 id="prize-name"
                 value={prizeName}
@@ -649,6 +651,7 @@ export default function AdminDrawCreate({
               <label htmlFor="prize-image">
                 የሽልማት ምስል URL
               </label>
+
               <input
                 id="prize-image"
                 type="url"
@@ -666,6 +669,7 @@ export default function AdminDrawCreate({
               <label htmlFor="prize-description">
                 የሽልማት መግለጫ
               </label>
+
               <textarea
                 id="prize-description"
                 value={prizeDescription}
@@ -682,6 +686,7 @@ export default function AdminDrawCreate({
               <label htmlFor="displayed-value">
                 የሚታይ ዋጋ (ETB)
               </label>
+
               <input
                 id="displayed-value"
                 type="number"
@@ -700,6 +705,7 @@ export default function AdminDrawCreate({
               <label htmlFor="actual-cost">
                 ትክክለኛ የግዢ ዋጋ (ETB)
               </label>
+
               <input
                 id="actual-cost"
                 type="number"
@@ -717,18 +723,24 @@ export default function AdminDrawCreate({
         </section>
 
         <section className="admin-create-section">
-          <h2>አሸናፊዎች እና Prize Distribution</h2>
+          <h2>
+            አሸናፊዎች እና Prize Distribution
+          </h2>
 
           <div className="admin-create-grid">
             <div className="admin-create-field">
               <label htmlFor="winner-count">
                 የአሸናፊዎች ብዛት
               </label>
+
               <input
                 id="winner-count"
                 type="number"
                 min="5"
-                max={totalNumbers || "1000000"}
+                max={
+                  totalNumbers ||
+                  "1000000"
+                }
                 value={winnerCount}
                 onChange={(event) =>
                   updateWinnerCount(
@@ -753,6 +765,7 @@ export default function AdminDrawCreate({
                     )
                   }
                 />
+
                 አንድ ተጠቃሚ ከአንድ በላይ
                 አሸናፊ እንዳይሆን
               </label>
@@ -788,7 +801,10 @@ export default function AdminDrawCreate({
 
           <div className="admin-create-summary">
             <div className="admin-create-stat">
-              <span>Prize Pool</span>
+              <span>
+                Prize Pool
+              </span>
+
               <strong>
                 {formatAmount(
                   totalPrize,
@@ -801,6 +817,7 @@ export default function AdminDrawCreate({
               <span>
                 100% ቢሞላ Collection
               </span>
+
               <strong>
                 {formatAmount(
                   estimatedCollection,
@@ -813,6 +830,7 @@ export default function AdminDrawCreate({
               <span>
                 ግምታዊ ልዩነት
               </span>
+
               <strong>
                 {formatAmount(
                   estimatedDifference,
@@ -824,13 +842,16 @@ export default function AdminDrawCreate({
         </section>
 
         <section className="admin-create-section">
-          <h2>ጊዜ ማስተካከያ</h2>
+          <h2>
+            የዕጣ ጊዜ ማስተካከያ
+          </h2>
 
           <div className="admin-create-grid">
             <div className="admin-create-field">
               <label htmlFor="starts-at">
-                መጀመሪያ
+                መጀመሪያ (አማራጭ)
               </label>
+
               <input
                 id="starts-at"
                 type="datetime-local"
@@ -843,26 +864,11 @@ export default function AdminDrawCreate({
               />
             </div>
 
-            <div className="admin-create-field">
-              <label htmlFor="deadline-at">
-                የመጨረሻ ጊዜ
-              </label>
-              <input
-                id="deadline-at"
-                type="datetime-local"
-                value={deadlineAt}
-                onChange={(event) =>
-                  setDeadlineAt(
-                    event.target.value,
-                  )
-                }
-              />
-            </div>
-
             <div className="admin-create-field full">
               <label htmlFor="draw-at">
-                ዕጣ የሚወጣበት ጊዜ
+                ዕጣ የሚወጣበት ጊዜ (አማራጭ)
               </label>
+
               <input
                 id="draw-at"
                 type="datetime-local"
@@ -875,8 +881,9 @@ export default function AdminDrawCreate({
               />
 
               <div className="admin-create-help">
-                የመጨረሻ ጊዜ ከዕጣ መውጫ
-                ጊዜ በፊት መሆን አለበት።
+                ዕጣው ቁጥሮቹ ሲሞሉ
+                በራስ-ሰር ይዘጋል።
+                የመጨረሻ ጊዜ የለውም።
               </div>
             </div>
           </div>
