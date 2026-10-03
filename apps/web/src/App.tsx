@@ -1478,7 +1478,7 @@ const numberBoardSummary = useMemo(() => {
             )}
         </section>
       )}
-
+      </section>
       <section className="draw-card">
         <div className="draw-info">
           <p className="eyebrow">የእኔ ቁጥሮች</p>
