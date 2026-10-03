@@ -136,6 +136,11 @@ function getPrizes(
  * Create a new draw.
  *
  * POST /admin/draws
+ *
+ * Important:
+ * There is NO draw closing deadline.
+ * A draw remains open until all numbers are filled
+ * or an administrator closes it manually.
  */
 router.post(
   "/",
@@ -302,10 +307,14 @@ router.post(
               getNullableString(
                 body.startsAt,
               ),
-            deadlineAt:
-              getNullableString(
-                body.deadlineAt,
-              ),
+
+            /*
+             * Deadline is intentionally disabled.
+             * The database column remains for compatibility,
+             * but every newly created draw has no closing deadline.
+             */
+            deadlineAt: null,
+
             drawAt:
               getNullableString(
                 body.drawAt,
@@ -338,10 +347,7 @@ router.post(
           "INVALID_ENTRY_FEE",
           "INVALID_WINNER_COUNT",
           "STARTS_AT_INVALID",
-          "DEADLINE_AT_INVALID",
           "DRAW_AT_INVALID",
-          "DEADLINE_MUST_BE_AFTER_START",
-          "DRAW_TIME_MUST_BE_ON_OR_AFTER_DEADLINE",
           "DRAW_TIME_MUST_BE_ON_OR_AFTER_START",
           "PRIZES_REQUIRED",
           "PRIZE_COUNT_MUST_MATCH_WINNERS",
@@ -378,6 +384,9 @@ router.post(
  * Open a draft or safely reopen a closed draw.
  *
  * POST /admin/draws/:drawId/open
+ *
+ * Important:
+ * Opening a draw is NOT blocked by a deadline.
  */
 router.post(
   "/:drawId/open",
@@ -435,7 +444,6 @@ router.post(
           "PRIZE_RANKS_MUST_BE_SEQUENTIAL",
           "INVALID_PRIZE_AMOUNT",
           "PRIZE_POOL_MUST_BE_GREATER_THAN_ZERO",
-          "DRAW_DEADLINE_ALREADY_PASSED",
           "DRAW_TIME_ALREADY_PASSED",
         ]);
 
@@ -467,6 +475,9 @@ router.post(
  * Close an open/full draw.
  *
  * POST /admin/draws/:drawId/close
+ *
+ * This is a manual administrative close.
+ * It is NOT triggered by a time deadline.
  */
 router.post(
   "/:drawId/close",
