@@ -11,6 +11,7 @@
     "migrate": "tsx src/db/migrate.ts",
     "migrate:build": "node dist/db/migrate.js",
     "cron:expire-draws": "node dist/jobs/expire-draws.js",
+    "cron:scheduled-draws": "node dist/jobs/process-scheduled-draws.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -21,7 +22,7 @@
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
-    "@types/express": "^5.0.3",
+    "@types/express": "^5.1.0",
     "@types/node": "^22.15.30",
     "@types/pg": "^8.15.5",
     "tsx": "^4.19.4",
