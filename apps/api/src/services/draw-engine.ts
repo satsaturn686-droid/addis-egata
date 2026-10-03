@@ -38,7 +38,7 @@ export type DrawExecutionResult = {
   eligibleEntryCount: number;
   winners: Winner[];
   executedAt: string;
-  publishedAt: string;
+  publishedAt: string | null;
 };
 
 function mapWinner(
@@ -453,8 +453,14 @@ export async function executeDraw(
     }
 
     /*
-     * Lock the draw in drawing state before
-     * creating immutable result data.
+     * Put the draw into drawing state.
+     *
+     * IMPORTANT:
+     * We intentionally do NOT mark it completed here.
+     *
+     * The Live Draw API will reveal the immutable
+     * winners over time and will finalize the draw
+     * after the reveal sequence is complete.
      */
     await client.query(
       `
@@ -629,33 +635,21 @@ export async function executeDraw(
     }
 
     /*
-     * A completed result is immutable. We publish
-     * it immediately because this MVP has no
-     * separate draft-result workflow.
+     * DO NOT publish the result yet.
+     *
+     * published_at remains NULL while the
+     * Live Draw sequence is running.
+     *
+     * The Live Draw endpoint will publish the
+     * result after the final winner has been
+     * revealed.
      */
-    const publishedAt =
-      new Date().toISOString();
-
     await client.query(
       `
         UPDATE draw_results
         SET
-          published_at = $2
+          published_at = NULL
         WHERE draw_id = $1
-      `,
-      [
-        drawId,
-        publishedAt,
-      ],
-    );
-
-    await client.query(
-      `
-        UPDATE draws
-        SET
-          status = 'completed',
-          updated_at = NOW()
-        WHERE id = $1
       `,
       [drawId],
     );
@@ -671,7 +665,7 @@ export async function executeDraw(
         )
         VALUES (
           $1,
-          'DRAW_EXECUTED',
+          'DRAW_STARTED',
           'draw',
           $2,
           $3
@@ -690,7 +684,8 @@ export async function executeDraw(
           drawResultId:
             resultInsert.rows[0].id,
           randomSeedHash,
-          publishedAt,
+          executedAt,
+          status: "drawing",
         }),
       ],
     );
@@ -704,7 +699,7 @@ export async function executeDraw(
       winners:
         winnerRows.map(mapWinner),
       executedAt,
-      publishedAt,
+      publishedAt: null,
     };
   } catch (error) {
     await client.query("ROLLBACK");
