@@ -53,17 +53,14 @@ function formatDateTime(
       ? value
       : new Date(value);
 
-  if (
-    Number.isNaN(date.getTime())
-  ) {
+  if (Number.isNaN(date.getTime())) {
     return String(value);
   }
 
   return new Intl.DateTimeFormat(
     "am-ET",
     {
-      timeZone:
-        ADDIS_TIME_ZONE,
+      timeZone: ADDIS_TIME_ZONE,
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
@@ -77,31 +74,28 @@ function formatDateTime(
 function formatRemaining(
   milliseconds: number,
 ): string {
-  const safe =
-    Math.max(0, milliseconds);
+  const safe = Math.max(
+    0,
+    milliseconds,
+  );
 
   const totalSeconds =
-    Math.floor(
-      safe / 1000,
-    );
+    Math.floor(safe / 1000);
 
   const days =
     Math.floor(
-      totalSeconds /
-        86400,
+      totalSeconds / 86400,
     );
 
   const hours =
     Math.floor(
-      (totalSeconds %
-        86400) /
+      (totalSeconds % 86400) /
         3600,
     );
 
   const minutes =
     Math.floor(
-      (totalSeconds %
-        3600) /
+      (totalSeconds % 3600) /
         60,
     );
 
@@ -125,13 +119,12 @@ function formatRemaining(
 
 async function sendTelegramMessage(
   chatId: number | string,
-  text: string,
+  message: string,
 ): Promise<boolean> {
   if (!TELEGRAM_BOT_TOKEN) {
     console.warn(
       "Scheduled draw notification skipped: TELEGRAM_BOT_TOKEN is missing.",
     );
-
     return false;
   }
 
@@ -147,7 +140,7 @@ async function sendTelegramMessage(
           },
           body: JSON.stringify({
             chat_id: chatId,
-            text,
+            text: message,
             reply_markup: {
               inline_keyboard: [
                 [
@@ -155,8 +148,7 @@ async function sendTelegramMessage(
                     text:
                       "🎟️ ADDIS ዕጣ ክፈት",
                     web_app: {
-                      url:
-                        MINI_APP_URL,
+                      url: MINI_APP_URL,
                     },
                   },
                 ],
@@ -172,16 +164,12 @@ async function sendTelegramMessage(
         description?: string;
       };
 
-    if (
-      !response.ok ||
-      !data.ok
-    ) {
+    if (!response.ok || !data.ok) {
       console.error(
         "Telegram scheduled draw notification failed:",
         data.description ??
           response.statusText,
       );
-
       return false;
     }
 
@@ -191,7 +179,6 @@ async function sendTelegramMessage(
       "Telegram scheduled draw notification request failed:",
       error,
     );
-
     return false;
   }
 }
@@ -225,17 +212,15 @@ async function getAdminRecipients(): Promise<
 
 async function sendToRecipients(
   recipients: TelegramRecipient[],
-  text: string,
+  message: string,
 ): Promise<number> {
   let sent = 0;
 
-  for (
-    const recipient of recipients
-  ) {
+  for (const recipient of recipients) {
     const ok =
       await sendTelegramMessage(
         recipient.telegram_id,
-        text,
+        message,
       );
 
     if (ok) {
@@ -250,12 +235,15 @@ function buildScheduledMessage(
   draw: ScheduledDrawRow,
 ): string {
   return (
-    "⏰ ADDIS ዕጣ — የዕጣ ጊዜ ተይዟል!\\n\\n" +
-    `🏷️ ዕጣ: ${draw.name}\\n` +
-    `📅 የሚወጣበት ጊዜ: ${formatDateTime(draw.draw_at)}\\n` +
-    `⏳ ቀሪ ጊዜ: ${formatRemaining(new Date(draw.draw_at).getTime() - Date.now())}\\n\\n` +
-    "🔒 በዚያ ጊዜ Secure Random ስርዓት በራስ-ሰር ዕጣውን ያወጣል።\\n" +
-    "🎬 ከዚያ Live Number Reveal ይጀምራል።\\n\\n" +
+    "⏰ ADDIS ዕጣ — የዕጣ ጊዜ ተይዟል!\n\n" +
+    `🏷️ ዕጣ: ${draw.name}\n` +
+    `📅 የሚወጣበት ጊዜ: ${formatDateTime(draw.draw_at)}\n` +
+    `⏳ ቀሪ ጊዜ: ${formatRemaining(
+      new Date(draw.draw_at).getTime() -
+        Date.now(),
+    )}\n\n` +
+    "🔒 በዚያ ጊዜ Secure Random ስርዓት በራስ-ሰር ዕጣውን ያወጣል።\n" +
+    "🎬 ከዚያ Live Number Reveal ይጀምራል።\n\n" +
     "🎟️ የADDIS ዕጣ ውጤቱን ለመከታተል ከታች ያለውን ይጫኑ።"
   );
 }
@@ -269,12 +257,12 @@ function buildReminderMessage(
     Date.now();
 
   return (
-    `⏰ ADDIS ዕጣ — ${reminderMinutes} ደቂቃ ቀርቷል!\\n\\n` +
-    `🏷️ ዕጣ: ${draw.name}\\n` +
-    `📅 የሚወጣበት ጊዜ: ${formatDateTime(draw.draw_at)}\\n` +
-    `⏳ ቀሪ ጊዜ: ${formatRemaining(remaining)}\\n\\n` +
-    "🔒 Secure Random Draw በራስ-ሰር ይጀምራል።\\n" +
-    "🎬 ከዚያ Live Number Reveal ይጀምራል።\\n\\n" +
+    `⏰ ADDIS ዕጣ — ${reminderMinutes} ደቂቃ ቀርቷል!\n\n` +
+    `🏷️ ዕጣ: ${draw.name}\n` +
+    `📅 የሚወጣበት ጊዜ: ${formatDateTime(draw.draw_at)}\n` +
+    `⏳ ቀሪ ጊዜ: ${formatRemaining(remaining)}\n\n` +
+    "🔒 Secure Random Draw በራስ-ሰር ይጀምራል።\n" +
+    "🎬 ከዚያ Live Number Reveal ይጀምራል።\n\n" +
     "🎟️ ውጤቱን ለመከታተል ADDIS ዕጣን ክፈት።"
   );
 }
@@ -283,10 +271,10 @@ function buildExecutionStartedMessage(
   draw: ScheduledDrawRow,
 ): string {
   return (
-    "🎲 ADDIS ዕጣ — ዕጣው ተጀምሯል!\\n\\n" +
-    `🏷️ ዕጣ: ${draw.name}\\n\\n` +
-    "🔐 Secure Random Draw ተፈጽሟል።\\n" +
-    "🎬 Live Number Reveal አሁን ተጀምሯል።\\n\\n" +
+    "🎲 ADDIS ዕጣ — ዕጣው ተጀምሯል!\n\n" +
+    `🏷️ ዕጣ: ${draw.name}\n\n` +
+    "🔐 Secure Random Draw ተፈጽሟል።\n" +
+    "🎬 Live Number Reveal አሁን ተጀምሯል።\n\n" +
     "🏆 አሸናፊዎቹ በቅደም ተከተል በLive ይገለጣሉ።"
   );
 }
@@ -296,10 +284,10 @@ function buildExecutionFailureMessage(
   errorCode: string,
 ): string {
   return (
-    "⚠️ ADDIS ዕጣ — የራስ-ሰር ዕጣ አልተፈጸመም!\\n\\n" +
-    `🏷️ ዕጣ: ${draw.name}\\n` +
-    `❗ ምክንያት: ${errorCode}\\n\\n` +
-    "🔒 የዕጣ ውጤት በከፊል አልተፈጠረም።\\n" +
+    "⚠️ ADDIS ዕጣ — የራስ-ሰር ዕጣ አልተፈጸመም!\n\n" +
+    `🏷️ ዕጣ: ${draw.name}\n` +
+    `❗ ምክንያት: ${errorCode}\n\n` +
+    "🔒 የዕጣ ውጤት በከፊል አልተፈጠረም።\n" +
     "👤 እባክዎ የAdmin ገጹን ይመልከቱ።"
   );
 }
@@ -410,20 +398,13 @@ export async function scheduleDraw(
   const drawAt =
     new Date(drawAtInput);
 
-  if (
-    Number.isNaN(
-      drawAt.getTime(),
-    )
-  ) {
+  if (Number.isNaN(drawAt.getTime())) {
     throw new Error(
       "DRAW_TIME_INVALID",
     );
   }
 
-  if (
-    drawAt.getTime() <=
-    Date.now()
-  ) {
+  if (drawAt.getTime() <= Date.now()) {
     throw new Error(
       "DRAW_TIME_MUST_BE_IN_FUTURE",
     );
@@ -433,9 +414,7 @@ export async function scheduleDraw(
     await pool.connect();
 
   try {
-    await client.query(
-      "BEGIN",
-    );
+    await client.query("BEGIN");
 
     const result =
       await client.query<{
@@ -457,9 +436,7 @@ export async function scheduleDraw(
         [drawId],
       );
 
-    if (
-      result.rows.length === 0
-    ) {
+    if (result.rows.length === 0) {
       throw new Error(
         "DRAW_NOT_FOUND",
       );
@@ -468,21 +445,14 @@ export async function scheduleDraw(
     const draw =
       result.rows[0];
 
-    if (
-      draw.status !== "full"
-    ) {
+    if (draw.status !== "full") {
       throw new Error(
         "DRAW_MUST_BE_FULL_TO_SCHEDULE",
       );
     }
 
-    if (
-      draw.draw_at
-    ) {
-      throw new Error(
-        "DRAW_ALREADY_SCHEDULED",
-      );
-    }
+    const wasScheduled =
+      Boolean(draw.draw_at);
 
     await client.query(
       `
@@ -498,6 +468,22 @@ export async function scheduleDraw(
       ],
     );
 
+    if (wasScheduled) {
+      await client.query(
+        `
+          DELETE FROM audit_logs
+          WHERE action = 'DRAW_SCHEDULE_NOTIFICATION'
+            AND entity_type = 'draw'
+            AND entity_id = $1
+            AND details->>'eventType' IN (
+              'REMINDER_10_MINUTES',
+              'REMINDER_1_MINUTE'
+            )
+        `,
+        [drawId],
+      );
+    }
+
     await client.query(
       `
         INSERT INTO audit_logs (
@@ -509,36 +495,37 @@ export async function scheduleDraw(
         )
         VALUES (
           $1,
-          'DRAW_SCHEDULED',
-          'draw',
           $2,
-          $3
+          'draw',
+          $3,
+          $4
         )
       `,
       [
         adminUserId,
+        wasScheduled
+          ? "DRAW_RESCHEDULED"
+          : "DRAW_SCHEDULED",
         drawId,
         JSON.stringify({
           drawAt:
             drawAt.toISOString(),
+          previousDrawAt:
+            draw.draw_at,
           scheduledAt:
             new Date().toISOString(),
         }),
       ],
     );
 
-    await client.query(
-      "COMMIT",
-    );
+    await client.query("COMMIT");
 
     const drawForNotification =
       await getScheduledDraw(
         drawId,
       );
 
-    if (
-      drawForNotification
-    ) {
+    if (drawForNotification) {
       const recipients =
         await getRecipients();
 
@@ -556,10 +543,7 @@ export async function scheduleDraw(
         drawAt.toISOString(),
     };
   } catch (error) {
-    await client.query(
-      "ROLLBACK",
-    );
-
+    await client.query("ROLLBACK");
     throw error;
   } finally {
     client.release();
@@ -577,8 +561,7 @@ async function processUpcomingDraw(
 
   if (
     remaining <= 0 ||
-    remaining >
-      TEN_MINUTES_MS
+    remaining > TEN_MINUTES_MS
   ) {
     return 0;
   }
@@ -601,8 +584,7 @@ async function processUpcomingDraw(
     await getRecipients();
 
   const reminderMinutes =
-    remaining <=
-    ONE_MINUTE_MS
+    remaining <= ONE_MINUTE_MS
       ? 1
       : 10;
 
@@ -615,10 +597,12 @@ async function processUpcomingDraw(
       ),
     );
 
-  await markNotificationSent(
-    draw.id,
-    reminderType,
-  );
+  if (sent > 0) {
+    await markNotificationSent(
+      draw.id,
+      reminderType,
+    );
+  }
 
   return sent;
 }
@@ -629,9 +613,7 @@ async function executeScheduledDraw(
   executed: boolean;
   failed: boolean;
 }> {
-  if (
-    !draw.created_by
-  ) {
+  if (!draw.created_by) {
     throw new Error(
       "SCHEDULED_DRAW_CREATED_BY_MISSING",
     );
@@ -721,32 +703,24 @@ export async function processScheduledDraws(): Promise<
   let drawsExecuted = 0;
   let executionFailures = 0;
 
-  for (
-    const draw of rows
-  ) {
+  for (const draw of rows) {
     const drawTime =
       new Date(
         draw.draw_at,
       ).getTime();
 
-    if (
-      Number.isNaN(drawTime)
-    ) {
+    if (Number.isNaN(drawTime)) {
       console.error(
         `Invalid scheduled draw time: draw=${draw.id}`,
       );
-
       continue;
     }
 
-    if (
-      drawTime > Date.now()
-    ) {
+    if (drawTime > Date.now()) {
       remindersSent +=
         await processUpcomingDraw(
           draw,
         );
-
       continue;
     }
 
@@ -755,15 +729,11 @@ export async function processScheduledDraws(): Promise<
         draw,
       );
 
-    if (
-      execution.executed
-    ) {
+    if (execution.executed) {
       drawsExecuted += 1;
     }
 
-    if (
-      execution.failed
-    ) {
+    if (execution.failed) {
       executionFailures += 1;
     }
   }
