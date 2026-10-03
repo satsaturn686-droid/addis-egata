@@ -1,6 +1,10 @@
 import { pool } from "../db.js";
 import type { Payment } from "../types.js";
 
+import {
+  notifyUsersAboutDrawOccupancy,
+} from "./telegram-notifications.js";
+
 type PaymentRow = {
   id: string;
   entry_id: string;
@@ -31,6 +35,17 @@ type VerificationEntryRow = {
   starts_at: string | null;
 };
 
+type DrawNotificationRow = {
+  id: string;
+  name: string;
+  prize_name: string;
+  prize_type: "cash" | "physical";
+  displayed_prize_value: string | number | null;
+  total_numbers: number;
+  entry_fee: string | number;
+  winner_count: number;
+};
+
 function mapPayment(row: PaymentRow): Payment {
   return {
     id: row.id,
@@ -38,13 +53,16 @@ function mapPayment(row: PaymentRow): Payment {
     userId: row.user_id,
     amount: Number(row.amount),
     paymentMethod: row.payment_method,
-    transactionReference: row.transaction_reference,
+    transactionReference:
+      row.transaction_reference,
     senderName: row.sender_name,
-    receiptImageUrl: row.receipt_image_url,
+    receiptImageUrl:
+      row.receipt_image_url,
     status: row.status,
     verifiedBy: row.verified_by,
     verifiedAt: row.verified_at,
-    rejectionReason: row.rejection_reason,
+    rejectionReason:
+      row.rejection_reason,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -57,9 +75,10 @@ function isBeforeStart(
     return false;
   }
 
-  return new Date(
-    startsAt,
-  ).getTime() > Date.now();
+  return (
+    new Date(startsAt).getTime() >
+    Date.now()
+  );
 }
 
 async function getPaymentForUpdate(
@@ -213,6 +232,158 @@ async function markDrawFullIfComplete(
   return true;
 }
 
+async function getDrawNotificationData(
+  drawId: string,
+): Promise<DrawNotificationRow | null> {
+  if (!pool) {
+    return null;
+  }
+
+  const result =
+    await pool.query<DrawNotificationRow>(
+      `
+        SELECT
+          d.id,
+          d.name,
+          COALESCE(
+            dp.name,
+            d.name
+          ) AS prize_name,
+          COALESCE(
+            dp.prize_type,
+            'cash'
+          ) AS prize_type,
+          COALESCE(
+            dp.displayed_value,
+            d.prize_amount
+          ) AS displayed_prize_value,
+          d.total_numbers,
+          d.entry_fee,
+          d.winner_count
+        FROM draws d
+        LEFT JOIN draw_prizes dp
+          ON dp.draw_id = d.id
+        WHERE d.id = $1
+        LIMIT 1
+      `,
+      [drawId],
+    );
+
+  return (
+    result.rows[0] ?? null
+  );
+}
+
+async function getPaidCount(
+  drawId: string,
+): Promise<number> {
+  if (!pool) {
+    return 0;
+  }
+
+  const result =
+    await pool.query<{
+      paid_count: string;
+    }>(
+      `
+        SELECT COUNT(*)::text AS paid_count
+        FROM entries
+        WHERE draw_id = $1
+          AND status = 'paid'
+      `,
+      [drawId],
+    );
+
+  return Number(
+    result.rows[0]?.paid_count ?? 0,
+  );
+}
+
+async function notifyDrawOccupancyAfterCommit(
+  drawId: string,
+  drawFull: boolean,
+): Promise<void> {
+  try {
+    const draw =
+      await getDrawNotificationData(
+        drawId,
+      );
+
+    if (!draw) {
+      console.warn(
+        `Draw occupancy notification skipped: draw ${drawId} was not found.`,
+      );
+
+      return;
+    }
+
+    const paidCount =
+      await getPaidCount(drawId);
+
+    const notificationDraw = {
+      id: draw.id,
+      name: draw.name,
+      prizeName: draw.prize_name,
+      prizeType: draw.prize_type,
+      displayedPrizeValue:
+        draw.displayed_prize_value ===
+        null
+          ? null
+          : Number(
+              draw.displayed_prize_value,
+            ),
+      totalNumbers:
+        draw.total_numbers,
+      entryFee: Number(
+        draw.entry_fee,
+      ),
+      winnerCount:
+        draw.winner_count,
+    };
+
+    if (drawFull) {
+      await notifyUsersAboutDrawOccupancy(
+        notificationDraw,
+        paidCount,
+        "draw_full",
+      );
+
+      return;
+    }
+
+    if (
+      draw.total_numbers > 0 &&
+      paidCount >=
+        draw.total_numbers * 0.9
+    ) {
+      await notifyUsersAboutDrawOccupancy(
+        notificationDraw,
+        paidCount,
+        "occupancy_90",
+      );
+
+      return;
+    }
+
+    if (
+      draw.total_numbers > 0 &&
+      paidCount >=
+        draw.total_numbers * 0.8
+    ) {
+      await notifyUsersAboutDrawOccupancy(
+        notificationDraw,
+        paidCount,
+        "occupancy_80",
+      );
+    }
+  } catch (error) {
+    console.error(
+      "Draw occupancy notification error:",
+      error,
+    );
+  }
+}
+
 export async function approvePayment(
   paymentId: string,
   adminUserId: string,
@@ -231,6 +402,11 @@ export async function approvePayment(
 
   const client =
     await pool.connect();
+
+  let drawFull = false;
+  let notificationDrawId:
+    | string
+    | null = null;
 
   try {
     await client.query("BEGIN");
@@ -316,10 +492,6 @@ export async function approvePayment(
      * locked until the payment is approved or rejected.
      */
 
-    /*
-     * Prevent approval if another approved payment
-     * already exists for the same entry.
-     */
     const approvedPaymentResult =
       await client.query<{
         id: string;
@@ -424,12 +596,16 @@ export async function approvePayment(
       ],
     );
 
-    await markDrawFullIfComplete(
-      client,
-      entry.draw_id,
-      entry.total_numbers,
-      adminUserId,
-    );
+    drawFull =
+      await markDrawFullIfComplete(
+        client,
+        entry.draw_id,
+        entry.total_numbers,
+        adminUserId,
+      );
+
+    notificationDrawId =
+      entry.draw_id;
 
     await client.query("COMMIT");
 
@@ -441,6 +617,13 @@ export async function approvePayment(
     throw error;
   } finally {
     client.release();
+
+    if (notificationDrawId) {
+      void notifyDrawOccupancyAfterCommit(
+        notificationDrawId,
+        drawFull,
+      );
+    }
   }
 }
 
