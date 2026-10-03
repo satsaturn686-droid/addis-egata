@@ -343,7 +343,6 @@ function App() {
     };
   }, [activeDraw, filledNumbers]);
 
-  const filledNumbers =
     const filledNumbers =
     activeDraw && Number.isFinite(activeDraw.filledNumbers)
       ? activeDraw.filledNumbers
@@ -867,14 +866,16 @@ function App() {
           </div>
         )}
 
-        <div
-          style={{
-            display: "grid",
-
-        <div
-          style={{
-            marginTop: "16px",
-            display: "grid",
+     <div
+  style={{
+    marginTop: "16px",
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(3, minmax(0, 1fr))",
+    gap: "8px",
+  }}
+>
+       display: "grid",
             gridTemplateColumns:
               "repeat(3, minmax(0, 1fr))",
             gap: "8px",
