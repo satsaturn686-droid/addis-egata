@@ -289,7 +289,6 @@ function validatePrizes(
 
 function validateSchedule(
   startsAt: string | null,
-  deadlineAt: string | null,
   drawAt: string | null,
 ): void {
   const start =
@@ -297,35 +296,10 @@ function validateSchedule(
       ? null
       : new Date(startsAt).getTime();
 
-  const deadline =
-    deadlineAt === null
-      ? null
-      : new Date(deadlineAt).getTime();
-
   const draw =
     drawAt === null
       ? null
       : new Date(drawAt).getTime();
-
-  if (
-    start !== null &&
-    deadline !== null &&
-    deadline <= start
-  ) {
-    throw new Error(
-      "DEADLINE_MUST_BE_AFTER_START",
-    );
-  }
-
-  if (
-    deadline !== null &&
-    draw !== null &&
-    draw < deadline
-  ) {
-    throw new Error(
-      "DRAW_TIME_MUST_BE_ON_OR_AFTER_DEADLINE",
-    );
-  }
 
   if (
     start !== null &&
@@ -454,10 +428,9 @@ export async function createDraw(
     "STARTS_AT",
   );
 
-  const deadlineAt = validateDate(
-    input.deadlineAt,
-    "DEADLINE_AT",
-  );
+  // Addis ዕጣ has no closing deadline.
+  // The draw closes automatically when all numbers are filled.
+  const deadlineAt = null;
 
   const drawAt = validateDate(
     input.drawAt,
@@ -466,7 +439,6 @@ export async function createDraw(
 
   validateSchedule(
     startsAt,
-    deadlineAt,
     drawAt,
   );
 
