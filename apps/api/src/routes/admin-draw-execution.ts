@@ -25,7 +25,10 @@ router.use(
  *
  * A draw must already be full.
  * Scheduling does not execute the draw.
- * It only sets draw_at.
+ * It only sets or updates draw_at.
+ *
+ * If the draw was already scheduled, this endpoint
+ * safely reschedules it to the new future time.
  */
 router.post(
   "/:drawId/schedule",
@@ -77,10 +80,18 @@ router.post(
           drawAt,
         );
 
-      res.status(200).json({
-        drawId,
-        drawAt: scheduledAt,
-      });
+      /*
+       * scheduleDraw() already returns:
+       * {
+       *   drawId,
+       *   drawAt
+       * }
+       *
+       * Do not wrap drawAt again.
+       */
+      res.status(200).json(
+        scheduledAt,
+      );
     } catch (error) {
       const message =
         error instanceof Error
@@ -132,6 +143,9 @@ router.post(
  * IMPORTANT:
  * This endpoint and the underlying draw engine
  * remain unchanged in behavior.
+ *
+ * The scheduled-draw worker also calls the same
+ * executeDraw() function when countdown reaches zero.
  */
 router.post(
   "/:drawId/execute",
