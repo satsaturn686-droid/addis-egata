@@ -5,7 +5,11 @@ import {
 } from "react";
 
 import {
+  getDraws,
+  getLiveDrawState,
   getPublishedResults,
+  type Draw,
+  type LiveDrawState,
   type PublicDrawResult,
 } from "./api";
 
@@ -18,8 +22,12 @@ function formatMoney(
 }
 
 function formatDate(
-  value: string,
+  value: string | null,
 ): string {
+  if (!value) {
+    return "—";
+  }
+
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
@@ -64,6 +72,9 @@ export default function PublicResults() {
   const [results, setResults] =
     useState<PublicDrawResult[]>([]);
 
+  const [liveDraw, setLiveDraw] =
+    useState<LiveDrawState | null>(null);
+
   const [loading, setLoading] =
     useState(true);
 
@@ -76,9 +87,18 @@ export default function PublicResults() {
   const latestResultIdRef =
     useRef<string | null>(null);
 
+  const liveDrawIdRef =
+    useRef<string | null>(null);
+
+  const controllerRef =
+    useRef<AbortController | null>(null);
+
   useEffect(() => {
     const controller =
       new AbortController();
+
+    controllerRef.current =
+      controller;
 
     let firstLoad = true;
 
@@ -88,67 +108,98 @@ export default function PublicResults() {
           setLoading(true);
         }
 
-        const response =
-          await getPublishedResults(
+        const [
+          publishedResponse,
+          drawsResponse,
+        ] = await Promise.all([
+          getPublishedResults(
             controller.signal,
-          );
+          ),
+          getDraws(
+            controller.signal,
+          ),
+        ]);
 
         const latestResult =
-          response.results[0] ?? null;
+          publishedResponse.results[0] ??
+          null;
+
+        const activeDrawing =
+          drawsResponse.draws.find(
+            (draw) =>
+              draw.status ===
+              "drawing",
+          ) ?? null;
 
         const previousLatestResultId =
           latestResultIdRef.current;
 
-        setResults(response.results);
+        const previousLiveDrawId =
+          liveDrawIdRef.current;
 
-        setSelectedDrawId(
-          (currentSelectedId) => {
-            if (!latestResult) {
-              return null;
-            }
-
-            /*
-             * First load:
-             * show the newest published result.
-             */
-            if (!currentSelectedId) {
-              return latestResult.drawId;
-            }
-
-            /*
-             * A new result has appeared.
-             *
-             * If the user was watching the previously
-             * newest result, automatically move them to
-             * the new Live Draw.
-             */
-            if (
-              previousLatestResultId &&
-              currentSelectedId ===
-                previousLatestResultId &&
-              latestResult.drawId !==
-                previousLatestResultId
-            ) {
-              return latestResult.drawId;
-            }
-
-            /*
-             * Keep the user's manually selected
-             * historical result.
-             */
-            if (
-              response.results.some(
-                (result) =>
-                  result.drawId ===
-                  currentSelectedId,
-              )
-            ) {
-              return currentSelectedId;
-            }
-
-            return latestResult.drawId;
-          },
+        setResults(
+          publishedResponse.results,
         );
+
+        if (activeDrawing) {
+          liveDrawIdRef.current =
+            activeDrawing.id;
+
+          setSelectedDrawId(
+            (currentSelectedId) => {
+              if (
+                !currentSelectedId ||
+                currentSelectedId ===
+                  previousLatestResultId ||
+                currentSelectedId ===
+                  previousLiveDrawId
+              ) {
+                return activeDrawing.id;
+              }
+
+              return currentSelectedId;
+            },
+          );
+        } else {
+          liveDrawIdRef.current =
+            null;
+
+          setLiveDraw(null);
+
+          setSelectedDrawId(
+            (currentSelectedId) => {
+              if (!latestResult) {
+                return null;
+              }
+
+              if (!currentSelectedId) {
+                return latestResult.drawId;
+              }
+
+              if (
+                previousLatestResultId &&
+                currentSelectedId ===
+                  previousLatestResultId &&
+                latestResult.drawId !==
+                  previousLatestResultId
+              ) {
+                return latestResult.drawId;
+              }
+
+              if (
+                publishedResponse.results.some(
+                  (result) =>
+                    result.drawId ===
+                    currentSelectedId,
+                )
+              ) {
+                return currentSelectedId;
+              }
+
+              return latestResult.drawId;
+            },
+          );
+        }
 
         latestResultIdRef.current =
           latestResult?.drawId ?? null;
@@ -158,7 +209,8 @@ export default function PublicResults() {
       } catch (loadError) {
         if (
           loadError instanceof DOMException &&
-          loadError.name === "AbortError"
+          loadError.name ===
+            "AbortError"
         ) {
           return;
         }
@@ -193,8 +245,92 @@ export default function PublicResults() {
       window.clearInterval(
         refreshTimer,
       );
+
+      if (
+        controllerRef.current ===
+        controller
+      ) {
+        controllerRef.current =
+          null;
+      }
     };
   }, []);
+
+  useEffect(() => {
+    const drawingId =
+      liveDrawIdRef.current;
+
+    if (!drawingId) {
+      setLiveDraw(null);
+      return;
+    }
+
+    const controller =
+      new AbortController();
+
+    let stopped = false;
+
+    async function loadLiveState() {
+      try {
+        const response =
+          await getLiveDrawState(
+            drawingId,
+            controller.signal,
+          );
+
+        if (stopped) {
+          return;
+        }
+
+        setLiveDraw(
+          response.live,
+        );
+
+        if (
+          response.live.status ===
+            "completed" ||
+          response.live.publishedAt
+        ) {
+          setLiveDraw(null);
+        }
+      } catch (loadError) {
+        if (
+          loadError instanceof DOMException &&
+          loadError.name ===
+            "AbortError"
+        ) {
+          return;
+        }
+
+        if (!stopped) {
+          console.error(
+            "Live draw state error:",
+            loadError,
+          );
+        }
+      }
+    }
+
+    void loadLiveState();
+
+    const liveTimer =
+      window.setInterval(
+        () => {
+          void loadLiveState();
+        },
+        1000,
+      );
+
+    return () => {
+      stopped = true;
+      controller.abort();
+      window.clearInterval(
+        liveTimer,
+      );
+    };
+  }, [
+    liveDrawIdRef.current,
+  ]);
 
   const selectedResult =
     results.find(
@@ -202,6 +338,11 @@ export default function PublicResults() {
         result.drawId ===
         selectedDrawId,
     ) ?? null;
+
+  const showingLiveDraw =
+    liveDraw !== null &&
+    liveDraw.drawId ===
+      selectedDrawId;
 
   if (loading) {
     return (
@@ -216,7 +357,7 @@ export default function PublicResults() {
           </h2>
 
           <p>
-            የታተሙ የዕጣ ውጤቶችን
+            የዕጣ ውጤቶችን
             በመጫን ላይ...
           </p>
         </div>
@@ -244,7 +385,10 @@ export default function PublicResults() {
     );
   }
 
-  if (results.length === 0) {
+  if (
+    results.length === 0 &&
+    !liveDraw
+  ) {
     return (
       <section className="results-section">
         <div className="results-header">
@@ -265,73 +409,279 @@ export default function PublicResults() {
     );
   }
 
+  const resultList =
+    results;
+
   return (
     <section className="results-section">
       <div className="results-header">
         <span className="status-badge">
-          የታተመ
+          {showingLiveDraw
+            ? "🔴 ቀጥታ"
+            : "የታተመ"}
         </span>
 
         <h2>
-          የዕጣ ውጤቶች
+          {showingLiveDraw
+            ? "የቀጥታ ዕጣ"
+            : "የዕጣ ውጤቶች"}
         </h2>
 
         <p>
-          የተጠናቀቁ ዕጣዎችንና
-          አሸናፊዎችን ይመልከቱ።
+          {showingLiveDraw
+            ? "የዕጣውን ሂደት በቀጥታ ይመልከቱ።"
+            : "የተጠናቀቁ ዕጣዎችንና አሸናፊዎችን ይመልከቱ።"}
         </p>
       </div>
 
-      {selectedResult ? (
+      {showingLiveDraw &&
+      liveDraw ? (
+        <LiveDraw
+          live={liveDraw}
+        />
+      ) : selectedResult ? (
         <LiveDraw
           result={selectedResult}
         />
       ) : null}
 
-      <div
-        className="results-draw-list"
-        role="tablist"
-        aria-label="የዕጣ ውጤቶች"
-      >
-        {results.map(
-          (result) => {
-            const active =
-              result.drawId ===
-              selectedDrawId;
+      {resultList.length > 0 ? (
+        <div
+          className="results-draw-list"
+          role="tablist"
+          aria-label="የዕጣ ውጤቶች"
+        >
+          {resultList.map(
+            (result) => {
+              const active =
+                result.drawId ===
+                selectedDrawId;
 
-            return (
-              <button
-                key={result.drawId}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                className={
-                  active
-                    ? "results-draw-button active"
-                    : "results-draw-button"
+              return (
+                <button
+                  key={
+                    result.drawId
+                  }
+                  type="button"
+                  role="tab"
+                  aria-selected={
+                    active
+                  }
+                  className={
+                    active
+                      ? "results-draw-button active"
+                      : "results-draw-button"
+                  }
+                  onClick={() =>
+                    setSelectedDrawId(
+                      result.drawId,
+                    )
+                  }
+                >
+                  <span>
+                    {result.drawName}
+                  </span>
+
+                  <small>
+                    {formatDate(
+                      result.publishedAt,
+                    )}
+                  </small>
+                </button>
+              );
+            },
+          )}
+        </div>
+      ) : null}
+
+      {showingLiveDraw &&
+      liveDraw ? (
+        <div className="results-card">
+          <div className="results-card-top">
+            <div>
+              <p className="results-kicker">
+                🔴 በቀጥታ ላይ
+              </p>
+
+              <h3>
+                {liveDraw.drawName}
+              </h3>
+            </div>
+
+            <span className="results-completed">
+              {liveDraw.revealedWinnerCount}
+              {" / "}
+              {liveDraw.totalWinnerCount}
+            </span>
+          </div>
+
+          <div className="results-prize">
+            {liveDraw.prizeImageUrl ? (
+              <img
+                src={
+                  liveDraw.prizeImageUrl
                 }
-                onClick={() =>
-                  setSelectedDrawId(
-                    result.drawId,
-                  )
+                alt={
+                  liveDraw.prizeName
                 }
+                className="results-prize-image"
+              />
+            ) : (
+              <div
+                className="results-prize-placeholder"
+                aria-hidden="true"
               >
-                <span>
-                  {result.drawName}
-                </span>
+                🎁
+              </div>
+            )}
 
+            <div>
+              <span>
+                ሽልማት
+              </span>
+
+              <strong>
+                {liveDraw.prizeName}
+              </strong>
+
+              {liveDraw
+                .displayedPrizeValue !==
+                null ? (
                 <small>
-                  {formatDate(
-                    result.publishedAt,
+                  {formatMoney(
+                    liveDraw
+                      .displayedPrizeValue,
                   )}
                 </small>
-              </button>
-            );
-          },
-        )}
-      </div>
+              ) : null}
+            </div>
+          </div>
 
-      {selectedResult ? (
+          <div className="results-summary">
+            <div>
+              <span>
+                ተሳታፊዎች
+              </span>
+
+              <strong>
+                {liveDraw
+                  .eligibleEntryCount
+                  .toLocaleString(
+                    "en-US",
+                  )}
+              </strong>
+            </div>
+
+            <div>
+              <span>
+                አሸናፊዎች
+              </span>
+
+              <strong>
+                {liveDraw
+                  .totalWinnerCount
+                  .toLocaleString(
+                    "en-US",
+                  )}
+              </strong>
+            </div>
+
+            <div>
+              <span>
+                የተገለጹ
+              </span>
+
+              <strong>
+                {liveDraw
+                  .revealedWinnerCount
+                  .toLocaleString(
+                    "en-US",
+                  )}
+              </strong>
+            </div>
+          </div>
+
+          <div className="results-winners">
+            <div className="results-winners-heading">
+              <h3>
+                🎱 እየወጡ ያሉ አሸናፊዎች
+              </h3>
+
+              <span>
+                {
+                  liveDraw
+                    .winners
+                    .length
+                }
+              </span>
+            </div>
+
+            {liveDraw.winners
+              .map(
+                (winner) => (
+                  <div
+                    key={
+                      winner.id
+                    }
+                    className="winner-row"
+                  >
+                    <div className="winner-rank">
+                      {winner.rank}
+                    </div>
+
+                    <div className="winner-number">
+                      <span>
+                        ቁጥር
+                      </span>
+
+                      <strong>
+                        #{winner.number}
+                      </strong>
+                    </div>
+
+                    <div className="winner-user">
+                      <strong>
+                        {getWinnerName(
+                          winner.firstName,
+                          winner.lastName,
+                          winner.username,
+                        )}
+                      </strong>
+
+                      <small>
+                        {formatDate(
+                          winner.selectedAt,
+                        )}
+                      </small>
+                    </div>
+
+                    <div className="winner-prize">
+                      {formatMoney(
+                        winner.prizeAmount,
+                      )}
+                    </div>
+                  </div>
+                ),
+              )}
+          </div>
+
+          <div className="results-note">
+            <strong>
+              🔴 የቀጥታ ማስታወሻ
+            </strong>
+
+            <p>
+              አሸናፊዎች በተወሰነ
+              የጊዜ ልዩነት አንድ
+              በአንድ እየተገለጹ
+              ነው። ሁሉም ተመልካቾች
+              ከሰርቨሩ የሚመጣውን
+              ተመሳሳይ የዕጣ ሁኔታ
+              ይመለከታሉ።
+            </p>
+          </div>
+        </div>
+      ) : selectedResult ? (
         <div className="results-card">
           <div className="results-card-top">
             <div>
@@ -427,7 +777,8 @@ export default function PublicResults() {
 
               <strong>
                 {formatDate(
-                  selectedResult.executedAt,
+                  selectedResult
+                    .executedAt,
                 )}
               </strong>
             </div>
@@ -451,7 +802,9 @@ export default function PublicResults() {
             {selectedResult.winners.map(
               (winner) => (
                 <div
-                  key={winner.id}
+                  key={
+                    winner.id
+                  }
                   className="winner-row"
                 >
                   <div className="winner-rank">
