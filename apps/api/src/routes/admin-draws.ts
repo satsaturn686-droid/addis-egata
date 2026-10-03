@@ -308,11 +308,7 @@ router.post(
                 body.startsAt,
               ),
 
-            /*
-             * Deadline is intentionally disabled.
-             * The database column remains for compatibility,
-             * but every newly created draw has no closing deadline.
-             */
+            // No closing deadline.
             deadlineAt: null,
 
             drawAt:
@@ -385,8 +381,7 @@ router.post(
  *
  * POST /admin/draws/:drawId/open
  *
- * Important:
- * Opening a draw is NOT blocked by a deadline.
+ * Opening a draw is not blocked by a deadline.
  */
 router.post(
   "/:drawId/open",
