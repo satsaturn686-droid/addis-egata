@@ -329,43 +329,36 @@ function App() {
     );
   }, [activeDraw]);
 
-  const numberBoardSummary = useMemo(() => {
-    const total = activeDraw?.totalNumbers ?? 0;
-    const filled = Math.min(
-      total,
-      Math.max(0, filledNumbers),
-    );
-
-    return {
-      total,
-      filled,
-      available: Math.max(0, total - filled),
-    };
-  }, [activeDraw, filledNumbers]);
-
-    const filledNumbers =
-    activeDraw && Number.isFinite(activeDraw.filledNumbers)
-      ? activeDraw.filledNumbers
-      : 0;
-
-  const remaining = activeDraw
-    ? Math.max(
-        0,
-        activeDraw.totalNumbers - filledNumbers,
-      )
+  const filledNumbers =
+  activeDraw &&
+  Number.isFinite(activeDraw.filledNumbers)
+    ? activeDraw.filledNumbers
     : 0;
 
-  
+const numberBoardSummary = useMemo(() => {
+  const total = activeDraw?.totalNumbers ?? 0;
+  const filled = Math.min(
+    total,
+    Math.max(0, filledNumbers),
+  );
+
+  return {
+    total,
+    filled,
+    available: Math.max(0, total - filled),
+  };
+}, [activeDraw, filledNumbers]);
+
   const progress = activeDraw
-    ? Math.min(
-        100,
-        Math.round(
-          (activeDraw.filledNumbers /
-            Math.max(1, activeDraw.totalNumbers)) *
-            100,
-        ),
-      )
-    : 0;
+  ? Math.min(
+      100,
+      Math.round(
+        (filledNumbers /
+          Math.max(1, activeDraw.totalNumbers)) *
+          100,
+      ),
+    )
+  : 0;
 
   const displayName =
     user?.firstName ||
@@ -866,16 +859,10 @@ function App() {
           </div>
         )}
 
-     <div
-  style={{
-    marginTop: "16px",
-    display: "grid",
-    gridTemplateColumns:
-      "repeat(3, minmax(0, 1fr))",
-    gap: "8px",
-  }}
->
-       display: "grid",
+        <div
+          style={{
+            marginTop: "16px",
+            display: "grid",
             gridTemplateColumns:
               "repeat(3, minmax(0, 1fr))",
             gap: "8px",
@@ -1104,12 +1091,6 @@ function App() {
           የእርስዎን ቁጥር ብቻ ማየት እና መክፈት
           ይችላሉ። ቁጥሮቹ ሲሞሉ ዕጣው ይዘጋል።
         </p>
-
-          <span>🟦 የእኔ ተይዟል</span>
-          <span>🟨 ክፍያ በመጠባበቅ ላይ</span>
-          <span>🟩 ክፍያ ተረጋግጧል</span>
-        </div>
-      </section>
 
       {selectedEntry && (
         <section className="draw-card">
