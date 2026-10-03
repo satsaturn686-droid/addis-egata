@@ -27,7 +27,6 @@ type EntryPaymentRow = {
   entry_fee: string | number;
   draw_status: string;
   starts_at: string | null;
-  deadline_at: string | null;
 };
 
 function mapPayment(row: PaymentRow): Payment {
@@ -55,14 +54,6 @@ function isBeforeStart(startsAt: string | null): boolean {
   }
 
   return new Date(startsAt).getTime() > Date.now();
-}
-
-function isAfterDeadline(deadlineAt: string | null): boolean {
-  if (!deadlineAt) {
-    return false;
-  }
-
-  return new Date(deadlineAt).getTime() <= Date.now();
 }
 
 export async function createTelebirrPayment(
@@ -95,9 +86,13 @@ export async function createTelebirrPayment(
   }
 
   const normalizedSenderName = senderName?.trim() || null;
-  const normalizedReceiptImageUrl = receiptImageUrl?.trim() || null;
+  const normalizedReceiptImageUrl =
+    receiptImageUrl?.trim() || null;
 
-  if (normalizedSenderName && normalizedSenderName.length > 200) {
+  if (
+    normalizedSenderName &&
+    normalizedSenderName.length > 200
+  ) {
     throw new Error("SENDER_NAME_TOO_LONG");
   }
 
@@ -113,26 +108,26 @@ export async function createTelebirrPayment(
   try {
     await client.query("BEGIN");
 
-    const entryResult = await client.query<EntryPaymentRow>(
-      `
-        SELECT
-          e.id,
-          e.user_id,
-          e.draw_id,
-          e.status,
-          e.reserved_until,
-          d.entry_fee,
-          d.status AS draw_status,
-          d.starts_at,
-          d.deadline_at
-        FROM entries e
-        INNER JOIN draws d
-          ON d.id = e.draw_id
-        WHERE e.id = $1
-        FOR UPDATE
-      `,
-      [entryId],
-    );
+    const entryResult =
+      await client.query<EntryPaymentRow>(
+        `
+          SELECT
+            e.id,
+            e.user_id,
+            e.draw_id,
+            e.status,
+            e.reserved_until,
+            d.entry_fee,
+            d.status AS draw_status,
+            d.starts_at
+          FROM entries e
+          INNER JOIN draws d
+            ON d.id = e.draw_id
+          WHERE e.id = $1
+          FOR UPDATE
+        `,
+        [entryId],
+      );
 
     if (entryResult.rows.length === 0) {
       throw new Error("ENTRY_NOT_FOUND");
@@ -160,21 +155,13 @@ export async function createTelebirrPayment(
       throw new Error("DRAW_NOT_STARTED");
     }
 
-    if (isAfterDeadline(entry.deadline_at)) {
-      await client.query(
-        `
-          UPDATE entries
-          SET
-            status = 'expired',
-            updated_at = NOW()
-          WHERE id = $1
-        `,
-        [entryId],
-      );
-
-      throw new Error("DRAW_DEADLINE_PASSED");
-    }
-
+    /*
+     * There is NO draw deadline.
+     *
+     * A reserved number is valid until its own reservation
+     * expires. The draw itself stays open until all numbers
+     * are filled or an administrator closes it manually.
+     */
     if (
       entry.reserved_until &&
       new Date(entry.reserved_until).getTime() <= Date.now()
@@ -244,53 +231,54 @@ export async function createTelebirrPayment(
       throw new Error("INVALID_ENTRY_FEE");
     }
 
-    const paymentResult = await client.query<PaymentRow>(
-      `
-        INSERT INTO payments (
-          entry_id,
-          user_id,
+    const paymentResult =
+      await client.query<PaymentRow>(
+        `
+          INSERT INTO payments (
+            entry_id,
+            user_id,
+            amount,
+            payment_method,
+            transaction_reference,
+            sender_name,
+            receipt_image_url,
+            status
+          )
+          VALUES (
+            $1,
+            $2,
+            $3,
+            'telebirr',
+            $4,
+            $5,
+            $6,
+            'pending'
+          )
+          RETURNING
+            id,
+            entry_id,
+            user_id,
+            amount,
+            payment_method,
+            transaction_reference,
+            sender_name,
+            receipt_image_url,
+            status,
+            verified_by,
+            verified_at,
+            rejection_reason,
+            created_at,
+            updated_at
+        `,
+        [
+          entryId,
+          userId,
           amount,
-          payment_method,
-          transaction_reference,
-          sender_name,
-          receipt_image_url,
-          status
-        )
-        VALUES (
-          $1,
-          $2,
-          $3,
-          'telebirr',
-          $4,
-          $5,
-          $6,
-          'pending'
-        )
-        RETURNING
-          id,
-          entry_id,
-          user_id,
-          amount,
-          payment_method,
-          transaction_reference,
-          sender_name,
-          receipt_image_url,
-          status,
-          verified_by,
-          verified_at,
-          rejection_reason,
-          created_at,
-          updated_at
-      `,
-      [
-        entryId,
-        userId,
-        amount,
-        reference,
-        normalizedSenderName,
-        normalizedReceiptImageUrl,
-      ],
-    );
+          reference,
+          normalizedSenderName,
+          normalizedReceiptImageUrl,
+        ],
+      );
 
     await client.query(
       `
