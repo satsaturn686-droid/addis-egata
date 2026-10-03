@@ -609,6 +609,13 @@ export async function approvePayment(
 
     await client.query("COMMIT");
 
+    if (notificationDrawId) {
+      void notifyDrawOccupancyAfterCommit(
+        notificationDrawId,
+        drawFull,
+      );
+    }
+
     return mapPayment(
       updatedPaymentResult.rows[0],
     );
@@ -617,13 +624,6 @@ export async function approvePayment(
     throw error;
   } finally {
     client.release();
-
-    if (notificationDrawId) {
-      void notifyDrawOccupancyAfterCommit(
-        notificationDrawId,
-        drawFull,
-      );
-    }
   }
 }
 
