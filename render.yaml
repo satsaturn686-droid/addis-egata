@@ -29,16 +29,19 @@ services:
       - key: ADMIN_TELEGRAM_IDS
         sync: false
 
+      - key: MINI_APP_URL
+        value: https://addis-egata-web.onrender.com
+
   - type: cron
-    name: addis-egata-expire-draws
+    name: addis-egata-scheduled-draws
     runtime: node
     region: oregon
     plan: free
 
-    schedule: "*/5 * * * *"
+    schedule: "*/1 * * * *"
 
     buildCommand: npm --prefix apps/api install --include=dev && npm run build:api
-    startCommand: npm --prefix apps/api run cron:expire-draws
+    startCommand: npm --prefix apps/api run cron:scheduled-draws
 
     envVars:
       - key: NODE_ENV
@@ -46,6 +49,12 @@ services:
 
       - key: DATABASE_URL
         sync: false
+
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+
+      - key: MINI_APP_URL
+        value: https://addis-egata-web.onrender.com
 
   - type: web
     name: addis-egata-web
