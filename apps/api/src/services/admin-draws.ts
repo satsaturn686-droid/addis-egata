@@ -1,594 +1,626 @@
-import { Router } from "express";
+import { pool } from "../db.js";
+import type {
+  Draw,
+  DrawPrize,
+  PrizeType,
+} from "../types.js";
 
-import {
-  requireAdmin,
-  requireTelegramAuth,
-} from "../middleware/auth.js";
-
-import { createDraw } from "../services/admin-draws.js";
-
-import {
-  closeDraw,
-  openDraw,
-} from "../services/draw-lifecycle.js";
-
-import {
-  notifyUsersAboutOpenedDraw,
-} from "../services/telegram-notifications.js";
-
-const router = Router();
-
-/*
- * All admin draw routes require:
- * 1. Valid Telegram authentication
- * 2. Administrator privileges
- */
-router.use(
-  requireTelegramAuth,
-  requireAdmin,
-);
-
-function getString(
-  value: unknown,
-): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  return value.trim();
+interface CreateDrawInput {
+  name: string;
+  description?: string | null;
+  prizeType: PrizeType;
+  prizeName: string;
+  prizeImageUrl?: string | null;
+  prizeDescription?: string | null;
+  displayedPrizeValue?: number | null;
+  actualPrizeCost?: number | null;
+  totalNumbers: number;
+  entryFee: number;
+  winnerCount: number;
+  uniqueWinners?: boolean;
+  startsAt?: string | null;
+  deadlineAt?: string | null;
+  drawAt?: string | null;
+  prizes: Array<{
+    rank: number;
+    amount: number;
+  }>;
 }
 
-function getNullableString(
-  value: unknown,
-): string | null | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
+type DrawRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  prize_type: PrizeType;
+  prize_name: string;
+  prize_image_url: string | null;
+  prize_description: string | null;
+  displayed_prize_value: string | number | null;
+  actual_prize_cost: string | number | null;
+  total_numbers: number;
+  entry_fee: string | number;
+  winner_count: number;
+  unique_winners: boolean;
+  status: Draw["status"];
+  starts_at: string | null;
+  deadline_at: string | null;
+  draw_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
+type DrawPrizeRow = {
+  id: string;
+  draw_id: string;
+  rank: number;
+  amount: string | number;
+  created_at: string;
+};
+
+function toNumber(
+  value: string | number | null,
+): number | null {
   if (value === null) {
     return null;
   }
 
-  if (typeof value !== "string") {
-    return undefined;
+  return Number(value);
+}
+
+function mapDraw(row: DrawRow): Draw {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    prizeType: row.prize_type,
+    prizeName: row.prize_name,
+    prizeImageUrl: row.prize_image_url,
+    prizeDescription: row.prize_description,
+    displayedPrizeValue: toNumber(
+      row.displayed_prize_value,
+    ),
+    actualPrizeCost: toNumber(
+      row.actual_prize_cost,
+    ),
+    totalNumbers: row.total_numbers,
+    filledNumbers: 0,
+    occupiedNumbers: [],
+    entryFee: Number(row.entry_fee),
+    winnerCount: row.winner_count,
+    uniqueWinners: row.unique_winners,
+    status: row.status,
+    startsAt: row.starts_at,
+    deadlineAt: row.deadline_at,
+    drawAt: row.draw_at,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapPrize(
+  row: DrawPrizeRow,
+): DrawPrize {
+  return {
+    id: row.id,
+    drawId: row.draw_id,
+    rank: row.rank,
+    amount: Number(row.amount),
+    createdAt: row.created_at,
+  };
+}
+
+function validateText(
+  value: string,
+  field: string,
+  maxLength: number,
+): string {
+  const normalized = value.trim();
+
+  if (!normalized) {
+    throw new Error(`${field}_REQUIRED`);
+  }
+
+  if (normalized.length > maxLength) {
+    throw new Error(`${field}_TOO_LONG`);
+  }
+
+  return normalized;
+}
+
+function validateOptionalText(
+  value: string | null | undefined,
+  field: string,
+  maxLength: number,
+): string | null {
+  if (
+    value === undefined ||
+    value === null
+  ) {
+    return null;
   }
 
   const normalized = value.trim();
 
-  return normalized || null;
-}
-
-function getNumber(
-  value: unknown,
-): number | undefined {
-  if (typeof value === "number") {
-    return Number.isFinite(value)
-      ? value
-      : undefined;
+  if (!normalized) {
+    return null;
   }
 
+  if (normalized.length > maxLength) {
+    throw new Error(`${field}_TOO_LONG`);
+  }
+
+  return normalized;
+}
+
+function validateMoney(
+  value: number | null | undefined,
+  field: string,
+  allowZero = true,
+): number | null {
   if (
-    typeof value === "string" &&
-    value.trim()
+    value === undefined ||
+    value === null
   ) {
-    const parsed = Number(value);
-
-    return Number.isFinite(parsed)
-      ? parsed
-      : undefined;
+    return null;
   }
 
-  return undefined;
+  if (!Number.isFinite(value)) {
+    throw new Error(`${field}_INVALID`);
+  }
+
+  if (allowZero) {
+    if (value < 0) {
+      throw new Error(`${field}_INVALID`);
+    }
+  } else if (value <= 0) {
+    throw new Error(`${field}_INVALID`);
+  }
+
+  return Math.round(value * 100) / 100;
 }
 
-function getBoolean(
-  value: unknown,
-): boolean | undefined {
-  if (typeof value === "boolean") {
-    return value;
+function validateDate(
+  value: string | null | undefined,
+  field: string,
+): string | null {
+  if (
+    value === undefined ||
+    value === null
+  ) {
+    return null;
   }
 
-  if (typeof value === "string") {
-    if (value === "true") {
-      return true;
-    }
+  const normalized = value.trim();
 
-    if (value === "false") {
-      return false;
-    }
+  if (!normalized) {
+    return null;
   }
 
-  return undefined;
+  const timestamp =
+    new Date(normalized).getTime();
+
+  if (!Number.isFinite(timestamp)) {
+    throw new Error(`${field}_INVALID`);
+  }
+
+  return new Date(timestamp).toISOString();
 }
 
-function getPrizes(
-  value: unknown,
+function validatePrizes(
+  prizes: CreateDrawInput["prizes"],
+  winnerCount: number,
 ): Array<{
   rank: number;
   amount: number;
-}> | undefined {
-  if (!Array.isArray(value)) {
-    return undefined;
+}> {
+  if (!Array.isArray(prizes)) {
+    throw new Error("PRIZES_REQUIRED");
   }
 
-  return value.map((prize) => {
-    if (
-      typeof prize !== "object" ||
-      prize === null
-    ) {
+  if (prizes.length !== winnerCount) {
+    throw new Error(
+      "PRIZE_COUNT_MUST_MATCH_WINNERS",
+    );
+  }
+
+  const ranks = new Set<number>();
+
+  const normalized = prizes.map(
+    (prize) => {
+      if (
+        !Number.isInteger(prize.rank) ||
+        prize.rank < 1 ||
+        prize.rank > winnerCount
+      ) {
+        throw new Error(
+          "INVALID_PRIZE_RANK",
+        );
+      }
+
+      if (ranks.has(prize.rank)) {
+        throw new Error(
+          "DUPLICATE_PRIZE_RANK",
+        );
+      }
+
+      ranks.add(prize.rank);
+
+      if (
+        !Number.isFinite(prize.amount) ||
+        prize.amount < 0
+      ) {
+        throw new Error(
+          "INVALID_PRIZE_AMOUNT",
+        );
+      }
+
       return {
-        rank: Number.NaN,
-        amount: Number.NaN,
+        rank: prize.rank,
+        amount:
+          Math.round(prize.amount * 100) /
+          100,
       };
+    },
+  );
+
+  normalized.sort(
+    (a, b) => a.rank - b.rank,
+  );
+
+  for (
+    let index = 0;
+    index < normalized.length;
+    index += 1
+  ) {
+    if (
+      normalized[index].rank !==
+      index + 1
+    ) {
+      throw new Error(
+        "PRIZE_RANKS_MUST_BE_SEQUENTIAL",
+      );
     }
+  }
 
-    const item =
-      prize as Record<string, unknown>;
-
-    return {
-      rank:
-        getNumber(item.rank) ??
-        Number.NaN,
-      amount:
-        getNumber(item.amount) ??
-        Number.NaN,
-    };
-  });
+  return normalized;
 }
 
-/*
- * Create a new draw.
- *
- * POST /admin/draws
- *
- * Important:
- * There is NO draw closing deadline.
- * A draw remains open until all numbers are filled
- * or an administrator closes it manually.
- */
-router.post(
-  "/",
-  async (req, res) => {
-    try {
-      if (!req.user) {
-        res.status(401).json({
-          error:
-            "AUTHENTICATION_REQUIRED",
-          message:
-            "Authentication is required.",
-        });
-        return;
-      }
+function validateSchedule(
+  startsAt: string | null,
+  drawAt: string | null,
+): void {
+  const start =
+    startsAt === null
+      ? null
+      : new Date(startsAt).getTime();
 
-      const body =
-        typeof req.body === "object" &&
-        req.body !== null
-          ? req.body as Record<
-              string,
-              unknown
-            >
-          : {};
+  const draw =
+    drawAt === null
+      ? null
+      : new Date(drawAt).getTime();
 
-      const name =
-        getString(body.name);
+  if (
+    start !== null &&
+    draw !== null &&
+    draw < start
+  ) {
+    throw new Error(
+      "DRAW_TIME_MUST_BE_ON_OR_AFTER_START",
+    );
+  }
+}
 
-      const prizeType =
-        getString(body.prizeType);
+export async function createDraw(
+  adminUserId: string,
+  input: CreateDrawInput,
+): Promise<{
+  draw: Draw;
+  prizes: DrawPrize[];
+}> {
+  if (!pool) {
+    throw new Error(
+      "DATABASE_URL is not configured",
+    );
+  }
 
-      const prizeName =
-        getString(body.prizeName);
+  if (!adminUserId.trim()) {
+    throw new Error(
+      "INVALID_ADMIN_USER_ID",
+    );
+  }
 
-      const totalNumbers =
-        getNumber(
-          body.totalNumbers,
-        );
+  const name = validateText(
+    input.name,
+    "DRAW_NAME",
+    200,
+  );
 
-      const entryFee =
-        getNumber(body.entryFee);
+  const description =
+    validateOptionalText(
+      input.description,
+      "DRAW_DESCRIPTION",
+      2000,
+    );
 
-      const winnerCount =
-        getNumber(
-          body.winnerCount,
-        );
+  if (
+    input.prizeType !== "cash" &&
+    input.prizeType !== "physical"
+  ) {
+    throw new Error(
+      "INVALID_PRIZE_TYPE",
+    );
+  }
 
-      const prizes =
-        getPrizes(body.prizes);
+  const prizeName = validateText(
+    input.prizeName,
+    "PRIZE_NAME",
+    200,
+  );
 
-      if (!name) {
-        res.status(400).json({
-          error:
-            "DRAW_NAME_REQUIRED",
-          message:
-            "Draw name is required.",
-        });
-        return;
-      }
+  const prizeImageUrl =
+    validateOptionalText(
+      input.prizeImageUrl,
+      "PRIZE_IMAGE_URL",
+      2000,
+    );
 
-      if (
-        prizeType !== "cash" &&
-        prizeType !== "physical"
-      ) {
-        res.status(400).json({
-          error:
-            "INVALID_PRIZE_TYPE",
-          message:
-            "Prize type must be cash or physical.",
-        });
-        return;
-      }
+  const prizeDescription =
+    validateOptionalText(
+      input.prizeDescription,
+      "PRIZE_DESCRIPTION",
+      5000,
+    );
 
-      if (!prizeName) {
-        res.status(400).json({
-          error:
-            "PRIZE_NAME_REQUIRED",
-          message:
-            "Prize name is required.",
-        });
-        return;
-      }
+  const displayedPrizeValue =
+    validateMoney(
+      input.displayedPrizeValue,
+      "DISPLAYED_PRIZE_VALUE",
+    );
 
-      if (
-        totalNumbers === undefined
-      ) {
-        res.status(400).json({
-          error:
-            "INVALID_TOTAL_NUMBERS",
-          message:
-            "A valid total number count is required.",
-        });
-        return;
-      }
+  const actualPrizeCost =
+    validateMoney(
+      input.actualPrizeCost,
+      "ACTUAL_PRIZE_COST",
+    );
 
-      if (
-        entryFee === undefined
-      ) {
-        res.status(400).json({
-          error:
-            "INVALID_ENTRY_FEE",
-          message:
-            "A valid entry fee is required.",
-        });
-        return;
-      }
+  if (
+    !Number.isInteger(
+      input.totalNumbers,
+    ) ||
+    input.totalNumbers < 5 ||
+    input.totalNumbers > 1_000_000
+  ) {
+    throw new Error(
+      "INVALID_TOTAL_NUMBERS",
+    );
+  }
 
-      if (
-        winnerCount === undefined
-      ) {
-        res.status(400).json({
-          error:
-            "INVALID_WINNER_COUNT",
-          message:
-            "A valid winner count is required.",
-        });
-        return;
-      }
+  if (
+    !Number.isFinite(input.entryFee) ||
+    input.entryFee <= 0
+  ) {
+    throw new Error(
+      "INVALID_ENTRY_FEE",
+    );
+  }
 
-      if (!prizes) {
-        res.status(400).json({
-          error:
-            "PRIZES_REQUIRED",
-          message:
-            "Prize distribution is required.",
-        });
-        return;
-      }
+  const entryFee =
+    Math.round(input.entryFee * 100) /
+    100;
 
-      const result =
-        await createDraw(
-          req.user.id,
-          {
+  if (
+    !Number.isInteger(
+      input.winnerCount,
+    ) ||
+    input.winnerCount < 5 ||
+    input.winnerCount >
+      input.totalNumbers
+  ) {
+    throw new Error(
+      "INVALID_WINNER_COUNT",
+    );
+  }
+
+  const startsAt = validateDate(
+    input.startsAt,
+    "STARTS_AT",
+  );
+
+  // Addis ዕጣ has no closing deadline.
+  // The draw closes automatically when all numbers are filled.
+  const deadlineAt = null;
+
+  const drawAt = validateDate(
+    input.drawAt,
+    "DRAW_AT",
+  );
+
+  validateSchedule(
+    startsAt,
+    drawAt,
+  );
+
+  const prizes = validatePrizes(
+    input.prizes,
+    input.winnerCount,
+  );
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const drawResult =
+      await client.query<DrawRow>(
+        `
+          INSERT INTO draws (
             name,
-            description:
-              getNullableString(
-                body.description,
-              ),
-            prizeType,
-            prizeName,
-            prizeImageUrl:
-              getNullableString(
-                body.prizeImageUrl,
-              ),
-            prizeDescription:
-              getNullableString(
-                body.prizeDescription,
-              ),
-            displayedPrizeValue:
-              getNumber(
-                body.displayedPrizeValue,
-              ) ?? null,
-            actualPrizeCost:
-              getNumber(
-                body.actualPrizeCost,
-              ) ?? null,
-            totalNumbers,
-            entryFee,
-            winnerCount,
-            uniqueWinners:
-              getBoolean(
-                body.uniqueWinners,
-              ) ?? true,
-            startsAt:
-              getNullableString(
-                body.startsAt,
-              ),
-
-            // No closing deadline.
-            deadlineAt: null,
-
-            drawAt:
-              getNullableString(
-                body.drawAt,
-              ),
-            prizes,
-          },
-        );
-
-      res.status(201).json(result);
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "DRAW_CREATION_FAILED";
-
-      const clientErrors =
-        new Set([
-          "INVALID_ADMIN_USER_ID",
-          "DRAW_NAME_REQUIRED",
-          "DRAW_NAME_TOO_LONG",
-          "DRAW_DESCRIPTION_TOO_LONG",
-          "INVALID_PRIZE_TYPE",
-          "PRIZE_NAME_REQUIRED",
-          "PRIZE_NAME_TOO_LONG",
-          "PRIZE_IMAGE_URL_TOO_LONG",
-          "PRIZE_DESCRIPTION_TOO_LONG",
-          "DISPLAYED_PRIZE_VALUE_INVALID",
-          "ACTUAL_PRIZE_COST_INVALID",
-          "INVALID_TOTAL_NUMBERS",
-          "INVALID_ENTRY_FEE",
-          "INVALID_WINNER_COUNT",
-          "STARTS_AT_INVALID",
-          "DRAW_AT_INVALID",
-          "DRAW_TIME_MUST_BE_ON_OR_AFTER_START",
-          "PRIZES_REQUIRED",
-          "PRIZE_COUNT_MUST_MATCH_WINNERS",
-          "INVALID_PRIZE_RANK",
-          "DUPLICATE_PRIZE_RANK",
-          "INVALID_PRIZE_AMOUNT",
-          "PRIZE_RANKS_MUST_BE_SEQUENTIAL",
-        ]);
-
-      if (clientErrors.has(message)) {
-        res.status(400).json({
-          error: message,
-          message,
-        });
-        return;
-      }
-
-      console.error(
-        "Create admin draw error:",
-        error,
+            description,
+            prize_type,
+            prize_name,
+            prize_image_url,
+            prize_description,
+            displayed_prize_value,
+            actual_prize_cost,
+            total_numbers,
+            entry_fee,
+            winner_count,
+            unique_winners,
+            status,
+            starts_at,
+            deadline_at,
+            draw_at,
+            created_by
+          )
+          VALUES (
+            $1,
+            $2,
+            $3,
+            $4,
+            $5,
+            $6,
+            $7,
+            $8,
+            $9,
+            $10,
+            $11,
+            $12,
+            'draft',
+            $13,
+            $14,
+            $15,
+            $16
+          )
+          RETURNING
+            id,
+            name,
+            description,
+            prize_type,
+            prize_name,
+            prize_image_url,
+            prize_description,
+            displayed_prize_value,
+            actual_prize_cost,
+            total_numbers,
+            entry_fee,
+            winner_count,
+            unique_winners,
+            status,
+            starts_at,
+            deadline_at,
+            draw_at,
+            created_by,
+            created_at,
+            updated_at
+        `,
+        [
+          name,
+          description,
+          input.prizeType,
+          prizeName,
+          prizeImageUrl,
+          prizeDescription,
+          displayedPrizeValue,
+          actualPrizeCost,
+          input.totalNumbers,
+          entryFee,
+          input.winnerCount,
+          input.uniqueWinners ?? true,
+          startsAt,
+          deadlineAt,
+          drawAt,
+          adminUserId,
+        ],
       );
 
-      res.status(500).json({
-        error:
-          "DRAW_CREATION_FAILED",
-        message:
-          "The draw could not be created.",
-      });
-    }
-  },
-);
+    const draw = mapDraw(
+      drawResult.rows[0],
+    );
 
-/*
- * Open a draft or safely reopen a closed draw.
- *
- * POST /admin/draws/:drawId/open
- *
- * Opening a draw is not blocked by a deadline.
- *
- * After a successful open:
- * Telegram users receive the new-draw notification.
- *
- * Notification failure does NOT fail the draw opening.
- */
-router.post(
-  "/:drawId/open",
-  async (req, res) => {
-    try {
-      if (!req.user) {
-        res.status(401).json({
-          error:
-            "AUTHENTICATION_REQUIRED",
-          message:
-            "Authentication is required.",
-        });
-        return;
-      }
+    const prizeRows: DrawPrizeRow[] =
+      [];
 
-      const drawId =
-        req.params.drawId?.trim();
-
-      if (!drawId) {
-        res.status(400).json({
-          error:
-            "INVALID_DRAW_ID",
-          message:
-            "Draw ID is required.",
-        });
-        return;
-      }
-
-      const draw =
-        await openDraw(
-          req.user.id,
-          drawId,
+    for (const prize of prizes) {
+      const result =
+        await client.query<DrawPrizeRow>(
+          `
+            INSERT INTO draw_prizes (
+              draw_id,
+              rank,
+              amount
+            )
+            VALUES (
+              $1,
+              $2,
+              $3
+            )
+            RETURNING
+              id,
+              draw_id,
+              rank,
+              amount,
+              created_at
+          `,
+          [
+            draw.id,
+            prize.rank,
+            prize.amount,
+          ],
         );
 
-      /*
-       * Telegram notification is intentionally
-       * executed after the draw has successfully
-       * opened.
-       *
-       * A Telegram API failure must never undo
-       * the successful draw opening.
-       */
-      try {
-        await notifyUsersAboutOpenedDraw(
-          {
-            id: draw.id,
-            name: draw.name,
-            prizeName:
-              draw.prizeName,
-            prizeType:
-              draw.prizeType,
-            displayedPrizeValue:
-              draw.displayedPrizeValue,
-            totalNumbers:
-              draw.totalNumbers,
-            entryFee:
-              draw.entryFee,
-            winnerCount:
-              draw.winnerCount,
-          },
-        );
-      } catch (notificationError) {
-        console.error(
-          "Open draw notification error:",
-          notificationError,
-        );
-      }
-
-      res.status(200).json({
-        draw,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "DRAW_OPEN_FAILED";
-
-      const clientErrors =
-        new Set([
-          "INVALID_ADMIN_USER_ID",
-          "INVALID_DRAW_ID",
-          "DRAW_NOT_FOUND",
-          "DRAW_NOT_EDITABLE",
-          "DRAW_ALREADY_EXECUTED",
-          "INVALID_TOTAL_NUMBERS",
-          "INVALID_ENTRY_FEE",
-          "INVALID_WINNER_COUNT",
-          "PRIZE_COUNT_MUST_MATCH_WINNERS",
-          "PRIZE_RANKS_MUST_BE_SEQUENTIAL",
-          "INVALID_PRIZE_AMOUNT",
-          "PRIZE_POOL_MUST_BE_GREATER_THAN_ZERO",
-          "DRAW_TIME_ALREADY_PASSED",
-        ]);
-
-      if (clientErrors.has(message)) {
-        res.status(400).json({
-          error: message,
-          message:
-            "The draw could not be opened.",
-        });
-        return;
-      }
-
-      console.error(
-        "Open draw error:",
-        error,
+      prizeRows.push(
+        result.rows[0],
       );
-
-      res.status(500).json({
-        error:
-          "DRAW_OPEN_FAILED",
-        message:
-          "The draw could not be opened.",
-      });
     }
-  },
-);
 
-/*
- * Close an open/full draw.
- *
- * POST /admin/draws/:drawId/close
- *
- * This is a manual administrative close.
- * It is NOT triggered by a time deadline.
- */
-router.post(
-  "/:drawId/close",
-  async (req, res) => {
-    try {
-      if (!req.user) {
-        res.status(401).json({
-          error:
-            "AUTHENTICATION_REQUIRED",
-          message:
-            "Authentication is required.",
-        });
-        return;
-      }
+    await client.query(
+      `
+        INSERT INTO audit_logs (
+          user_id,
+          action,
+          entity_type,
+          entity_id,
+          details
+        )
+        VALUES (
+          $1,
+          'DRAW_CREATED',
+          'draw',
+          $2,
+          $3
+        )
+      `,
+      [
+        adminUserId,
+        draw.id,
+        JSON.stringify({
+          name: draw.name,
+          totalNumbers:
+            draw.totalNumbers,
+          entryFee: draw.entryFee,
+          winnerCount:
+            draw.winnerCount,
+          uniqueWinners:
+            draw.uniqueWinners,
+          prizeType:
+            draw.prizeType,
+        }),
+      ],
+    );
 
-      const drawId =
-        req.params.drawId?.trim();
+    await client.query("COMMIT");
 
-      if (!drawId) {
-        res.status(400).json({
-          error:
-            "INVALID_DRAW_ID",
-          message:
-            "Draw ID is required.",
-        });
-        return;
-      }
-
-      const draw =
-        await closeDraw(
-          req.user.id,
-          drawId,
-        );
-
-      res.status(200).json({
-        draw,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "DRAW_CLOSE_FAILED";
-
-      const clientErrors =
-        new Set([
-          "INVALID_ADMIN_USER_ID",
-          "INVALID_DRAW_ID",
-          "DRAW_NOT_FOUND",
-          "DRAW_NOT_CLOSEABLE",
-        ]);
-
-      if (clientErrors.has(message)) {
-        res.status(400).json({
-          error: message,
-          message:
-            "The draw could not be closed.",
-        });
-        return;
-      }
-
-      console.error(
-        "Close draw error:",
-        error,
-      );
-
-      res.status(500).json({
-        error:
-          "DRAW_CLOSE_FAILED",
-        message:
-          "The draw could not be closed.",
-      });
-    }
-  },
-);
-
-export default router;
+    return {
+      draw,
+      prizes:
+        prizeRows.map(mapPrize),
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
