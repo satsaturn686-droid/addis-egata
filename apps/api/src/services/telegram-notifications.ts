@@ -20,6 +20,14 @@ type OccupancyNotificationEvent =
   | "occupancy_90"
   | "draw_full";
 
+export type PaymentNotification = {
+  userId: string;
+  drawId: string;
+  number: number;
+  amount: number;
+  rejectionReason?: string | null;
+};
+
 const MINI_APP_URL =
   process.env.MINI_APP_URL?.trim() ||
   "https://addis-egata-web.onrender.com";
@@ -113,6 +121,18 @@ function formatMoney(
   }).format(value);
 }
 
+function formatDrawNumber(
+  number: number,
+  totalNumbers: number,
+): string {
+  const width = Math.max(
+    2,
+    String(Math.max(totalNumbers, 1)).length,
+  );
+
+  return `#${String(number).padStart(width, "0")}`;
+}
+
 function buildDrawNotification(
   draw: DrawNotification,
 ): string {
@@ -162,7 +182,7 @@ function buildOccupancyNotification(
       "🔴 ADDIS ዕጣ — ዕጣው ሞልቷል!\n\n" +
       `🏷️ ${draw.name}\n` +
       `👥 ተሳታፊዎች: ${paidCount} / ${draw.totalNumbers}\n` +
-      `📊 ሙላት: 100%\n\n` +
+      "📊 ሙላት: 100%\n\n" +
       "🔒 ሁሉም ቁጥሮች ተይዘዋል።\n" +
       "⏳ የዕጣውን ውጤት ይጠብቁ።"
     );
@@ -189,6 +209,47 @@ function buildOccupancyNotification(
   );
 }
 
+function buildPaymentApprovedNotification(
+  drawName: string,
+  payment: PaymentNotification,
+): string {
+  return (
+    "✅ ADDIS ዕጣ — ክፍያህ ተረጋግጧል!\n\n" +
+    `🏷️ ዕጣ: ${drawName}\n` +
+    `🔢 ቁጥር: ${formatDrawNumber(
+      payment.number,
+      payment.number,
+    )}\n` +
+    `💳 የተከፈለ: ${formatMoney(
+      payment.amount,
+    )} ብር\n\n` +
+    "🎉 ተሳትፎህ ተረጋግጧል። ቁጥርህ በስምህ ተመዝግቧል።"
+  );
+}
+
+function buildPaymentRejectedNotification(
+  drawName: string,
+  payment: PaymentNotification,
+): string {
+  const reason =
+    payment.rejectionReason?.trim() ||
+    "ክፍያው በአስተዳደሩ አልተረጋገጠም።";
+
+  return (
+    "❌ ADDIS ዕጣ — ክፍያህ አልተረጋገጠም!\n\n" +
+    `🏷️ ዕጣ: ${drawName}\n` +
+    `🔢 ቁጥር: ${formatDrawNumber(
+      payment.number,
+      payment.number,
+    )}\n` +
+    `💳 የተከፈለ: ${formatMoney(
+      payment.amount,
+    )} ብር\n` +
+    `📝 ምክንያት: ${reason}\n\n` +
+    "🔄 እባክህ ADDIS ዕጣን ክፈትና እንደገና ተሳተፍ።"
+  );
+}
+
 async function getTelegramRecipients(): Promise<
   TelegramRecipient[]
 > {
@@ -198,6 +259,39 @@ async function getTelegramRecipients(): Promise<
     WHERE telegram_id IS NOT NULL
     ORDER BY created_at ASC
   `);
+}
+
+async function getTelegramRecipient(
+  userId: string,
+): Promise<TelegramRecipient | null> {
+  const rows = await query<TelegramRecipient>(
+    `
+      SELECT telegram_id
+      FROM users
+      WHERE id = $1
+        AND telegram_id IS NOT NULL
+      LIMIT 1
+    `,
+    [userId],
+  );
+
+  return rows[0] ?? null;
+}
+
+async function getDrawName(
+  drawId: string,
+): Promise<string> {
+  const rows = await query<{ name: string }>(
+    `
+      SELECT name
+      FROM draws
+      WHERE id = $1
+      LIMIT 1
+    `,
+    [drawId],
+  );
+
+  return rows[0]?.name ?? "ADDIS ዕጣ";
 }
 
 async function claimNotificationEvent(
@@ -247,6 +341,106 @@ async function claimNotificationEvent(
   );
 
   return result.length > 0;
+}
+
+export async function notifyUserAboutPaymentApproved(
+  payment: PaymentNotification,
+): Promise<void> {
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.warn(
+      "Payment approval notification skipped because TELEGRAM_BOT_TOKEN is missing.",
+    );
+
+    return;
+  }
+
+  try {
+    const recipient =
+      await getTelegramRecipient(
+        payment.userId,
+      );
+
+    if (!recipient) {
+      console.log(
+        `No Telegram recipient found for payment approval: user=${payment.userId}`,
+      );
+
+      return;
+    }
+
+    const drawName =
+      await getDrawName(
+        payment.drawId,
+      );
+
+    const ok =
+      await sendTelegramMessage(
+        recipient.telegram_id,
+        buildPaymentApprovedNotification(
+          drawName,
+          payment,
+        ),
+      );
+
+    console.log(
+      `Payment approval notification completed: user=${payment.userId}, draw=${payment.drawId}, sent=${ok}`,
+    );
+  } catch (error) {
+    console.error(
+      "Payment approval notification error:",
+      error,
+    );
+  }
+}
+
+export async function notifyUserAboutPaymentRejected(
+  payment: PaymentNotification,
+): Promise<void> {
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.warn(
+      "Payment rejection notification skipped because TELEGRAM_BOT_TOKEN is missing.",
+    );
+
+    return;
+  }
+
+  try {
+    const recipient =
+      await getTelegramRecipient(
+        payment.userId,
+      );
+
+    if (!recipient) {
+      console.log(
+        `No Telegram recipient found for payment rejection: user=${payment.userId}`,
+      );
+
+      return;
+    }
+
+    const drawName =
+      await getDrawName(
+        payment.drawId,
+      );
+
+    const ok =
+      await sendTelegramMessage(
+        recipient.telegram_id,
+        buildPaymentRejectedNotification(
+          drawName,
+          payment,
+        ),
+      );
+
+    console.log(
+      `Payment rejection notification completed: user=${payment.userId}, draw=${payment.drawId}, sent=${ok}`,
+    );
+  } catch (error) {
+    console.error(
+      "Payment rejection notification error:",
+      error,
+    );
+  }
 }
 
 export async function notifyUsersAboutOpenedDraw(
