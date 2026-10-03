@@ -216,7 +216,7 @@ export async function getOpenDraws(): Promise<Draw[]> {
         d.created_at,
         d.updated_at
       FROM draws d
-      WHERE d.status IN ('open', 'full')
+      WHERE d.status IN ('open', 'full', 'drawing')
       ORDER BY
         CASE WHEN d.draw_at IS NULL THEN 1 ELSE 0 END,
         d.draw_at ASC NULLS LAST,
