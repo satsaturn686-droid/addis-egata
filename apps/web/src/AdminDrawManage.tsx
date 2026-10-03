@@ -211,7 +211,10 @@ export default function AdminDrawManage() {
     useState<
       AdminDrawExecutionResponse["result"] | null
     >(null);
-
+  const [
+    confirmingDraw,
+    setConfirmingDraw,
+  ] = useState<AdminDrawListItem | null>(null);
   const [
     selectedNumberDrawId,
     setSelectedNumberDrawId,
@@ -558,34 +561,7 @@ export default function AdminDrawManage() {
       return;
     }
 
-                    const confirmed = await new Promise<boolean>((resolve) => {
-      const webApp = window.Telegram?.WebApp as
-                | {
-            showConfirm?: (
-              message: string,
-              callback: (ok: boolean) => void,
-            ) => void;
-          }
-        | undefined;
-
-      if (webApp?.showConfirm) {
-        webApp.showConfirm(
-          `“${draw.name}” ዕጣን አሁን በsecure random ስርዓት ማውጣት ይፈልጋሉ?\n\nይህ እርምጃ ከተፈጸመ በኋላ ውጤቱ በLive ይጀምራል።`,
-          resolve,
-        );
-        return;
-      }
-
-      resolve(
-        window.confirm(
-          `“${draw.name}” ዕጣን አሁን በsecure random ስርዓት ማውጣት ይፈልጋሉ?\n\nይህ እርምጃ ከተፈጸመ በኋላ ውጤቱ በLive ይጀምራል።`,
-        ),
-      );
-    });
-
-    if (!confirmed) {
-      return;
-    }
+                    
     setBusyDrawId(draw.id);
     setError(null);
     setSuccess(null);
@@ -679,8 +655,8 @@ export default function AdminDrawManage() {
               type="button"
               className="draw-action primary"
               disabled={busy}
-              onClick={() =>
-                void handleExecute(draw)
+                            onClick={() =>
+                setConfirmingDraw(draw)
               }
             >
               {busy
@@ -2054,6 +2030,97 @@ export default function AdminDrawManage() {
           ))}
         </section>
       )}
+            {confirmingDraw ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            background: "rgba(0, 0, 0, 0.72)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="execute-draw-confirm-title"
+            style={{
+              width: "100%",
+              maxWidth: "420px",
+              borderRadius: "20px",
+              padding: "22px",
+              background: "#141414",
+              border: "1px solid rgba(255,255,255,0.12)",
+              boxShadow: "0 24px 80px rgba(0,0,0,0.45)",
+            }}
+          >
+            <h2
+              id="execute-draw-confirm-title"
+              style={{
+                margin: "0 0 12px",
+                fontSize: "20px",
+                fontWeight: 800,
+              }}
+            >
+              ዕጣ ለማውጣት እርግጠኛ ነህ?
+            </h2>
+
+            <p
+              style={{
+                margin: "0",
+                lineHeight: 1.7,
+                opacity: 0.88,
+              }}
+            >
+              “{confirmingDraw.name}” ዕጣን አሁን
+              በsecure random ስርዓት ማውጣት
+              ትፈልጋለህ?
+              <br />
+              <br />
+              ከተረጋገጠ በኋላ የእጣው ውጤት
+              በLive መልቀቅ ይጀምራል።
+            </p>
+
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                marginTop: "20px",
+              }}
+            >
+              <button
+                type="button"
+                className="draw-action secondary"
+                onClick={() =>
+                  setConfirmingDraw(null)
+                }
+              >
+                ተመለስ
+              </button>
+
+              <button
+                type="button"
+                className="draw-action primary"
+                autoFocus
+                onClick={() => {
+                  const drawToExecute =
+                    confirmingDraw;
+
+                  setConfirmingDraw(null);
+                  void handleExecute(
+                    drawToExecute,
+                  );
+                }}
+              >
+                አረጋግጥ እና ዕጣ አውጣ
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
