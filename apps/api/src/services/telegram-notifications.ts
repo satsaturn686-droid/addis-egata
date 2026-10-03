@@ -15,6 +15,11 @@ type TelegramRecipient = {
   telegram_id: number | string;
 };
 
+type OccupancyNotificationEvent =
+  | "occupancy_80"
+  | "occupancy_90"
+  | "draw_full";
+
 const MINI_APP_URL =
   process.env.MINI_APP_URL?.trim() ||
   "https://addis-egata-web.onrender.com";
@@ -134,6 +139,56 @@ function buildDrawNotification(
   );
 }
 
+function buildOccupancyNotification(
+  draw: DrawNotification,
+  event: OccupancyNotificationEvent,
+  paidCount: number,
+): string {
+  const percentage =
+    draw.totalNumbers > 0
+      ? Math.floor(
+          (paidCount / draw.totalNumbers) *
+            100,
+        )
+      : 0;
+
+  const remaining = Math.max(
+    draw.totalNumbers - paidCount,
+    0,
+  );
+
+  if (event === "draw_full") {
+    return (
+      "🔴 ADDIS ዕጣ — ዕጣው ሞልቷል!\n\n" +
+      `🏷️ ${draw.name}\n` +
+      `👥 ተሳታፊዎች: ${paidCount} / ${draw.totalNumbers}\n` +
+      `📊 ሙላት: 100%\n\n` +
+      "🔒 ሁሉም ቁጥሮች ተይዘዋል።\n" +
+      "⏳ የዕጣውን ውጤት ይጠብቁ።"
+    );
+  }
+
+  if (event === "occupancy_90") {
+    return (
+      "🟠 ADDIS ዕጣ — ዕጣው 90% ሞልቷል!\n\n" +
+      `🏷️ ${draw.name}\n` +
+      `👥 ተሳታፊዎች: ${paidCount} / ${draw.totalNumbers}\n` +
+      `📊 ሙላት: ${percentage}%\n` +
+      `🟢 ነፃ ቁጥሮች: ${remaining}\n\n` +
+      "🔥 ጥቂት ቁጥሮች ብቻ ቀርተዋል።"
+    );
+  }
+
+  return (
+    "🟡 ADDIS ዕጣ — ዕጣው 80% ሞልቷል!\n\n" +
+    `🏷️ ${draw.name}\n` +
+    `👥 ተሳታፊዎች: ${paidCount} / ${draw.totalNumbers}\n` +
+    `📊 ሙላት: ${percentage}%\n` +
+    `🟢 ነፃ ቁጥሮች: ${remaining}\n\n` +
+    "🎟️ ቁጥርህን ለመምረጥ ADDIS ዕጣን ክፈት።"
+  );
+}
+
 async function getTelegramRecipients(): Promise<
   TelegramRecipient[]
 > {
@@ -143,6 +198,55 @@ async function getTelegramRecipients(): Promise<
     WHERE telegram_id IS NOT NULL
     ORDER BY created_at ASC
   `);
+}
+
+async function claimNotificationEvent(
+  drawId: string,
+  eventType: OccupancyNotificationEvent,
+): Promise<boolean> {
+  const result = await query<{ id: string }>(
+    `
+      WITH lock AS (
+        SELECT pg_advisory_xact_lock(
+          hashtext($1)
+        )
+      ),
+      inserted AS (
+        INSERT INTO audit_logs (
+          action,
+          entity_type,
+          entity_id,
+          details
+        )
+        SELECT
+          'DRAW_NOTIFICATION',
+          'draw_notification',
+          $2,
+          $3::jsonb
+        FROM lock
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM audit_logs
+          WHERE action = 'DRAW_NOTIFICATION'
+            AND entity_type = 'draw_notification'
+            AND entity_id = $2
+            AND details->>'eventType' = $1
+        )
+        RETURNING id
+      )
+      SELECT id
+      FROM inserted
+    `,
+    [
+      `${drawId}:${eventType}`,
+      drawId,
+      JSON.stringify({
+        eventType,
+      }),
+    ],
+  );
+
+  return result.length > 0;
 }
 
 export async function notifyUsersAboutOpenedDraw(
@@ -189,5 +293,111 @@ export async function notifyUsersAboutOpenedDraw(
 
   console.log(
     `New draw notification completed: sent=${sent}, failed=${failed}, total=${recipients.length}`,
+  );
+}
+
+export async function notifyUsersAboutDrawOccupancy(
+  draw: DrawNotification,
+  paidCount: number,
+  event: OccupancyNotificationEvent,
+): Promise<void> {
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.warn(
+      "Occupancy notification skipped because TELEGRAM_BOT_TOKEN is missing.",
+    );
+
+    return;
+  }
+
+  if (draw.totalNumbers <= 0) {
+    return;
+  }
+
+  const normalizedPaidCount = Math.max(
+    0,
+    Math.min(
+      Math.floor(paidCount),
+      draw.totalNumbers,
+    ),
+  );
+
+  const percentage =
+    (normalizedPaidCount /
+      draw.totalNumbers) *
+    100;
+
+  if (
+    event === "occupancy_80" &&
+    percentage < 80
+  ) {
+    return;
+  }
+
+  if (
+    event === "occupancy_90" &&
+    percentage < 90
+  ) {
+    return;
+  }
+
+  if (
+    event === "draw_full" &&
+    normalizedPaidCount <
+      draw.totalNumbers
+  ) {
+    return;
+  }
+
+  const claimed =
+    await claimNotificationEvent(
+      draw.id,
+      event,
+    );
+
+  if (!claimed) {
+    console.log(
+      `Draw occupancy notification already claimed: ${draw.id} ${event}`,
+    );
+
+    return;
+  }
+
+  const recipients =
+    await getTelegramRecipients();
+
+  if (recipients.length === 0) {
+    console.log(
+      "No Telegram users are available for the occupancy notification.",
+    );
+
+    return;
+  }
+
+  const text =
+    buildOccupancyNotification(
+      draw,
+      event,
+      normalizedPaidCount,
+    );
+
+  let sent = 0;
+  let failed = 0;
+
+  for (const recipient of recipients) {
+    const ok =
+      await sendTelegramMessage(
+        recipient.telegram_id,
+        text,
+      );
+
+    if (ok) {
+      sent += 1;
+    } else {
+      failed += 1;
+    }
+  }
+
+  console.log(
+    `Draw occupancy notification completed: event=${event}, draw=${draw.id}, paid=${normalizedPaidCount}, sent=${sent}, failed=${failed}, total=${recipients.length}`,
   );
 }
