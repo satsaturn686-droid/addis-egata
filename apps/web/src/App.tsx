@@ -96,9 +96,6 @@ function getFriendlyPaymentError(error: unknown): string {
     return "የ30 ደቂቃ reservation ጊዜ አልፏል። እባክዎ ሌላ ቁጥር ይምረጡ።";
   }
 
-  if (normalized.includes("DRAW_DEADLINE_PASSED")) {
-    return "የዕጣው deadline አልፏል።";
-  }
 
   if (normalized.includes("ENTRY_NOT_PAYABLE")) {
     return "ይህ ቁጥር ለክፍያ አይገኝም።";
