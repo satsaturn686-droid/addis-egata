@@ -42,7 +42,17 @@ declare global {
 function formatMoney(value: number): string {
   return `${value.toLocaleString("en-US")} ብር`;
 }
+function formatDrawNumber(
+  number: number,
+  totalNumbers: number,
+): string {
+  const width = Math.max(
+    2,
+    String(Math.max(1, totalNumbers)).length,
+  );
 
+  return `#${String(number).padStart(width, "0")}`;
+}
 function formatTime(totalSeconds: number): string {
   const safeSeconds = Math.max(0, totalSeconds);
   const minutes = Math.floor(safeSeconds / 60);
@@ -309,7 +319,7 @@ function App() {
 
     return map;
   }, [myActiveEntries]);
-  const occupiedNumbers = useMemo(() => {
+    const occupiedNumbers = useMemo(() => {
     if (!activeDraw) {
       return new Set<number>();
     }
@@ -318,6 +328,22 @@ function App() {
       activeDraw.occupiedNumbers ?? [],
     );
   }, [activeDraw]);
+
+  const numberBoardSummary = useMemo(() => {
+    const total = activeDraw?.totalNumbers ?? 0;
+    const filled = Math.min(
+      total,
+      Math.max(0, filledNumbers),
+    );
+
+    return {
+      total,
+      filled,
+      available: Math.max(0, total - filled),
+    };
+  }, [activeDraw, filledNumbers]);
+
+  const filledNumbers =
     const filledNumbers =
     activeDraw && Number.isFinite(activeDraw.filledNumbers)
       ? activeDraw.filledNumbers
@@ -844,10 +870,112 @@ function App() {
         <div
           style={{
             display: "grid",
+
+        <div
+          style={{
+            marginTop: "16px",
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(3, minmax(0, 1fr))",
+            gap: "8px",
+          }}
+        >
+          <div
+            style={{
+              padding: "12px",
+              borderRadius: "12px",
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.10)",
+              textAlign: "center",
+            }}
+          >
+            <span
+              style={{
+                display: "block",
+                fontSize: "12px",
+                opacity: 0.7,
+              }}
+            >
+              👥 ተሳታፊዎች
+            </span>
+
+            <strong
+              style={{
+                display: "block",
+                marginTop: "4px",
+              }}
+            >
+              {numberBoardSummary.filled} /{" "}
+              {numberBoardSummary.total}
+            </strong>
+          </div>
+
+          <div
+            style={{
+              padding: "12px",
+              borderRadius: "12px",
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.10)",
+              textAlign: "center",
+            }}
+          >
+            <span
+              style={{
+                display: "block",
+                fontSize: "12px",
+                opacity: 0.7,
+              }}
+            >
+              🟢 ነፃ ቁጥሮች
+            </span>
+
+            <strong
+              style={{
+                display: "block",
+                marginTop: "4px",
+              }}
+            >
+              {numberBoardSummary.available}
+            </strong>
+          </div>
+
+          <div
+            style={{
+              padding: "12px",
+              borderRadius: "12px",
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.10)",
+              textAlign: "center",
+            }}
+          >
+            <span
+              style={{
+                display: "block",
+                fontSize: "12px",
+                opacity: 0.7,
+              }}
+            >
+              💳 መግቢያ
+            </span>
+
+            <strong
+              style={{
+                display: "block",
+                marginTop: "4px",
+              }}
+            >
+              {formatMoney(activeDraw.entryFee)}
+            </strong>
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
             gridTemplateColumns:
               "repeat(5, minmax(0, 1fr))",
             gap: "8px",
-            marginTop: "16px",
+            marginTop: "12px",
           }}
         >
           {Array.from(
@@ -864,8 +992,10 @@ function App() {
 
             const isReserving =
               reservingNumber === number;
-const isOccupied =
-  occupiedNumbers.has(number) && !entry;
+
+            const isOccupied =
+              occupiedNumbers.has(number) && !entry;
+
             let background =
               "rgba(255,255,255,0.04)";
 
@@ -902,28 +1032,28 @@ const isOccupied =
                 key={number}
                 type="button"
                 disabled={
-  activeDraw.status === "full" ||
-  isReserving ||
-  isOccupied
-}
+                  activeDraw.status === "full" ||
+                  isReserving ||
+                  isOccupied
+                }
                 onClick={() =>
                   void handleReserveNumber(number)
                 }
                 aria-label={
-  entry
-    ? `ቁጥር ${number} ${getEntryLabel(
-        entry,
-      )}`
-    : isOccupied
-      ? `ቁጥር ${number} ተይዟል`
-      : `ቁጥር ${number}`
-}
+                  entry
+                    ? `ቁጥር ${number} ${getEntryLabel(
+                        entry,
+                      )}`
+                    : isOccupied
+                      ? `ቁጥር ${number} ተይዟል`
+                      : `ቁጥር ${number}`
+                }
                 style={{
                   minHeight: "48px",
                   borderRadius: "12px",
                   border,
                   background,
-                  fontSize: "16px",
+                  fontSize: "15px",
                   fontWeight: 700,
                   cursor:
                     activeDraw.status === "full"
@@ -933,10 +1063,13 @@ const isOccupied =
                 }}
               >
                 {isReserving
-  ? "..."
-  : isOccupied
-    ? "🔒"
-    : number}
+                  ? "..."
+                  : isOccupied
+                    ? "🔒"
+                    : formatDrawNumber(
+                        number,
+                        activeDraw.totalNumbers,
+                      )}
               </button>
             );
           })}
@@ -952,6 +1085,25 @@ const isOccupied =
             opacity: 0.78,
           }}
         >
+          <span>🟢 ክፍያ ተረጋግጧል</span>
+          <span>🔵 ተይዟል</span>
+          <span>🟡 ክፍያ በመጠባበቅ ላይ</span>
+          <span>⚪ ነፃ</span>
+        </div>
+
+        <p
+          className="hero-description"
+          style={{
+            marginTop: "12px",
+            marginBottom: 0,
+            fontSize: "12px",
+          }}
+        >
+          🔒 የተቆለፈ ቁጥር በሌላ ተሳታፊ ተይዟል።
+          የእርስዎን ቁጥር ብቻ ማየት እና መክፈት
+          ይችላሉ። ቁጥሮቹ ሲሞሉ ዕጣው ይዘጋል።
+        </p>
+
           <span>🟦 የእኔ ተይዟል</span>
           <span>🟨 ክፍያ በመጠባበቅ ላይ</span>
           <span>🟩 ክፍያ ተረጋግጧል</span>
@@ -963,7 +1115,12 @@ const isOccupied =
           <div className="draw-info">
             <p className="eyebrow">የእኔ ቁጥር</p>
 
-            <h2>#{selectedEntry.number}</h2>
+            <h2>
+  {formatDrawNumber(
+    selectedEntry.number,
+    activeDraw.totalNumbers,
+  )}
+</h2>
 
             <p className="hero-description">
               {getEntryLabel(selectedEntry)}
@@ -1345,7 +1502,10 @@ const isOccupied =
                     fontWeight: 700,
                   }}
                 >
-                  #{entry.number}
+                                    {formatDrawNumber(
+                    entry.number,
+                    activeDraw.totalNumbers,
+                  )}
                 </button>
               ))}
             </div>
