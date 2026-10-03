@@ -214,12 +214,13 @@ export default function AdminDrawManage() {
     >(null);
   const [
     confirmingDraw,
-      const [
-    confirmingDraw,
     setConfirmingDraw,
   ] = useState<AdminDrawListItem | null>(null);
-    setConfirmingDraw,
-  ] = useState<AdminDrawListItem | null>(null);
+
+  const [
+    selectedNumberDrawId,
+    setSelectedNumberDrawId,
+  ] = useState<string | null>(null);
   const [
     selectedNumberDrawId,
     setSelectedNumberDrawId,
