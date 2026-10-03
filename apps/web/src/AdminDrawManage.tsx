@@ -18,6 +18,7 @@ import {
   closeManagedDraw,
   executeManagedDraw,
   getAdminDrawNumbers,
+  scheduleManagedDraw,
   type AdminDrawExecutionResponse,
   type AdminDrawNumber,
   type AdminDrawNumbersResponse,
@@ -213,6 +214,10 @@ export default function AdminDrawManage() {
     >(null);
   const [
     confirmingDraw,
+      const [
+    confirmingDraw,
+    setConfirmingDraw,
+  ] = useState<AdminDrawListItem | null>(null);
     setConfirmingDraw,
   ] = useState<AdminDrawListItem | null>(null);
   const [
@@ -291,7 +296,20 @@ export default function AdminDrawManage() {
   useEffect(() => {
     void loadDraws();
   }, [loadDraws]);
+  const [
+    countdownNow,
+    setCountdownNow,
+  ] = useState(Date.now());
 
+  useEffect(() => {
+    const timer =
+      window.setInterval(() => {
+        setCountdownNow(Date.now());
+      }, 1000);
+
+    return () =>
+      window.clearInterval(timer);
+  }, []);
   const loadNumberData = useCallback(
     async (
       drawId: string,
@@ -553,7 +571,115 @@ export default function AdminDrawManage() {
       setBusyDrawId(null);
     }
   }
+  function formatCountdown(
+    drawAt: string | null,
+  ): string | null {
+    if (!drawAt) {
+      return null;
+    }
 
+    const remaining =
+      new Date(drawAt).getTime() -
+      countdownNow;
+
+    if (remaining <= 0) {
+      return "ሊጀምር ነው...";
+    }
+
+    const totalSeconds =
+      Math.ceil(
+        remaining / 1000,
+      );
+
+    const days = Math.floor(
+      totalSeconds / 86400,
+    );
+
+    const hours = Math.floor(
+      (totalSeconds % 86400) /
+        3600,
+    );
+
+    const minutes = Math.floor(
+      (totalSeconds % 3600) /
+        60,
+    );
+
+    const seconds =
+      totalSeconds % 60;
+
+    if (days > 0) {
+      return `${days}ቀ ${hours}ሰ ${minutes}ደ`;
+    }
+
+    if (hours > 0) {
+      return `${hours}ሰ ${minutes}ደ ${seconds}ሰ`;
+    }
+
+    return `${minutes}ደ ${seconds}ሰ`;
+  }
+
+  async function handleSchedule(
+    draw: AdminDrawListItem,
+  ) {
+    if (draw.status !== "full") {
+      return;
+    }
+
+    const value =
+      scheduleValue.trim();
+
+    if (!value) {
+      setError(
+        "የዕጣ መውጫ ጊዜ ይምረጡ።",
+      );
+      return;
+    }
+
+    const selectedTime =
+      new Date(value);
+
+    if (
+      Number.isNaN(
+        selectedTime.getTime(),
+      ) ||
+      selectedTime.getTime() <=
+        Date.now()
+    ) {
+      setError(
+        "የዕጣ መውጫ ጊዜ ወደፊት መሆን አለበት።",
+      );
+      return;
+    }
+
+    setBusyDrawId(draw.id);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      await scheduleManagedDraw(
+        draw.id,
+        selectedTime.toISOString(),
+      );
+
+      setSchedulingDraw(null);
+      setScheduleValue("");
+
+      setSuccess(
+        `“${draw.name}” ዕጣ ተወስኖለታል። Countdown ጀምሯል።`,
+      );
+
+      await loadDraws(true);
+    } catch (actionError) {
+      setError(
+        actionError instanceof Error
+          ? actionError.message
+          : "የዕጣ ጊዜን ማስቀመጥ አልተቻለም።",
+      );
+    } finally {
+      setBusyDrawId(null);
+    }
+  }
   async function handleExecute(
     draw: AdminDrawListItem,
   ) {
@@ -651,18 +777,51 @@ export default function AdminDrawManage() {
           </button>
 
           {draw.status === "full" ? (
-            <button
-              type="button"
-              className="draw-action primary"
-              disabled={busy}
-                            onClick={() =>
-                setConfirmingDraw(draw)
-              }
-            >
-              {busy
-                ? "በማውጣት ላይ..."
-                : "ዕጣ አውጣ"}
-            </button>
+            <>
+              <button
+                type="button"
+                className="draw-action secondary"
+                disabled={busy}
+                onClick={() => {
+                  setScheduleValue(
+                    draw.drawAt
+                      ? new Date(
+                          draw.drawAt,
+                        )
+                          .toISOString()
+                          .slice(
+                            0,
+                            16,
+                          )
+                      : "",
+                  );
+
+                  setSchedulingDraw(
+                    draw,
+                  );
+                }}
+              >
+                ⏱️{" "}
+                {draw.drawAt
+                  ? "ጊዜ ቀይር"
+                  : "የሚወጣበት ጊዜ"}
+              </button>
+
+              <button
+                type="button"
+                className="draw-action primary"
+                disabled={busy}
+                onClick={() =>
+                  setConfirmingDraw(
+                    draw,
+                  )
+                }
+              >
+                {busy
+                  ? "በማውጣት ላይ..."
+                  : "ዕጣ አውጣ"}
+              </button>
+            </>
           ) : null}
         </div>
       );
@@ -1987,7 +2146,19 @@ export default function AdminDrawManage() {
                     draw.drawAt,
                   )}
                 </div>
-
+                {draw.drawAt ? (
+                  <div
+                    style={{
+                      marginTop: "8px",
+                      fontWeight: 800,
+                    }}
+                  >
+                    ⏳ Countdown:{" "}
+                    {formatCountdown(
+                      draw.drawAt,
+                    )}
+                  </div>
+                ) : null}
                 {draw.actualPrizeCost !==
                 null ? (
                   <div>
@@ -2030,6 +2201,138 @@ export default function AdminDrawManage() {
           ))}
         </section>
       )}
+            {schedulingDraw ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1001,
+            background:
+              "rgba(0, 0, 0, 0.72)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent:
+              "center",
+            padding: "20px",
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{
+              width: "100%",
+              maxWidth: "420px",
+              borderRadius: "20px",
+              padding: "22px",
+              background:
+                "#141414",
+              border:
+                "1px solid rgba(255,255,255,0.12)",
+              boxShadow:
+                "0 24px 80px rgba(0,0,0,0.45)",
+            }}
+          >
+            <h2
+              style={{
+                margin:
+                  "0 0 12px",
+                fontSize: "20px",
+                fontWeight: 800,
+              }}
+            >
+              ⏱️ የዕጣ መውጫ ጊዜ
+            </h2>
+
+            <p
+              style={{
+                margin: "0 0 18px",
+                lineHeight: 1.7,
+                opacity: 0.88,
+              }}
+            >
+              “{schedulingDraw.name}”
+              ዕጣ ሙሉ ነው።
+              <br />
+              የሚወጣበትን ጊዜ
+              ምረጥ።
+            </p>
+
+            <input
+              type="datetime-local"
+              value={
+                scheduleValue
+              }
+              min={
+                new Date(
+                  Date.now() +
+                    60_000,
+                )
+                  .toISOString()
+                  .slice(
+                    0,
+                    16,
+                  )
+              }
+              onChange={(event) =>
+                setScheduleValue(
+                  event.target.value,
+                )
+              }
+              style={{
+                width: "100%",
+                boxSizing:
+                  "border-box",
+                padding: "13px",
+                borderRadius:
+                  "12px",
+                marginBottom:
+                  "18px",
+              }}
+            />
+
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+              }}
+            >
+              <button
+                type="button"
+                className="draw-action secondary"
+                onClick={() => {
+                  setSchedulingDraw(
+                    null,
+                  );
+                  setScheduleValue(
+                    "",
+                  );
+                }}
+              >
+                ተመለስ
+              </button>
+
+              <button
+                type="button"
+                className="draw-action primary"
+                disabled={
+                  busyDrawId ===
+                  schedulingDraw.id
+                }
+                onClick={() =>
+                  void handleSchedule(
+                    schedulingDraw,
+                  )
+                }
+              >
+                {busyDrawId ===
+                schedulingDraw.id
+                  ? "በማስቀመጥ ላይ..."
+                  : "Countdown ጀምር"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
             {confirmingDraw ? (
         <div
           style={{
