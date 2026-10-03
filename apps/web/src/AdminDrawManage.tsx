@@ -558,12 +558,26 @@ export default function AdminDrawManage() {
       return;
     }
 
-    const confirmed =
-      window.confirm(
-        `“${draw.name}” ዕጣን አሁን በsecure random ስርዓት ማውጣት ይፈልጋሉ?\n\nይህ እርምጃ ከተፈጸመ በኋላ ውጤቱ እንደ ተጠናቀቀ ይመዘገባል።`,
-      );
+        const telegramConfirm =
+      window.Telegram?.WebApp?.showConfirm;
 
-    if (!confirmed) {
+    if (telegramConfirm) {
+      const confirmed =
+        await new Promise<boolean>((resolve) => {
+          telegramConfirm(
+            `“${draw.name}” ዕጣን አሁን በsecure random ስርዓት ማውጣት ይፈልጋሉ?\n\nይህ እርምጃ ከተፈጸመ በኋላ ውጤቱ በLive ይጀምራል።`,
+            (ok) => resolve(ok),
+          );
+        });
+
+      if (!confirmed) {
+        return;
+      }
+    } else if (
+      !window.confirm(
+        `“${draw.name}” ዕጣን አሁን በsecure random ስርዓት ማውጣት ይፈልጋሉ?\n\nይህ እርምጃ ከተፈጸመ በኋላ ውጤቱ በLive ይጀምራል።`,
+      )
+    ) {
       return;
     }
 
