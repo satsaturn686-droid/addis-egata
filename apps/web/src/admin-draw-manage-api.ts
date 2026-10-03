@@ -4,13 +4,16 @@ import type {
 } from "./api";
 
 const API_BASE_URL =
-  (import.meta.env.VITE_API_URL as string | undefined)?.replace(
-    /\/+$/,
-    "",
-  ) || "";
+  (
+    import.meta.env.VITE_API_URL as
+      | string
+      | undefined
+  )?.replace(/\/+$/, "") ||
+  "https://addis-egata-api.onrender.com";
 
 function getTelegramInitData(): string {
-  const webApp = window.Telegram?.WebApp;
+  const webApp =
+    window.Telegram?.WebApp;
 
   if (webApp?.initData) {
     return webApp.initData;
@@ -34,35 +37,61 @@ async function adminManageRequest<T>(
   path: string,
   options: {
     method?: "GET" | "POST";
+    body?: unknown;
     signal?: AbortSignal;
   } = {},
 ): Promise<T> {
-  const initData = getTelegramInitData();
+  const initData =
+    getTelegramInitData();
 
-  const response = await fetch(
-    `${API_BASE_URL}${path}`,
-    {
-      method: options.method ?? "GET",
-      headers: {
-        Accept: "application/json",
-        "X-Telegram-Init-Data": initData,
+  const headers: Record<
+    string,
+    string
+  > = {
+    Accept: "application/json",
+    "X-Telegram-Init-Data":
+      initData,
+  };
+
+  if (
+    options.body !== undefined
+  ) {
+    headers["Content-Type"] =
+      "application/json";
+  }
+
+  const response =
+    await fetch(
+      `${API_BASE_URL}${path}`,
+      {
+        method:
+          options.method ?? "GET",
+        headers,
+        credentials: "include",
+        body:
+          options.body !== undefined
+            ? JSON.stringify(
+                options.body,
+              )
+            : undefined,
+        signal: options.signal,
       },
-      credentials: "include",
-      signal: options.signal,
-    },
-  );
+    );
 
   let payload: unknown = null;
 
   const contentType =
-    response.headers.get("content-type") ?? "";
+    response.headers.get(
+      "content-type",
+    ) ?? "";
 
   if (
     contentType.includes(
       "application/json",
     )
   ) {
-    payload = await response.json();
+    payload =
+      await response.json();
   }
 
   if (!response.ok) {
@@ -99,6 +128,11 @@ export type AdminDrawExecutionResponse = {
     executedAt: string;
     publishedAt: string | null;
   };
+};
+
+export type AdminDrawScheduleResponse = {
+  drawId: string;
+  drawAt: string;
 };
 
 export type AdminDrawNumberStatus =
@@ -213,6 +247,44 @@ export async function closeManagedDraw(
     )}/close`,
     {
       method: "POST",
+      signal,
+    },
+  );
+}
+
+export async function scheduleManagedDraw(
+  drawId: string,
+  drawAt: string,
+  signal?: AbortSignal,
+): Promise<AdminDrawScheduleResponse> {
+  const normalizedDrawId =
+    drawId.trim();
+
+  const normalizedDrawAt =
+    drawAt.trim();
+
+  if (!normalizedDrawId) {
+    throw new Error(
+      "Draw ID is required.",
+    );
+  }
+
+  if (!normalizedDrawAt) {
+    throw new Error(
+      "Draw time is required.",
+    );
+  }
+
+  return adminManageRequest<AdminDrawScheduleResponse>(
+    `/admin/draw-execution/${encodeURIComponent(
+      normalizedDrawId,
+    )}/schedule`,
+    {
+      method: "POST",
+      body: {
+        drawAt:
+          normalizedDrawAt,
+      },
       signal,
     },
   );
