@@ -107,7 +107,6 @@ export type CreateAdminDrawInput = {
   winnerCount: number;
   uniqueWinners?: boolean;
   startsAt?: string;
-  deadlineAt?: string;
   drawAt?: string;
   prizes: AdminPrizeInput[];
 };
@@ -248,12 +247,6 @@ export async function createAdminDraw(
           ? {
               startsAt:
                 input.startsAt,
-            }
-          : {}),
-        ...(input.deadlineAt
-          ? {
-              deadlineAt:
-                input.deadlineAt,
             }
           : {}),
         ...(input.drawAt
