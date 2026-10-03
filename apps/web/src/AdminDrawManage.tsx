@@ -560,12 +560,12 @@ export default function AdminDrawManage() {
 
                     const confirmed = await new Promise<boolean>((resolve) => {
       const webApp = window.Telegram?.WebApp as
-        | (typeof window.Telegram.WebApp & {
+                | {
             showConfirm?: (
               message: string,
               callback: (ok: boolean) => void,
             ) => void;
-          })
+          }
         | undefined;
 
       if (webApp?.showConfirm) {
