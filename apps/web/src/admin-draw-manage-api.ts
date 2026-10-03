@@ -97,7 +97,7 @@ export type AdminDrawExecutionResponse = {
       selectedAt: string;
     }>;
     executedAt: string;
-    publishedAt: string;
+    publishedAt: string | null;
   };
 };
 
