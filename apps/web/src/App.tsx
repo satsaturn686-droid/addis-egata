@@ -1122,7 +1122,7 @@ const numberBoardSummary = useMemo(() => {
           የእርስዎን ቁጥር ብቻ ማየት እና መክፈት
           ይችላሉ። ቁጥሮቹ ሲሞሉ ዕጣው ይዘጋል።
         </p>
-
+      </section>
       {selectedEntry && (
         <section className="draw-card">
           <div className="draw-info">
