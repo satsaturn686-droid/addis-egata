@@ -9,7 +9,6 @@ type DrawNotification = {
   totalNumbers: number;
   entryFee: number;
   winnerCount: number;
-  deadlineAt: string | null;
 };
 
 type TelegramRecipient = {
@@ -23,7 +22,9 @@ const MINI_APP_URL =
 const TELEGRAM_BOT_TOKEN =
   process.env.TELEGRAM_BOT_TOKEN?.trim() ?? "";
 
-function getTelegramApiUrl(method: string): string {
+function getTelegramApiUrl(
+  method: string,
+): string {
   return `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${method}`;
 }
 
@@ -74,7 +75,8 @@ async function sendTelegramMessage(
     if (!response.ok || !data.ok) {
       console.error(
         `Telegram notification failed for ${chatId}:`,
-        data.description ?? response.statusText,
+        data.description ??
+          response.statusText,
       );
 
       return false;
@@ -106,29 +108,6 @@ function formatMoney(
   }).format(value);
 }
 
-function formatDeadline(
-  value: string | null,
-): string {
-  if (!value) {
-    return "እስኪሞላ";
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "እስኪሞላ";
-  }
-
-  return new Intl.DateTimeFormat(
-    "am-ET",
-    {
-      dateStyle: "medium",
-      timeStyle: "short",
-      timeZone: "Africa/Addis_Ababa",
-    },
-  ).format(date);
-}
-
 function buildDrawNotification(
   draw: DrawNotification,
 ): string {
@@ -149,10 +128,8 @@ function buildDrawNotification(
       draw.entryFee,
     )} ብር\n` +
     `👥 ቁጥሮች: ${draw.totalNumbers}\n` +
-    `🏆 አሸናፊዎች: ${draw.winnerCount}\n` +
-    `⏰ መዝጊያ: ${formatDeadline(
-      draw.deadlineAt,
-    )}\n\n` +
+    `🏆 አሸናፊዎች: ${draw.winnerCount}\n\n` +
+    "🔒 ቁጥሮች ሲሞሉ ዕጣው ይዘጋል።\n\n" +
     "🔢 ቁጥርህን ምረጥ፣ በTelebirr ክፈል፣ በዕጣው ተሳተፍ።"
   );
 }
