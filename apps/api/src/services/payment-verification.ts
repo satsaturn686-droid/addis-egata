@@ -2,6 +2,8 @@ import { pool } from "../db.js";
 import type { Payment } from "../types.js";
 
 import {
+  notifyUserAboutPaymentApproved,
+  notifyUserAboutPaymentRejected,
   notifyUsersAboutDrawOccupancy,
 } from "./telegram-notifications.js";
 
@@ -408,6 +410,15 @@ export async function approvePayment(
     | string
     | null = null;
 
+  let paymentNotification:
+    | {
+        userId: string;
+        drawId: string;
+        number: number;
+        amount: number;
+      }
+    | null = null;
+
   try {
     await client.query("BEGIN");
 
@@ -607,7 +618,22 @@ export async function approvePayment(
     notificationDrawId =
       entry.draw_id;
 
+    paymentNotification = {
+      userId: payment.user_id,
+      drawId: entry.draw_id,
+      number: entry.number,
+      amount: Number(
+        payment.amount,
+      ),
+    };
+
     await client.query("COMMIT");
+
+    if (paymentNotification) {
+      void notifyUserAboutPaymentApproved(
+        paymentNotification,
+      );
+    }
 
     if (notificationDrawId) {
       void notifyDrawOccupancyAfterCommit(
@@ -661,6 +687,16 @@ export async function rejectPayment(
 
   const client =
     await pool.connect();
+
+  let paymentNotification:
+    | {
+        userId: string;
+        drawId: string;
+        number: number;
+        amount: number;
+        rejectionReason: string;
+      }
+    | null = null;
 
   try {
     await client.query("BEGIN");
@@ -787,7 +823,23 @@ export async function rejectPayment(
       ],
     );
 
+    paymentNotification = {
+      userId: payment.user_id,
+      drawId: entry.draw_id,
+      number: entry.number,
+      amount: Number(
+        payment.amount,
+      ),
+      rejectionReason: reason,
+    };
+
     await client.query("COMMIT");
+
+    if (paymentNotification) {
+      void notifyUserAboutPaymentRejected(
+        paymentNotification,
+      );
+    }
 
     return mapPayment(
       updatedPaymentResult.rows[0],
