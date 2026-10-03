@@ -26,22 +26,20 @@ export type PublicDrawResult = {
 };
 
 export type LiveDrawState = {
+  drawId: string;
+  drawName: string;
   status: "drawing" | "completed";
-  result: {
-    drawId: string;
-    drawName: string;
-    prizeType: "cash" | "physical";
-    prizeName: string;
-    prizeImageUrl: string | null;
-    displayedPrizeValue: number | null;
-    winnerCount: number;
-    eligibleEntryCount: number;
-    executedAt: string;
-  };
-  revealCount: number;
-  totalWinners: number;
-  nextRevealAt: string | null;
-  revealedWinners: PublicWinner[];
+  prizeType: "cash" | "physical";
+  prizeName: string;
+  prizeImageUrl: string | null;
+  displayedPrizeValue: number | null;
+  winnerCount: number;
+  eligibleEntryCount: number;
+  executedAt: string;
+  publishedAt: string | null;
+  revealedWinnerCount: number;
+  totalWinnerCount: number;
+  winners: PublicWinner[];
 };
 
 type ResultRow = {
@@ -88,6 +86,51 @@ function mapWinner(
   };
 }
 
+function getPrizeValue(
+  value: string | number | null,
+): number | null {
+  if (value === null) {
+    return null;
+  }
+
+  const numberValue = Number(value);
+
+  return Number.isFinite(numberValue)
+    ? numberValue
+    : null;
+}
+
+function mapLiveState(
+  row: ResultRow,
+  winners: WinnerRow[],
+  revealedWinners: PublicWinner[],
+  status: "drawing" | "completed",
+): LiveDrawState {
+  return {
+    drawId: row.draw_id,
+    drawName: row.draw_name,
+    status,
+    prizeType: row.prize_type,
+    prizeName: row.prize_name,
+    prizeImageUrl: row.prize_image_url,
+    displayedPrizeValue:
+      getPrizeValue(
+        row.displayed_prize_value,
+      ),
+    winnerCount: row.winner_count,
+    eligibleEntryCount:
+      row.eligible_entry_count,
+    executedAt: row.executed_at,
+    publishedAt:
+      row.published_at,
+    revealedWinnerCount:
+      revealedWinners.length,
+    totalWinnerCount:
+      winners.length,
+    winners: revealedWinners,
+  };
+}
+
 function mapResult(
   row: ResultRow,
   winners: WinnerRow[],
@@ -103,19 +146,22 @@ function mapResult(
     drawName: row.draw_name,
     prizeType: row.prize_type,
     prizeName: row.prize_name,
-    prizeImageUrl: row.prize_image_url,
+    prizeImageUrl:
+      row.prize_image_url,
     displayedPrizeValue:
-      row.displayed_prize_value === null
-        ? null
-        : Number(
-            row.displayed_prize_value,
-          ),
-    winnerCount: row.winner_count,
+      getPrizeValue(
+        row.displayed_prize_value,
+      ),
+    winnerCount:
+      row.winner_count,
     eligibleEntryCount:
       row.eligible_entry_count,
-    executedAt: row.executed_at,
-    publishedAt: row.published_at,
-    winners: winners.map(mapWinner),
+    executedAt:
+      row.executed_at,
+    publishedAt:
+      row.published_at,
+    winners:
+      winners.map(mapWinner),
   };
 }
 
@@ -194,8 +240,14 @@ function getRevealCount(
   totalWinners: number,
   nowMs: number,
 ): number {
+  if (totalWinners <= 0) {
+    return 0;
+  }
+
   const executedMs =
-    new Date(executedAt).getTime();
+    new Date(
+      executedAt,
+    ).getTime();
 
   if (!Number.isFinite(executedMs)) {
     return 0;
@@ -221,6 +273,34 @@ function getRevealCount(
   );
 }
 
+function getFinalRevealAtMs(
+  executedAt: string,
+  totalWinners: number,
+): number {
+  const executedMs =
+    new Date(
+      executedAt,
+    ).getTime();
+
+  if (!Number.isFinite(executedMs)) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  if (totalWinners <= 0) {
+    return executedMs;
+  }
+
+  return (
+    executedMs +
+    FIRST_REVEAL_DELAY_MS +
+    Math.max(
+      0,
+      totalWinners - 1,
+    ) *
+      REVEAL_INTERVAL_MS
+  );
+}
+
 export async function getLiveDrawState(
   drawId: string,
 ): Promise<LiveDrawState | null> {
@@ -243,46 +323,24 @@ export async function getLiveDrawState(
     return null;
   }
 
-  if (
-    row.published_at !== null
-  ) {
-    const winners =
-      await getWinnerRows(drawId);
-
-    return {
-      status: "completed",
-      result: {
-        drawId: row.draw_id,
-        drawName: row.draw_name,
-        prizeType: row.prize_type,
-        prizeName: row.prize_name,
-        prizeImageUrl:
-          row.prize_image_url,
-        displayedPrizeValue:
-          row.displayed_prize_value === null
-            ? null
-            : Number(
-                row.displayed_prize_value,
-              ),
-        winnerCount:
-          row.winner_count,
-        eligibleEntryCount:
-          row.eligible_entry_count,
-        executedAt:
-          row.executed_at,
-      },
-      revealCount:
-        winners.length,
-      totalWinners:
-        row.winner_count,
-      nextRevealAt: null,
-      revealedWinners:
-        winners.map(mapWinner),
-    };
-  }
-
   const winners =
     await getWinnerRows(drawId);
+
+  const allWinners =
+    winners.map(mapWinner);
+
+  /*
+   * If the result has already been published,
+   * return the complete final result.
+   */
+  if (row.published_at !== null) {
+    return mapLiveState(
+      row,
+      winners,
+      allWinners,
+      "completed",
+    );
+  }
 
   const nowMs =
     Date.now();
@@ -294,18 +352,23 @@ export async function getLiveDrawState(
       nowMs,
     );
 
+  /*
+   * The final winner is revealed immediately
+   * when its scheduled reveal time is reached.
+   *
+   * We then publish the complete result and move
+   * the draw from "drawing" to "completed".
+   */
   const finalRevealAtMs =
-    new Date(
+    getFinalRevealAtMs(
       row.executed_at,
-    ).getTime() +
-    FIRST_REVEAL_DELAY_MS +
-    winners.length *
-      REVEAL_INTERVAL_MS;
+      winners.length,
+    );
 
   if (
+    winners.length > 0 &&
     revealCount >=
       winners.length &&
-    winners.length > 0 &&
     nowMs >= finalRevealAtMs
   ) {
     const publishedAt =
@@ -315,7 +378,9 @@ export async function getLiveDrawState(
       await pool.connect();
 
     try {
-      await client.query("BEGIN");
+      await client.query(
+        "BEGIN",
+      );
 
       const publishResult =
         await client.query<{
@@ -323,10 +388,12 @@ export async function getLiveDrawState(
         }>(
           `
             UPDATE draw_results
-            SET published_at = COALESCE(
-              published_at,
-              $2
-            )
+            SET
+              published_at =
+                COALESCE(
+                  published_at,
+                  $2
+                )
             WHERE draw_id = $1
               AND published_at IS NULL
             RETURNING draw_id
@@ -349,7 +416,9 @@ export async function getLiveDrawState(
         [drawId],
       );
 
-      await client.query("COMMIT");
+      await client.query(
+        "COMMIT",
+      );
 
       if (
         publishResult.rows.length > 0
@@ -359,106 +428,47 @@ export async function getLiveDrawState(
         );
       }
     } catch (error) {
-      await client.query("ROLLBACK");
+      await client.query(
+        "ROLLBACK",
+      );
       throw error;
     } finally {
       client.release();
     }
 
     const completedRow =
-      await getResultRow(drawId);
+      await getResultRow(
+        drawId,
+      );
 
     if (
       completedRow?.published_at
     ) {
-      return {
-        status: "completed",
-        result: {
-          drawId:
-            completedRow.draw_id,
-          drawName:
-            completedRow.draw_name,
-          prizeType:
-            completedRow.prize_type,
-          prizeName:
-            completedRow.prize_name,
-          prizeImageUrl:
-            completedRow.prize_image_url,
-          displayedPrizeValue:
-            completedRow.displayed_prize_value ===
-            null
-              ? null
-              : Number(
-                  completedRow.displayed_prize_value,
-                ),
-          winnerCount:
-            completedRow.winner_count,
-          eligibleEntryCount:
-            completedRow.eligible_entry_count,
-          executedAt:
-            completedRow.executed_at,
-        },
-        revealCount:
-          winners.length,
-        totalWinners:
-          winners.length,
-        nextRevealAt: null,
-        revealedWinners:
-          winners.map(mapWinner),
-      };
+      return mapLiveState(
+        completedRow,
+        winners,
+        allWinners,
+        "completed",
+      );
     }
   }
 
-  const nextRevealIndex =
-    Math.max(
-      revealCount,
+  /*
+   * Only reveal the winners that are currently
+   * scheduled to be visible.
+   */
+  const revealedWinners =
+    allWinners.slice(
       0,
+      revealCount,
     );
 
-  const nextRevealAt =
-    nextRevealIndex >=
-    winners.length
-      ? null
-      : new Date(
-          new Date(
-            row.executed_at,
-          ).getTime() +
-            FIRST_REVEAL_DELAY_MS +
-            nextRevealIndex *
-              REVEAL_INTERVAL_MS,
-        ).toISOString();
-
-  return {
-    status: "drawing",
-    result: {
-      drawId: row.draw_id,
-      drawName: row.draw_name,
-      prizeType: row.prize_type,
-      prizeName: row.prize_name,
-      prizeImageUrl:
-        row.prize_image_url,
-      displayedPrizeValue:
-        row.displayed_prize_value === null
-          ? null
-          : Number(
-              row.displayed_prize_value,
-            ),
-      winnerCount:
-        row.winner_count,
-      eligibleEntryCount:
-        row.eligible_entry_count,
-      executedAt:
-        row.executed_at,
-    },
-    revealCount,
-    totalWinners:
-      winners.length,
-    nextRevealAt,
-    revealedWinners:
-      winners
-        .slice(0, revealCount)
-        .map(mapWinner),
-  };
+  return mapLiveState(
+    row,
+    winners,
+    revealedWinners,
+    "drawing",
+  );
 }
 
 export async function getPublicDrawResult(
@@ -562,7 +572,9 @@ export async function getPublishedResults(): Promise<
           ON e.id = w.entry_id
         INNER JOIN users u
           ON u.id = w.user_id
-        WHERE w.draw_id = ANY($1::uuid[])
+        WHERE w.draw_id = ANY(
+          $1::uuid[]
+        )
         ORDER BY
           w.draw_id,
           w.rank ASC
