@@ -8,7 +8,6 @@ import {
   getDraws,
   getLiveDrawState,
   getPublishedResults,
-  type Draw,
   type LiveDrawState,
   type PublicDrawResult,
 } from "./api";
@@ -75,6 +74,9 @@ export default function PublicResults() {
   const [liveDraw, setLiveDraw] =
     useState<LiveDrawState | null>(null);
 
+  const [activeLiveDrawId, setActiveLiveDrawId] =
+    useState<string | null>(null);
+
   const [loading, setLoading] =
     useState(true);
 
@@ -87,18 +89,9 @@ export default function PublicResults() {
   const latestResultIdRef =
     useRef<string | null>(null);
 
-  const liveDrawIdRef =
-    useRef<string | null>(null);
-
-  const controllerRef =
-    useRef<AbortController | null>(null);
-
   useEffect(() => {
     const controller =
       new AbortController();
-
-    controllerRef.current =
-      controller;
 
     let firstLoad = true;
 
@@ -134,25 +127,21 @@ export default function PublicResults() {
         const previousLatestResultId =
           latestResultIdRef.current;
 
-        const previousLiveDrawId =
-          liveDrawIdRef.current;
-
         setResults(
           publishedResponse.results,
         );
 
         if (activeDrawing) {
-          liveDrawIdRef.current =
-            activeDrawing.id;
+          setActiveLiveDrawId(
+            activeDrawing.id,
+          );
 
           setSelectedDrawId(
             (currentSelectedId) => {
               if (
                 !currentSelectedId ||
                 currentSelectedId ===
-                  previousLatestResultId ||
-                currentSelectedId ===
-                  previousLiveDrawId
+                  previousLatestResultId
               ) {
                 return activeDrawing.id;
               }
@@ -161,9 +150,7 @@ export default function PublicResults() {
             },
           );
         } else {
-          liveDrawIdRef.current =
-            null;
-
+          setActiveLiveDrawId(null);
           setLiveDraw(null);
 
           setSelectedDrawId(
@@ -242,28 +229,21 @@ export default function PublicResults() {
 
     return () => {
       controller.abort();
+
       window.clearInterval(
         refreshTimer,
       );
-
-      if (
-        controllerRef.current ===
-        controller
-      ) {
-        controllerRef.current =
-          null;
-      }
     };
   }, []);
 
   useEffect(() => {
-    const drawingId =
-      liveDrawIdRef.current;
-
-    if (!drawingId) {
+    if (!activeLiveDrawId) {
       setLiveDraw(null);
       return;
     }
+
+    const drawingId =
+      activeLiveDrawId;
 
     const controller =
       new AbortController();
@@ -282,17 +262,18 @@ export default function PublicResults() {
           return;
         }
 
-        setLiveDraw(
-          response.live,
-        );
-
         if (
           response.live.status ===
             "completed" ||
           response.live.publishedAt
         ) {
           setLiveDraw(null);
+          return;
         }
+
+        setLiveDraw(
+          response.live,
+        );
       } catch (loadError) {
         if (
           loadError instanceof DOMException &&
@@ -324,13 +305,12 @@ export default function PublicResults() {
     return () => {
       stopped = true;
       controller.abort();
+
       window.clearInterval(
         liveTimer,
       );
     };
-  }, [
-    liveDrawIdRef.current,
-  ]);
+  }, [activeLiveDrawId]);
 
   const selectedResult =
     results.find(
