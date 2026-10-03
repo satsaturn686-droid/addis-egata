@@ -1987,13 +1987,6 @@ export default function AdminDrawManage() {
                 </div>
 
                 <div>
-                  መጨረሻ፦{" "}
-                  {formatDate(
-                    draw.deadlineAt,
-                  )}
-                </div>
-
-                <div>
                   የዕጣ ጊዜ፦{" "}
                   {formatDate(
                     draw.drawAt,
