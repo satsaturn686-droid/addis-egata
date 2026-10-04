@@ -1,5 +1,9 @@
 import "dotenv/config";
-import express from "express";
+import express, {
+  type NextFunction,
+  type Request,
+  type Response,
+} from "express";
 import cors from "cors";
 
 import { checkDatabase } from "./db.js";
@@ -447,9 +451,9 @@ app.use((_req, res) => {
 app.use(
   (
     err: unknown,
-    _req,
-    res,
-    _next,
+    _req: Request,
+    res: Response,
+    _next: NextFunction,
   ) => {
     console.error(
       "Unhandled server error:",
