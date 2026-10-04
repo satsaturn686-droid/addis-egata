@@ -216,7 +216,17 @@ export default function AdminDrawManage() {
     confirmingDraw,
     setConfirmingDraw,
   ] = useState<AdminDrawListItem | null>(null);
+  const [
+    schedulingDraw,
+    setSchedulingDraw,
+  ] = useState<AdminDrawListItem | null>(
+    null,
+  );
 
+  const [
+    scheduleValue,
+    setScheduleValue,
+  ] = useState("");
   
   const [
     selectedNumberDrawId,
