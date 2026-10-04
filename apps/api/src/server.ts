@@ -13,6 +13,7 @@ import adminDrawsRouter from "./routes/admin-draws.js";
 import adminDrawListRouter from "./routes/admin-draw-list.js";
 import adminDrawExecutionRouter from "./routes/admin-draw-execution.js";
 import adminDrawNumbersRouter from "./routes/admin-draw-numbers.js";
+import adminDrawDeleteRouter from "./routes/admin-draw-delete.js";
 
 const app = express();
 
@@ -420,6 +421,16 @@ app.use(
 );
 
 /*
+ * Admin draw deletion
+ *
+ * DELETE /admin/draw-delete/:drawId
+ */
+app.use(
+  "/admin/draw-delete",
+  adminDrawDeleteRouter,
+);
+
+/*
  * 404
  */
 app.use((_req, res) => {
@@ -436,9 +447,9 @@ app.use((_req, res) => {
 app.use(
   (
     err: unknown,
-    _req: express.Request,
-    res: express.Response,
-    _next: express.NextFunction,
+    _req,
+    res,
+    _next,
   ) => {
     console.error(
       "Unhandled server error:",
