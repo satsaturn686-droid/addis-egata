@@ -16,6 +16,7 @@ import {
 
 import {
   closeManagedDraw,
+  deleteManagedDraw,
   executeManagedDraw,
   getAdminDrawNumbers,
   scheduleManagedDraw,
@@ -23,7 +24,6 @@ import {
   type AdminDrawNumber,
   type AdminDrawNumbersResponse,
 } from "./admin-draw-manage-api";
-
 const STATUS_LABELS: Record<
   AdminDrawListItem["status"],
   string
@@ -212,13 +212,21 @@ export default function AdminDrawManage() {
     useState<
       AdminDrawExecutionResponse["result"] | null
     >(null);
-  const [
+    const [
     confirmingDraw,
     setConfirmingDraw,
   ] = useState<AdminDrawListItem | null>(null);
+
   const [
     schedulingDraw,
     setSchedulingDraw,
+  ] = useState<AdminDrawListItem | null>(
+    null,
+  );
+
+  const [
+    deletingDraw,
+    setDeletingDraw,
   ] = useState<AdminDrawListItem | null>(
     null,
   );
@@ -736,7 +744,54 @@ export default function AdminDrawManage() {
       setBusyDrawId(null);
     }
   }
+  async function handleDelete(
+    draw: AdminDrawListItem,
+  ) {
+    if (
+      draw.status === "drawing" ||
+      draw.status === "completed"
+    ) {
+      return;
+    }
 
+    setBusyDrawId(draw.id);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      await deleteManagedDraw(
+        draw.id,
+      );
+
+      setDeletingDraw(null);
+
+      if (
+        selectedNumberDrawId ===
+        draw.id
+      ) {
+        setSelectedNumberDrawId(null);
+        setNumberData(null);
+        setNumberError(null);
+        setNumberSearch("");
+        setUserSearch("");
+        setNumberFilter("all");
+      }
+
+      setSuccess(
+        `“${draw.name}” ዕጣ በተሳካ ሁኔታ ተሰርዟል።`,
+      );
+
+      await loadDraws(true);
+    } catch (actionError) {
+      setError(
+        actionError instanceof Error
+          ? actionError.message
+          : "ዕጣውን መሰረዝ አልተቻለም።",
+      );
+    } finally {
+      setBusyDrawId(null);
+    }
+  }
   function renderAction(
     draw: AdminDrawListItem,
   ) {
@@ -2178,6 +2233,7 @@ export default function AdminDrawManage() {
                 ) : null}
               </div>
 
+              
               <div className="draw-actions">
                 <div className="action-row">
                   {renderAction(draw)}
@@ -2201,9 +2257,30 @@ export default function AdminDrawManage() {
                       ? "🔢 ዝርዝሩን ዝጋ"
                       : "🔢 የቁጥሮች ዝርዝር"}
                   </button>
+
+                  {draw.status !== "drawing" &&
+                  draw.status !== "completed" ? (
+                    <button
+                      type="button"
+                      className="draw-action secondary"
+                      disabled={
+                        busyDrawId ===
+                        draw.id
+                      }
+                      onClick={() =>
+                        setDeletingDraw(
+                          draw,
+                        )
+                      }
+                    >
+                      {busyDrawId ===
+                      draw.id
+                        ? "በመሰረዝ ላይ..."
+                        : "🗑️ ሰርዝ"}
+                    </button>
+                  ) : null}
                 </div>
               </div>
-
               {renderNumberList(draw)}
             </article>
           ))}
@@ -2427,6 +2504,117 @@ export default function AdminDrawManage() {
                 }}
               >
                 አረጋግጥ እና ዕጣ አውጣ
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+                  {deletingDraw ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1002,
+            background:
+              "rgba(0, 0, 0, 0.78)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-draw-confirm-title"
+            style={{
+              width: "100%",
+              maxWidth: "420px",
+              borderRadius: "20px",
+              padding: "22px",
+              background: "#141414",
+              border:
+                "1px solid rgba(255,255,255,0.12)",
+              boxShadow:
+                "0 24px 80px rgba(0,0,0,0.45)",
+            }}
+          >
+            <h2
+              id="delete-draw-confirm-title"
+              style={{
+                margin: "0 0 12px",
+                fontSize: "20px",
+                fontWeight: 800,
+              }}
+            >
+              🗑️ ዕጣውን ልሰርዝ?
+            </h2>
+
+            <p
+              style={{
+                margin: "0",
+                lineHeight: 1.7,
+                opacity: 0.88,
+              }}
+            >
+              “{deletingDraw.name}” ዕጣ
+              ሊሰረዝ ነው።
+              <br />
+              <br />
+              ይህ ዕርምጃ የዕጣውን
+              ቁጥሮች፣ entries እና
+              ተያያዥ የክፍያ መረጃዎች
+              ከዚህ ዕጣ ጋር ያለውን
+              መዝገብ ይሰርዛል።
+              <br />
+              <br />
+              <strong>
+                ይህን እርምጃ መቀልበስ አይቻልም።
+              </strong>
+            </p>
+
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                marginTop: "20px",
+              }}
+            >
+              <button
+                type="button"
+                className="draw-action secondary"
+                disabled={
+                  busyDrawId ===
+                  deletingDraw.id
+                }
+                onClick={() =>
+                  setDeletingDraw(null)
+                }
+              >
+                ተመለስ
+              </button>
+
+              <button
+                type="button"
+                className="draw-action primary"
+                disabled={
+                  busyDrawId ===
+                  deletingDraw.id
+                }
+                autoFocus
+                onClick={() => {
+                  const drawToDelete =
+                    deletingDraw;
+
+                  void handleDelete(
+                    drawToDelete,
+                  );
+                }}
+              >
+                {busyDrawId ===
+                deletingDraw.id
+                  ? "በመሰረዝ ላይ..."
+                  : "አረጋግጥ እና ሰርዝ"}
               </button>
             </div>
           </div>
