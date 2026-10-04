@@ -36,7 +36,7 @@ function getTelegramInitData(): string {
 async function adminManageRequest<T>(
   path: string,
   options: {
-    method?: "GET" | "POST";
+    method?: "GET" | "POST" | "DELETE";
     body?: unknown;
     signal?: AbortSignal;
   } = {},
@@ -309,6 +309,36 @@ export async function executeManagedDraw(
     )}/execute`,
     {
       method: "POST",
+      signal,
+    },
+  );
+}
+
+export async function deleteManagedDraw(
+  drawId: string,
+  signal?: AbortSignal,
+): Promise<{
+  ok: boolean;
+  message?: string;
+}> {
+  const normalizedDrawId =
+    drawId.trim();
+
+  if (!normalizedDrawId) {
+    throw new Error(
+      "Draw ID is required.",
+    );
+  }
+
+  return adminManageRequest<{
+    ok: boolean;
+    message?: string;
+  }>(
+    `/admin/draw-delete/${encodeURIComponent(
+      normalizedDrawId,
+    )}`,
+    {
+      method: "DELETE",
       signal,
     },
   );
