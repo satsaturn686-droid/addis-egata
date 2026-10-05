@@ -18,6 +18,7 @@ import adminDrawListRouter from "./routes/admin-draw-list.js";
 import adminDrawExecutionRouter from "./routes/admin-draw-execution.js";
 import adminDrawNumbersRouter from "./routes/admin-draw-numbers.js";
 import adminDrawDeleteRouter from "./routes/admin-draw-delete.js";
+import adminDrawTestResetRouter from "./routes/admin-draw-test-reset.js";
 
 const app = express();
 
@@ -432,6 +433,16 @@ app.use(
 app.use(
   "/admin/draw-delete",
   adminDrawDeleteRouter,
+);
+
+/*
+ * Admin test draw reset
+ *
+ * POST /admin/draw-test-reset/:drawId
+ */
+app.use(
+  "/admin/draw-test-reset",
+  adminDrawTestResetRouter,
 );
 
 /*
