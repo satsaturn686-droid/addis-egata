@@ -19,6 +19,7 @@ import {
   deleteManagedDraw,
   executeManagedDraw,
   getAdminDrawNumbers,
+  resetTestManagedDraw,
   scheduleManagedDraw,
   type AdminDrawExecutionResponse,
   type AdminDrawNumber,
@@ -230,7 +231,12 @@ export default function AdminDrawManage() {
   ] = useState<AdminDrawListItem | null>(
     null,
   );
-
+  const [
+    resettingTestDraw,
+    setResettingTestDraw,
+  ] = useState<AdminDrawListItem | null>(
+    null,
+  );
   const [
     scheduleValue,
     setScheduleValue,
@@ -815,6 +821,53 @@ export default function AdminDrawManage() {
       setBusyDrawId(null);
     }
   }
+    async function handleResetTestDraw(
+    draw: AdminDrawListItem,
+  ) {
+    if (
+      draw.name !== "መከራ ዕጣ" ||
+      draw.status !== "completed"
+    ) {
+      return;
+    }
+
+    setBusyDrawId(draw.id);
+    setError(null);
+    setSuccess(null);
+    setExecutionResult(null);
+
+    try {
+      await resetTestManagedDraw(
+        draw.id,
+      );
+
+      setResettingTestDraw(null);
+
+      if (
+        selectedNumberDrawId ===
+        draw.id
+      ) {
+        await loadNumberData(
+          draw.id,
+          false,
+        );
+      }
+
+      setSuccess(
+        `“${draw.name}” የሙከራ ዕጣ ድጋሚ ለመውጣት ተዘጋጅቷል።`,
+      );
+
+      await loadDraws(true);
+    } catch (actionError) {
+      setError(
+        actionError instanceof Error
+          ? actionError.message
+          : "የሙከራ ዕጣውን ዳግም ማዘጋጀት አልተቻለም።",
+      );
+    } finally {
+      setBusyDrawId(null);
+    }
+  }
   function renderAction(
     draw: AdminDrawListItem,
   ) {
@@ -913,7 +966,24 @@ export default function AdminDrawManage() {
       );
     }
 
-    if (draw.status === "completed") {
+        if (draw.status === "completed") {
+      if (draw.name === "መከራ ዕጣ") {
+        return (
+          <button
+            type="button"
+            className="draw-action secondary"
+            disabled={busy}
+            onClick={() =>
+              setResettingTestDraw(draw)
+            }
+          >
+            {busy
+              ? "በማዘጋጀት ላይ..."
+              : "🧪 የሙከራ ዕጣን ዳግም አዘጋጅ"}
+          </button>
+        );
+      }
+
       return (
         <span className="action-note">
           ውጤቱ ታትሟል
@@ -2527,6 +2597,118 @@ export default function AdminDrawManage() {
                 }}
               >
                 አረጋግጥ እና ዕጣ አውጣ
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+            {resettingTestDraw ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1003,
+            background:
+              "rgba(0, 0, 0, 0.78)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reset-test-draw-confirm-title"
+            style={{
+              width: "100%",
+              maxWidth: "420px",
+              borderRadius: "20px",
+              padding: "22px",
+              background: "#141414",
+              border:
+                "1px solid rgba(255,255,255,0.12)",
+              boxShadow:
+                "0 24px 80px rgba(0,0,0,0.45)",
+            }}
+          >
+            <h2
+              id="reset-test-draw-confirm-title"
+              style={{
+                margin: "0 0 12px",
+                fontSize: "20px",
+                fontWeight: 800,
+              }}
+            >
+              🧪 የሙከራ ዕጣን ዳግም አዘጋጅ?
+            </h2>
+
+            <p
+              style={{
+                margin: "0",
+                lineHeight: 1.7,
+                opacity: 0.88,
+              }}
+            >
+              “{resettingTestDraw.name}”
+              የሙከራ ዕጣ አሁን ተጠናቋል።
+              <br />
+              <br />
+              የቀድሞው ውጤትና አሸናፊዎች
+              ይወገዳሉ። የተከፈሉ
+              entries እና የዕጣው ዋና
+              መረጃ ግን ይጠበቃሉ።
+              <br />
+              <br />
+              ከዚያ ዕጣው ወደ
+              <strong> ሙሉ </strong>
+              ሁኔታ ይመለሳል እና
+              <strong> ዕጣ አውጣ </strong>
+              እንደገና ይታያል።
+            </p>
+
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                marginTop: "20px",
+              }}
+            >
+              <button
+                type="button"
+                className="draw-action secondary"
+                disabled={
+                  busyDrawId ===
+                  resettingTestDraw.id
+                }
+                onClick={() =>
+                  setResettingTestDraw(null)
+                }
+              >
+                ተመለስ
+              </button>
+
+              <button
+                type="button"
+                className="draw-action primary"
+                disabled={
+                  busyDrawId ===
+                  resettingTestDraw.id
+                }
+                autoFocus
+                onClick={() => {
+                  const drawToReset =
+                    resettingTestDraw;
+
+                  void handleResetTestDraw(
+                    drawToReset,
+                  );
+                }}
+              >
+                {busyDrawId ===
+                resettingTestDraw.id
+                  ? "በማዘጋጀት ላይ..."
+                  : "አረጋግጥ እና ዳግም አዘጋጅ"}
               </button>
             </div>
           </div>
