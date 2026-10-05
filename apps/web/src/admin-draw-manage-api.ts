@@ -344,6 +344,40 @@ export async function deleteManagedDraw(
   );
 }
 
+export async function resetTestManagedDraw(
+  drawId: string,
+  signal?: AbortSignal,
+): Promise<{
+  ok: boolean;
+  drawId: string;
+  status: string;
+  message?: string;
+}> {
+  const normalizedDrawId =
+    drawId.trim();
+
+  if (!normalizedDrawId) {
+    throw new Error(
+      "Draw ID is required.",
+    );
+  }
+
+  return adminManageRequest<{
+    ok: boolean;
+    drawId: string;
+    status: string;
+    message?: string;
+  }>(
+    `/admin/draw-test-reset/${encodeURIComponent(
+      normalizedDrawId,
+    )}`,
+    {
+      method: "POST",
+      signal,
+    },
+  );
+}
+
 export async function getAdminDrawNumbers(
   drawId: string,
   signal?: AbortSignal,
