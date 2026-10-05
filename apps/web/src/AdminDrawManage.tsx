@@ -309,9 +309,10 @@ export default function AdminDrawManage() {
     [],
   );
 
-  useEffect(() => {
+    useEffect(() => {
     void loadDraws();
   }, [loadDraws]);
+
   const [
     countdownNow,
     setCountdownNow,
@@ -326,6 +327,28 @@ export default function AdminDrawManage() {
     return () =>
       window.clearInterval(timer);
   }, []);
+
+  const hasDrawingDraw = draws.some(
+    (draw) =>
+      draw.status === "drawing",
+  );
+
+  useEffect(() => {
+    if (!hasDrawingDraw) {
+      return;
+    }
+
+    const timer =
+      window.setInterval(() => {
+        void loadDraws(true);
+      }, 2000);
+
+    return () =>
+      window.clearInterval(timer);
+  }, [
+    hasDrawingDraw,
+    loadDraws,
+  ]);
   const loadNumberData = useCallback(
     async (
       drawId: string,
