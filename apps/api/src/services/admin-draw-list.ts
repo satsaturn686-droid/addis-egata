@@ -1,4 +1,5 @@
 import { query } from "../db.js";
+import { getLiveDrawState } from "./results.js";
 
 type AdminDrawRow = {
   id: string;
@@ -81,45 +82,111 @@ function mapAdminDraw(
     description: row.description,
     prizeType: row.prize_type,
     prizeName: row.prize_name,
-    prizeImageUrl:
-      row.prize_image_url,
-    prizeDescription:
-      row.prize_description,
-    displayedPrizeValue:
-      toNullableNumber(
-        row.displayed_prize_value,
-      ),
-    actualPrizeCost:
-      toNullableNumber(
-        row.actual_prize_cost,
-      ),
-    totalNumbers:
-      Number(row.total_numbers),
-    entryFee:
-      Number(row.entry_fee),
-    winnerCount:
-      Number(row.winner_count),
-    uniqueWinners:
-      Boolean(row.unique_winners),
-    startsAt:
-      row.starts_at,
-    deadlineAt:
-      row.deadline_at,
-    drawAt:
-      row.draw_at,
-    status:
-      row.status,
-    createdAt:
-      row.created_at,
-    updatedAt:
-      row.updated_at,
+    prizeImageUrl: row.prize_image_url,
+    prizeDescription: row.prize_description,
+    displayedPrizeValue: toNullableNumber(
+      row.displayed_prize_value,
+    ),
+    actualPrizeCost: toNullableNumber(
+      row.actual_prize_cost,
+    ),
+    totalNumbers: Number(row.total_numbers),
+    entryFee: Number(row.entry_fee),
+    winnerCount: Number(row.winner_count),
+    uniqueWinners: Boolean(row.unique_winners),
+    startsAt: row.starts_at,
+    deadlineAt: row.deadline_at,
+    drawAt: row.draw_at,
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
 export async function getAdminDrawList(): Promise<
   AdminDraw[]
 > {
-  const rows =
+  const rows = await query<AdminDrawRow>(
+    `
+      SELECT
+        id,
+        name,
+        description,
+        prize_type,
+        prize_name,
+        prize_image_url,
+        prize_description,
+        displayed_prize_value,
+        actual_prize_cost,
+        total_numbers,
+        entry_fee,
+        winner_count,
+        unique_winners,
+        starts_at,
+        deadline_at,
+        draw_at,
+        status,
+        created_at,
+        updated_at
+      FROM draws
+      ORDER BY
+        CASE status
+          WHEN 'open' THEN 1
+          WHEN 'full' THEN 2
+          WHEN 'draft' THEN 3
+          WHEN 'closed' THEN 4
+          WHEN 'drawing' THEN 5
+          WHEN 'completed' THEN 6
+          WHEN 'cancelled' THEN 7
+          ELSE 8
+        END,
+        draw_at ASC,
+        created_at DESC
+    `,
+  );
+
+  /*
+   * A manual or scheduled execution first changes the draw
+   * to "drawing". The Live Draw service owns the reveal
+   * timeline and changes it to "completed" after the final
+   * winner has been revealed.
+   *
+   * Loading the Admin list is also a synchronization point.
+   * For every drawing draw, ask the existing Live Draw service
+   * for its current state so the reveal/finalization logic can
+   * continue without duplicating the secure draw engine.
+   */
+  await Promise.all(
+    rows
+      .filter(
+        (row) =>
+          row.status === "drawing",
+      )
+      .map(
+        async (row) => {
+          try {
+            await getLiveDrawState(
+              row.id,
+            );
+          } catch (error) {
+            console.error(
+              "Admin draw live-state sync error:",
+              {
+                drawId: row.id,
+                error,
+              },
+            );
+          }
+        },
+      ),
+  );
+
+  /*
+   * Re-read the database after synchronization so a draw that
+   * has completed its Live Reveal immediately appears as
+   * "completed" in the Admin UI.
+   */
+  const refreshedRows =
     await query<AdminDrawRow>(
       `
         SELECT
@@ -159,5 +226,7 @@ export async function getAdminDrawList(): Promise<
       `,
     );
 
-  return rows.map(mapAdminDraw);
+  return refreshedRows.map(
+    mapAdminDraw,
+  );
 }
