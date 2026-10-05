@@ -166,7 +166,21 @@ function App() {
       return;
     }
 
-    if (!webApp.initData) {
+        const storedInitData = sessionStorage.getItem(
+      "addis-egata-telegram-init-data",
+    );
+
+    if (webApp.initData) {
+      sessionStorage.setItem(
+        "addis-egata-telegram-init-data",
+        webApp.initData,
+      );
+    } else if (storedInitData) {
+      sessionStorage.setItem(
+        "addis-egata-telegram-init-data",
+        storedInitData,
+      );
+    } else {
       setError(
         "የTelegram ማረጋገጫ መረጃ አልተገኘም። App ውስጥ እንደገና ይክፈቱ።",
       );
