@@ -25,6 +25,12 @@ import {
   type AdminDrawNumber,
   type AdminDrawNumbersResponse,
 } from "./admin-draw-manage-api";
+import {
+  getLiveDrawState,
+  type LiveDrawState,
+} from "./api";
+
+import LiveDraw from "./LiveDraw";
 const STATUS_LABELS: Record<
   AdminDrawListItem["status"],
   string
@@ -217,7 +223,15 @@ export default function AdminDrawManage() {
     confirmingDraw,
     setConfirmingDraw,
   ] = useState<AdminDrawListItem | null>(null);
+  const [
+    liveDraw,
+    setLiveDraw,
+  ] = useState<LiveDrawState | null>(null);
 
+  const [
+    liveDrawId,
+    setLiveDrawId,
+  ] = useState<string | null>(null);
   const [
     schedulingDraw,
     setSchedulingDraw,
@@ -338,7 +352,75 @@ export default function AdminDrawManage() {
     (draw) =>
       draw.status === "drawing",
   );
+  useEffect(() => {
+    if (!liveDrawId) {
+      return;
+    }
 
+    const controller =
+      new AbortController();
+
+    let timer: number | null = null;
+
+    const poll = async () => {
+      try {
+        const response =
+          await getLiveDrawState(
+            liveDrawId,
+            controller.signal,
+          );
+
+        setLiveDraw(
+          response.live,
+        );
+
+        if (
+          response.live.status ===
+          "completed"
+        ) {
+          setLiveDrawId(null);
+          await loadDraws(true);
+          return;
+        }
+      } catch (pollError) {
+        if (
+          controller.signal.aborted
+        ) {
+          return;
+        }
+
+        console.error(
+          "Live draw polling error:",
+          pollError,
+        );
+      }
+
+      if (
+        !controller.signal.aborted
+      ) {
+        timer =
+          window.setTimeout(
+            poll,
+            1000,
+          );
+      }
+    };
+
+    void poll();
+
+    return () => {
+      controller.abort();
+
+      if (timer !== null) {
+        window.clearTimeout(
+          timer,
+        );
+      }
+    };
+  }, [
+    liveDrawId,
+    loadDraws,
+  ]);
   useEffect(() => {
     if (!hasDrawingDraw) {
       return;
@@ -725,18 +807,19 @@ export default function AdminDrawManage() {
       setBusyDrawId(null);
     }
   }
-  async function handleExecute(
+    async function handleExecute(
     draw: AdminDrawListItem,
   ) {
     if (!canExecute(draw.status)) {
       return;
     }
 
-                    
     setBusyDrawId(draw.id);
     setError(null);
     setSuccess(null);
     setExecutionResult(null);
+    setLiveDraw(null);
+    setLiveDrawId(null);
 
     try {
       const response =
@@ -748,11 +831,11 @@ export default function AdminDrawManage() {
         response.result,
       );
 
+      setLiveDrawId(draw.id);
+
       setSuccess(
         `“${draw.name}” ዕጣ ተሳክቶ ወጥቷል።`,
       );
-
-      await loadDraws(true);
 
       if (
         selectedNumberDrawId ===
@@ -833,8 +916,10 @@ export default function AdminDrawManage() {
 
     setBusyDrawId(draw.id);
     setError(null);
-    setSuccess(null);
+        setSuccess(null);
     setExecutionResult(null);
+    setLiveDraw(null);
+    setLiveDrawId(null);
 
     try {
       await resetTestManagedDraw(
@@ -2163,7 +2248,14 @@ export default function AdminDrawManage() {
         </div>
       ) : null}
 
-      {executionResult ? (
+            {liveDraw ? (
+        <LiveDraw
+          live={liveDraw}
+        />
+      ) : null}
+
+      {!liveDraw &&
+      executionResult ? (
         <section className="execution-result">
           <h3>
             የመጨረሻ የዕጣ ውጤት
