@@ -14,7 +14,6 @@ import {
   startWinnerClaim,
   submitWinnerTelebirr,
   markWinnerPayoutPaid,
-  getPayoutById,
 } from "../services/winner-payouts.js";
 
 const router = Router();
@@ -22,46 +21,94 @@ const router = Router();
 const TELEGRAM_BOT_TOKEN =
   process.env.TELEGRAM_BOT_TOKEN?.trim() ?? "";
 
-router.use(requireTelegramAuth);
-
-async function getTelegramBotUsername(): Promise<string> {
+async function sendTelegramMessage(
+  chatId: number | string,
+  text: string,
+): Promise<boolean> {
   if (!TELEGRAM_BOT_TOKEN) {
-    throw new Error("TELEGRAM_BOT_NOT_CONFIGURED");
-  }
-
-  const response = await fetch(
-    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe`,
-    {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-    },
-  );
-
-  const data = (await response.json()) as {
-    ok?: boolean;
-    description?: string;
-    result?: {
-      username?: string;
-    };
-  };
-
-  if (
-    !response.ok ||
-    !data.ok ||
-    !data.result?.username
-  ) {
-    console.error(
-      "Telegram getMe failed:",
-      data.description ?? response.statusText,
+    console.warn(
+      "Telegram payout notification skipped: TELEGRAM_BOT_TOKEN is missing.",
     );
 
-    throw new Error("TELEGRAM_BOT_USERNAME_UNAVAILABLE");
+    return false;
   }
 
-  return data.result.username;
+  try {
+    const response = await fetch(
+      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text,
+        }),
+      },
+    );
+
+    const data =
+      (await response.json()) as {
+        ok?: boolean;
+        description?: string;
+      };
+
+    if (
+      !response.ok ||
+      !data.ok
+    ) {
+      console.error(
+        "Telegram payout notification failed:",
+        data.description ??
+          response.statusText,
+      );
+
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error(
+      "Telegram payout notification request failed:",
+      error,
+    );
+
+    return false;
+  }
 }
+
+async function sendWinnerPaidNotification(
+  payout: {
+    telegramId: number;
+    drawName: string;
+    number: number;
+    rank: number;
+    prizeAmount: number;
+    telebirrNumber: string | null;
+    paymentReference: string | null;
+  },
+): Promise<void> {
+  const reference =
+    payout.paymentReference?.trim() ||
+    "N/A";
+
+  await sendTelegramMessage(
+    payout.telegramId,
+    "🎉 የክፍያ ማረጋገጫ\n\n" +
+      "🏆 እንኳን ደስ አለዎት! የዕጣ ሽልማትዎ ክፍያ ተፈጽሟል።\n\n" +
+      `🎟️ ዕጣ፦ ${payout.drawName}\n` +
+      `🔢 የአሸናናፊ ቁጥር፦ ${payout.number}\n` +
+      `🥇 ደረጃ፦ ${payout.rank}\n` +
+      `💰 የተከፈለ፦ ${payout.prizeAmount.toLocaleString()} ETB\n` +
+      `📱 Telebirr፦ ${payout.telebirrNumber ?? "N/A"}\n` +
+      `🧾 የክፍያ ማጣቀሻ፦ ${reference}\n\n` +
+      "✅ የክፍያ ሁኔታ፦ PAID\n\n" +
+      "🙏 ADDIS ዕጣን ስለተጠቀሙ እናመሰግናለን።",
+  );
+}
+
+router.use(requireTelegramAuth);
 
 /*
  * GET /winner-payouts/mine
@@ -73,14 +120,17 @@ router.get(
       if (!req.user) {
         res.status(401).json({
           error: "AUTHENTICATION_REQUIRED",
-          message: "Authentication is required.",
+          message:
+            "Authentication is required.",
         });
         return;
       }
 
       const payout =
         await getPayoutByTelegramUser(
-          Number(req.user.telegramId),
+          Number(
+            req.user.telegramId,
+          ),
         );
 
       res.status(200).json({
@@ -93,7 +143,8 @@ router.get(
       );
 
       res.status(500).json({
-        error: "WINNER_PAYOUT_LOAD_FAILED",
+        error:
+          "WINNER_PAYOUT_LOAD_FAILED",
         message:
           "Winner payout could not be loaded.",
       });
@@ -113,8 +164,10 @@ router.get(
     try {
       if (!req.user) {
         res.status(401).json({
-          error: "AUTHENTICATION_REQUIRED",
-          message: "Authentication is required.",
+          error:
+            "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
         });
         return;
       }
@@ -124,8 +177,10 @@ router.get(
 
       if (!winnerId) {
         res.status(400).json({
-          error: "INVALID_WINNER_ID",
-          message: "Winner ID is required.",
+          error:
+            "INVALID_WINNER_ID",
+          message:
+            "Winner ID is required.",
         });
         return;
       }
@@ -133,14 +188,56 @@ router.get(
       const payout =
         await startWinnerClaim(
           winnerId,
-          Number(req.user.telegramId),
+          Number(
+            req.user.telegramId,
+          ),
         );
 
-      const botUsername =
-        await getTelegramBotUsername();
+      if (!TELEGRAM_BOT_TOKEN) {
+        throw new Error(
+          "TELEGRAM_BOT_NOT_CONFIGURED",
+        );
+      }
+
+      const response =
+        await fetch(
+          `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe`,
+          {
+            method: "POST",
+            headers: {
+              "content-type":
+                "application/json",
+            },
+          },
+        );
+
+      const data =
+        (await response.json()) as {
+          ok?: boolean;
+          description?: string;
+          result?: {
+            username?: string;
+          };
+        };
+
+      if (
+        !response.ok ||
+        !data.ok ||
+        !data.result?.username
+      ) {
+        console.error(
+          "Telegram getMe failed:",
+          data.description ??
+            response.statusText,
+        );
+
+        throw new Error(
+          "TELEGRAM_BOT_USERNAME_UNAVAILABLE",
+        );
+      }
 
       const claimUrl =
-        `https://t.me/${botUsername}?start=claim_${encodeURIComponent(
+        `https://t.me/${data.result.username}?start=claim_${encodeURIComponent(
           winnerId,
         )}`;
 
@@ -162,7 +259,11 @@ router.get(
           "PAYOUT_NOT_FOUND",
         ]);
 
-      if (clientErrors.has(message)) {
+      if (
+        clientErrors.has(
+          message,
+        )
+      ) {
         res.status(400).json({
           error: message,
           message:
@@ -230,8 +331,10 @@ router.post(
     try {
       if (!req.user) {
         res.status(401).json({
-          error: "AUTHENTICATION_REQUIRED",
-          message: "Authentication is required.",
+          error:
+            "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
         });
         return;
       }
@@ -241,8 +344,10 @@ router.post(
 
       if (!payoutId) {
         res.status(400).json({
-          error: "INVALID_PAYOUT_ID",
-          message: "Payout ID is required.",
+          error:
+            "INVALID_PAYOUT_ID",
+          message:
+            "Payout ID is required.",
         });
         return;
       }
@@ -270,7 +375,11 @@ router.post(
           "PAYOUT_NOT_FOUND",
         ]);
 
-      if (clientErrors.has(message)) {
+      if (
+        clientErrors.has(
+          message,
+        )
+      ) {
         res.status(400).json({
           error: message,
           message:
@@ -306,8 +415,10 @@ router.post(
     try {
       if (!req.user) {
         res.status(401).json({
-          error: "AUTHENTICATION_REQUIRED",
-          message: "Authentication is required.",
+          error:
+            "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
         });
         return;
       }
@@ -316,14 +427,17 @@ router.post(
         req.params.payoutId?.trim();
 
       const reason =
-        typeof req.body?.reason === "string"
+        typeof req.body?.reason ===
+        "string"
           ? req.body.reason.trim()
           : "";
 
       if (!payoutId) {
         res.status(400).json({
-          error: "INVALID_PAYOUT_ID",
-          message: "Payout ID is required.",
+          error:
+            "INVALID_PAYOUT_ID",
+          message:
+            "Payout ID is required.",
         });
         return;
       }
@@ -364,7 +478,11 @@ router.post(
           "PAYOUT_NOT_FOUND",
         ]);
 
-      if (clientErrors.has(message)) {
+      if (
+        clientErrors.has(
+          message,
+        )
+      ) {
         res.status(400).json({
           error: message,
           message:
@@ -392,6 +510,11 @@ router.post(
  * ADMIN
  *
  * POST /winner-payouts/admin/:payoutId/paid
+ *
+ * Important:
+ * The database payment is completed first.
+ * Telegram notification failure must NOT
+ * roll the payment back.
  */
 router.post(
   "/admin/:payoutId/paid",
@@ -400,8 +523,10 @@ router.post(
     try {
       if (!req.user) {
         res.status(401).json({
-          error: "AUTHENTICATION_REQUIRED",
-          message: "Authentication is required.",
+          error:
+            "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
         });
         return;
       }
@@ -417,8 +542,10 @@ router.post(
 
       if (!payoutId) {
         res.status(400).json({
-          error: "INVALID_PAYOUT_ID",
-          message: "Payout ID is required.",
+          error:
+            "INVALID_PAYOUT_ID",
+          message:
+            "Payout ID is required.",
         });
         return;
       }
@@ -433,6 +560,9 @@ router.post(
         return;
       }
 
+      /*
+       * First permanently mark the payout as paid.
+       */
       const payout =
         await markWinnerPayoutPaid(
           payoutId,
@@ -440,8 +570,21 @@ router.post(
           paymentReference,
         );
 
+      /*
+       * Then notify the actual winner privately.
+       *
+       * If Telegram fails, the payout remains PAID.
+       */
+      await sendWinnerPaidNotification(
+        payout,
+      );
+
       res.status(200).json({
         payout,
+        notificationSent:
+          Boolean(
+            TELEGRAM_BOT_TOKEN,
+          ),
       });
     } catch (error) {
       const message =
@@ -459,7 +602,11 @@ router.post(
           "PAYOUT_NOT_FOUND",
         ]);
 
-      if (clientErrors.has(message)) {
+      if (
+        clientErrors.has(
+          message,
+        )
+      ) {
         res.status(400).json({
           error: message,
           message:
@@ -492,8 +639,10 @@ router.get(
     try {
       if (!req.user) {
         res.status(401).json({
-          error: "AUTHENTICATION_REQUIRED",
-          message: "Authentication is required.",
+          error:
+            "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
         });
         return;
       }
@@ -503,15 +652,19 @@ router.get(
 
       if (!payoutId) {
         res.status(400).json({
-          error: "INVALID_PAYOUT_ID",
-          message: "Payout ID is required.",
+          error:
+            "INVALID_PAYOUT_ID",
+          message:
+            "Payout ID is required.",
         });
         return;
       }
 
       const payout =
         await getPayoutByTelegramUser(
-          Number(req.user.telegramId),
+          Number(
+            req.user.telegramId,
+          ),
           payoutId,
         );
 
@@ -553,8 +706,10 @@ router.post(
     try {
       if (!req.user) {
         res.status(401).json({
-          error: "AUTHENTICATION_REQUIRED",
-          message: "Authentication is required.",
+          error:
+            "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
         });
         return;
       }
@@ -564,8 +719,10 @@ router.post(
 
       if (!winnerId) {
         res.status(400).json({
-          error: "INVALID_WINNER_ID",
-          message: "Winner ID is required.",
+          error:
+            "INVALID_WINNER_ID",
+          message:
+            "Winner ID is required.",
         });
         return;
       }
@@ -573,7 +730,9 @@ router.post(
       const payout =
         await startWinnerClaim(
           winnerId,
-          Number(req.user.telegramId),
+          Number(
+            req.user.telegramId,
+          ),
         );
 
       res.status(200).json({
@@ -593,7 +752,11 @@ router.post(
           "PAYOUT_NOT_FOUND",
         ]);
 
-      if (clientErrors.has(message)) {
+      if (
+        clientErrors.has(
+          message,
+        )
+      ) {
         res.status(400).json({
           error: message,
           message:
@@ -608,7 +771,8 @@ router.post(
       );
 
       res.status(500).json({
-        error: "WINNER_CLAIM_FAILED",
+        error:
+          "WINNER_CLAIM_FAILED",
         message:
           "The winner claim could not be started.",
       });
@@ -625,8 +789,10 @@ router.post(
     try {
       if (!req.user) {
         res.status(401).json({
-          error: "AUTHENTICATION_REQUIRED",
-          message: "Authentication is required.",
+          error:
+            "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
         });
         return;
       }
@@ -635,7 +801,8 @@ router.post(
         req.params.payoutId?.trim();
 
       const fileId =
-        typeof req.body?.fileId === "string"
+        typeof req.body?.fileId ===
+        "string"
           ? req.body.fileId.trim()
           : "";
 
@@ -647,8 +814,10 @@ router.post(
 
       if (!payoutId) {
         res.status(400).json({
-          error: "INVALID_PAYOUT_ID",
-          message: "Payout ID is required.",
+          error:
+            "INVALID_PAYOUT_ID",
+          message:
+            "Payout ID is required.",
         });
         return;
       }
@@ -666,9 +835,12 @@ router.post(
       const payout =
         await saveWinnerScreenshot(
           payoutId,
-          Number(req.user.telegramId),
+          Number(
+            req.user.telegramId,
+          ),
           fileId,
-          fileUniqueId || undefined,
+          fileUniqueId ||
+            undefined,
         );
 
       res.status(200).json({
@@ -689,7 +861,11 @@ router.post(
           "PAYOUT_NOT_FOUND",
         ]);
 
-      if (clientErrors.has(message)) {
+      if (
+        clientErrors.has(
+          message,
+        )
+      ) {
         res.status(400).json({
           error: message,
           message:
@@ -722,8 +898,10 @@ router.post(
     try {
       if (!req.user) {
         res.status(401).json({
-          error: "AUTHENTICATION_REQUIRED",
-          message: "Authentication is required.",
+          error:
+            "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
         });
         return;
       }
@@ -745,8 +923,10 @@ router.post(
 
       if (!payoutId) {
         res.status(400).json({
-          error: "INVALID_PAYOUT_ID",
-          message: "Payout ID is required.",
+          error:
+            "INVALID_PAYOUT_ID",
+          message:
+            "Payout ID is required.",
         });
         return;
       }
@@ -774,7 +954,9 @@ router.post(
       const payout =
         await submitWinnerTelebirr(
           payoutId,
-          Number(req.user.telegramId),
+          Number(
+            req.user.telegramId,
+          ),
           telebirrNumber,
           accountName,
         );
@@ -800,7 +982,11 @@ router.post(
           "PAYOUT_NOT_FOUND",
         ]);
 
-      if (clientErrors.has(message)) {
+      if (
+        clientErrors.has(
+          message,
+        )
+      ) {
         res.status(400).json({
           error: message,
           message:
