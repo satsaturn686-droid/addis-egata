@@ -48,7 +48,10 @@ type ResultRow = {
   prize_type: "cash" | "physical";
   prize_name: string;
   prize_image_url: string | null;
-  displayed_prize_value: string | number | null;
+  displayed_prize_value:
+    | string
+    | number
+    | null;
   winner_count: number;
   eligible_entry_count: number;
   executed_at: string;
@@ -59,15 +62,25 @@ type WinnerRow = {
   id: string;
   rank: number;
   number: number;
-  prize_amount: string | number;
+  prize_amount:
+    | string
+    | number;
   selected_at: string;
   first_name: string | null;
   last_name: string | null;
   username: string | null;
 };
 
-const FIRST_REVEAL_DELAY_MS = 3000;
-const REVEAL_INTERVAL_MS = 5000;
+const FIRST_REVEAL_DELAY_MS = 5000;
+const REVEAL_INTERVAL_MS = 8000;
+
+const TELEGRAM_BOT_TOKEN =
+  process.env.TELEGRAM_BOT_TOKEN?.trim() ??
+  "";
+
+const MINI_APP_URL =
+  process.env.MINI_APP_URL?.trim() ||
+  "https://addis-egata-web.onrender.com";
 
 function mapWinner(
   winner: WinnerRow,
@@ -79,23 +92,33 @@ function mapWinner(
     prizeAmount: Number(
       winner.prize_amount,
     ),
-    selectedAt: winner.selected_at,
-    firstName: winner.first_name,
-    lastName: winner.last_name,
-    username: winner.username,
+    selectedAt:
+      winner.selected_at,
+    firstName:
+      winner.first_name,
+    lastName:
+      winner.last_name,
+    username:
+      winner.username,
   };
 }
 
 function getPrizeValue(
-  value: string | number | null,
+  value:
+    | string
+    | number
+    | null,
 ): number | null {
   if (value === null) {
     return null;
   }
 
-  const numberValue = Number(value);
+  const numberValue =
+    Number(value);
 
-  return Number.isFinite(numberValue)
+  return Number.isFinite(
+    numberValue,
+  )
     ? numberValue
     : null;
 }
@@ -104,30 +127,38 @@ function mapLiveState(
   row: ResultRow,
   winners: WinnerRow[],
   revealedWinners: PublicWinner[],
-  status: "drawing" | "completed",
+  status:
+    | "drawing"
+    | "completed",
 ): LiveDrawState {
   return {
     drawId: row.draw_id,
     drawName: row.draw_name,
     status,
-    prizeType: row.prize_type,
-    prizeName: row.prize_name,
-    prizeImageUrl: row.prize_image_url,
+    prizeType:
+      row.prize_type,
+    prizeName:
+      row.prize_name,
+    prizeImageUrl:
+      row.prize_image_url,
     displayedPrizeValue:
       getPrizeValue(
         row.displayed_prize_value,
       ),
-    winnerCount: row.winner_count,
+    winnerCount:
+      row.winner_count,
     eligibleEntryCount:
       row.eligible_entry_count,
-    executedAt: row.executed_at,
+    executedAt:
+      row.executed_at,
     publishedAt:
       row.published_at,
     revealedWinnerCount:
       revealedWinners.length,
     totalWinnerCount:
       winners.length,
-    winners: revealedWinners,
+    winners:
+      revealedWinners,
   };
 }
 
@@ -144,8 +175,10 @@ function mapResult(
   return {
     drawId: row.draw_id,
     drawName: row.draw_name,
-    prizeType: row.prize_type,
-    prizeName: row.prize_name,
+    prizeType:
+      row.prize_type,
+    prizeName:
+      row.prize_name,
     prizeImageUrl:
       row.prize_image_url,
     displayedPrizeValue:
@@ -197,7 +230,224 @@ async function getResultRow(
       [drawId],
     );
 
-  return result.rows[0] ?? null;
+  return (
+    result.rows[0] ?? null
+  );
+}
+
+async function sendTelegramResultMessage(
+  chatId: number | string,
+  message: string,
+): Promise<boolean> {
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.warn(
+      "Telegram result notification skipped: TELEGRAM_BOT_TOKEN is missing.",
+    );
+    return false;
+  }
+
+  try {
+    const response =
+      await fetch(
+        `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
+        {
+          method: "POST",
+          headers: {
+            "content-type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: message,
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  {
+                    text:
+                      "🎟️ ADDIS ዕጣ ክፈት",
+                    web_app: {
+                      url: MINI_APP_URL,
+                    },
+                  },
+                ],
+              ],
+            },
+          }),
+        },
+      );
+
+    const data =
+      (await response.json()) as {
+        ok?: boolean;
+        description?: string;
+      };
+
+    if (
+      !response.ok ||
+      !data.ok
+    ) {
+      console.error(
+        "Telegram result notification failed:",
+        data.description ??
+          response.statusText,
+      );
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error(
+      "Telegram result notification request failed:",
+      error,
+    );
+    return false;
+  }
+}
+
+function getWinnerDisplayName(
+  winner: PublicWinner,
+): string {
+  const fullName = [
+    winner.firstName,
+    winner.lastName,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  if (fullName) {
+    return fullName;
+  }
+
+  if (winner.username) {
+    return `@${winner.username}`;
+  }
+
+  return "ተሳታፊ";
+}
+
+async function sendPublishedResultToTelegram(
+  row: ResultRow,
+  winners: PublicWinner[],
+): Promise<void> {
+  if (
+    !pool ||
+    !TELEGRAM_BOT_TOKEN
+  ) {
+    return;
+  }
+
+  const existing =
+    await pool.query<{
+      id: string;
+    }>(
+      `
+        SELECT id
+        FROM audit_logs
+        WHERE action =
+          'DRAW_RESULT_TELEGRAM_NOTIFICATION'
+          AND entity_type = 'draw'
+          AND entity_id = $1
+        LIMIT 1
+      `,
+      [row.draw_id],
+    );
+
+  if (
+    existing.rows.length > 0
+  ) {
+    return;
+  }
+
+  const recipients =
+    await pool.query<{
+      telegram_id:
+        | number
+        | string;
+    }>(
+      `
+        SELECT telegram_id
+        FROM users
+        WHERE telegram_id IS NOT NULL
+        ORDER BY created_at ASC
+      `,
+    );
+
+  if (
+    recipients.rows.length === 0
+  ) {
+    return;
+  }
+
+  const winnerLines =
+    winners
+      .sort(
+        (a, b) =>
+          a.rank - b.rank,
+      )
+      .map(
+        (winner) =>
+          `${winner.rank}ኛ — ${getWinnerDisplayName(
+            winner,
+          )} — #${winner.number} — ${winner.prizeAmount.toLocaleString(
+            "en-US",
+          )} ብር`,
+      )
+      .join("\n");
+
+  const message =
+    "🎉 ADDIS ዕጣ — የመጨረሻ ውጤት!\n\n" +
+    `🏷️ ዕጣ: ${row.draw_name}\n` +
+    `🏆 ሽልማት: ${row.prize_name}\n\n` +
+    "🥇 አሸናፊዎች:\n" +
+    winnerLines +
+    "\n\n🔐 Secure Random Draw\n" +
+    "✅ ውጤቱ በተሳካ ሁኔታ ታትሟል።";
+
+  let sent = 0;
+
+  for (
+    const recipient of
+      recipients.rows
+  ) {
+    if (
+      await sendTelegramResultMessage(
+        recipient.telegram_id,
+        message,
+      )
+    ) {
+      sent += 1;
+    }
+  }
+
+  if (sent > 0) {
+    await pool.query(
+      `
+        INSERT INTO audit_logs (
+          user_id,
+          action,
+          entity_type,
+          entity_id,
+          details
+        )
+        VALUES (
+          NULL,
+          'DRAW_RESULT_TELEGRAM_NOTIFICATION',
+          'draw',
+          $1,
+          $2
+        )
+      `,
+      [
+        row.draw_id,
+        JSON.stringify({
+          sent,
+          sentAt:
+            new Date().toISOString(),
+        }),
+      ],
+    );
+  }
 }
 
 async function getWinnerRows(
@@ -240,7 +490,9 @@ function getRevealCount(
   totalWinners: number,
   nowMs: number,
 ): number {
-  if (totalWinners <= 0) {
+  if (
+    totalWinners <= 0
+  ) {
     return 0;
   }
 
@@ -249,7 +501,11 @@ function getRevealCount(
       executedAt,
     ).getTime();
 
-  if (!Number.isFinite(executedMs)) {
+  if (
+    !Number.isFinite(
+      executedMs,
+    )
+  ) {
     return 0;
   }
 
@@ -282,11 +538,17 @@ function getFinalRevealAtMs(
       executedAt,
     ).getTime();
 
-  if (!Number.isFinite(executedMs)) {
+  if (
+    !Number.isFinite(
+      executedMs,
+    )
+  ) {
     return Number.POSITIVE_INFINITY;
   }
 
-  if (totalWinners <= 0) {
+  if (
+    totalWinners <= 0
+  ) {
     return executedMs;
   }
 
@@ -317,23 +579,25 @@ export async function getLiveDrawState(
   }
 
   const row =
-    await getResultRow(drawId);
+    await getResultRow(
+      drawId,
+    );
 
   if (!row) {
     return null;
   }
 
   const winners =
-    await getWinnerRows(drawId);
+    await getWinnerRows(
+      drawId,
+    );
 
   const allWinners =
     winners.map(mapWinner);
 
-  /*
-   * If the result has already been published,
-   * return the complete final result.
-   */
-  if (row.published_at !== null) {
+  if (
+    row.published_at !== null
+  ) {
     return mapLiveState(
       row,
       winners,
@@ -352,13 +616,6 @@ export async function getLiveDrawState(
       nowMs,
     );
 
-  /*
-   * The final winner is revealed immediately
-   * when its scheduled reveal time is reached.
-   *
-   * We then publish the complete result and move
-   * the draw from "drawing" to "completed".
-   */
   const finalRevealAtMs =
     getFinalRevealAtMs(
       row.executed_at,
@@ -426,6 +683,29 @@ export async function getLiveDrawState(
         console.log(
           `Live draw completed: ${drawId}`,
         );
+
+        try {
+          const completedRowForTelegram =
+            await getResultRow(
+              drawId,
+            );
+
+          if (
+            completedRowForTelegram
+          ) {
+            await sendPublishedResultToTelegram(
+              completedRowForTelegram,
+              allWinners,
+            );
+          }
+        } catch (
+          notificationError
+        ) {
+          console.error(
+            "Failed to send final draw result to Telegram:",
+            notificationError,
+          );
+        }
       }
     } catch (error) {
       await client.query(
@@ -453,10 +733,6 @@ export async function getLiveDrawState(
     }
   }
 
-  /*
-   * Only reveal the winners that are currently
-   * scheduled to be visible.
-   */
   const revealedWinners =
     allWinners.slice(
       0,
@@ -487,7 +763,9 @@ export async function getPublicDrawResult(
   }
 
   const resultRow =
-    await getResultRow(drawId);
+    await getResultRow(
+      drawId,
+    );
 
   if (
     !resultRow ||
@@ -497,7 +775,9 @@ export async function getPublicDrawResult(
   }
 
   const winnerRows =
-    await getWinnerRows(drawId);
+    await getWinnerRows(
+      drawId,
+    );
 
   return mapResult(
     resultRow,
@@ -589,7 +869,8 @@ export async function getPublishedResults(): Promise<
     >();
 
   for (
-    const winner of winnerRows.rows
+    const winner of
+      winnerRows.rows
   ) {
     const existing =
       winnersByDraw.get(
