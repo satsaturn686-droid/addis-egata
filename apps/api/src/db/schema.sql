@@ -13,16 +13,11 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE TABLE IF NOT EXISTS payment_settings (
   id INTEGER PRIMARY KEY DEFAULT 1,
-
   telebirr_number TEXT NOT NULL DEFAULT '',
-
   updated_by UUID REFERENCES users(id),
-
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-  CONSTRAINT payment_settings_single_row
-    CHECK (id = 1)
+  CONSTRAINT payment_settings_single_row CHECK (id = 1)
 );
 
 INSERT INTO payment_settings (
@@ -235,6 +230,97 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+/*
+ * Winner payout lifecycle
+ *
+ * awaiting_claim
+ *      ↓
+ * awaiting_screenshot
+ *      ↓
+ * awaiting_telebirr
+ *      ↓
+ * submitted
+ *      ↓
+ * approved
+ *      ↓
+ * paid
+ *
+ * rejected may happen from submitted/approved.
+ *
+ * Sensitive information is kept private and is
+ * never posted into a public Telegram group.
+ */
+CREATE TABLE IF NOT EXISTS winner_payouts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  winner_id UUID NOT NULL UNIQUE
+    REFERENCES winners(id),
+
+  draw_id UUID NOT NULL
+    REFERENCES draws(id),
+
+  user_id UUID NOT NULL
+    REFERENCES users(id),
+
+  prize_amount NUMERIC(12, 2) NOT NULL
+    CHECK (prize_amount >= 0),
+
+  payout_method TEXT NOT NULL DEFAULT 'telebirr'
+    CHECK (payout_method = 'telebirr'),
+
+  status TEXT NOT NULL DEFAULT 'awaiting_claim'
+    CHECK (
+      status IN (
+        'awaiting_claim',
+        'awaiting_screenshot',
+        'awaiting_telebirr',
+        'submitted',
+        'approved',
+        'paid',
+        'rejected'
+      )
+    ),
+
+  telebirr_number TEXT,
+  telebirr_account_name TEXT,
+
+  screenshot_file_id TEXT,
+  screenshot_file_unique_id TEXT,
+
+  claim_started_at TIMESTAMPTZ,
+  screenshot_received_at TIMESTAMPTZ,
+  submitted_at TIMESTAMPTZ,
+
+  reviewed_by UUID REFERENCES users(id),
+  reviewed_at TIMESTAMPTZ,
+
+  paid_by UUID REFERENCES users(id),
+  paid_at TIMESTAMPTZ,
+
+  payment_reference TEXT,
+
+  rejection_reason TEXT,
+
+  telegram_claim_message_id BIGINT,
+  telegram_admin_message_id BIGINT,
+
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT winner_payout_telebirr_required
+    CHECK (
+      status NOT IN (
+        'submitted',
+        'approved',
+        'paid'
+      )
+      OR (
+        telebirr_number IS NOT NULL
+        AND length(trim(telebirr_number)) > 0
+      )
+    )
+);
+
 CREATE INDEX IF NOT EXISTS idx_draws_status
   ON draws(status);
 
@@ -280,3 +366,15 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_entity
 
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created
   ON audit_logs(created_at);
+
+CREATE INDEX IF NOT EXISTS idx_winner_payouts_status
+  ON winner_payouts(status);
+
+CREATE INDEX IF NOT EXISTS idx_winner_payouts_user
+  ON winner_payouts(user_id);
+
+CREATE INDEX IF NOT EXISTS idx_winner_payouts_draw
+  ON winner_payouts(draw_id);
+
+CREATE INDEX IF NOT EXISTS idx_winner_payouts_created
+  ON winner_payouts(created_at);
