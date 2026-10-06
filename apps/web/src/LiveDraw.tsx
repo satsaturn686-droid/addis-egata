@@ -19,7 +19,10 @@ function getWinnerName(
   lastName: string | null,
   username: string | null,
 ): string {
-  const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+  const fullName = [firstName, lastName]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
 
   if (fullName) {
     return fullName;
@@ -32,20 +35,125 @@ function getWinnerName(
   return "ተሳታፊ";
 }
 
-function WinnerBall({ winner }: { winner: PublicWinner }) {
+function WinnerBall({
+  winner,
+}: {
+  winner: PublicWinner;
+}) {
   return (
-    <div className="live-ball-stage" key={winner.id}>
-      <div className="live-ball-glow" />
+    <div
+      className="live-ball-stage"
+      key={winner.id}
+      style={{
+        position: "relative",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: "10px",
+        padding: "18px 0 12px",
+      }}
+    >
+      <style>
+        {`
+          @keyframes liveBallReveal {
+            0% {
+              opacity: 0;
+              transform: scale(0.55) rotate(-12deg);
+            }
+            65% {
+              opacity: 1;
+              transform: scale(1.08) rotate(3deg);
+            }
+            100% {
+              opacity: 1;
+              transform: scale(1) rotate(0deg);
+            }
+          }
 
-      <div className="live-ball">
-        <strong>{winner.number}</strong>
+          @keyframes liveBallGlow {
+            0%, 100% {
+              opacity: 0.45;
+              transform: scale(0.92);
+            }
+            50% {
+              opacity: 0.85;
+              transform: scale(1.08);
+            }
+          }
+        `}
+      </style>
+
+      <div
+        className="live-ball-glow"
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          top: "8px",
+          width: "230px",
+          height: "230px",
+          borderRadius: "50%",
+          background:
+            "radial-gradient(circle, rgba(214,166,59,0.32), transparent 68%)",
+          filter: "blur(8px)",
+          animation:
+            "liveBallGlow 2s ease-in-out infinite",
+        }}
+      />
+
+      <div
+        className="live-ball"
+        aria-label={`የ${winner.rank}ኛ ዕጣ ቁጥር ${winner.number}`}
+        style={{
+          position: "relative",
+          zIndex: 1,
+          width: "clamp(170px, 48vw, 230px)",
+          height: "clamp(170px, 48vw, 230px)",
+          display: "grid",
+          placeItems: "center",
+          borderRadius: "50%",
+          border:
+            "8px solid rgba(255,255,255,0.9)",
+          background:
+            "radial-gradient(circle at 34% 25%, #ffffff 0%, #f7f7f7 13%, #dddddd 40%, #9b9b9b 69%, #444444 100%)",
+          boxShadow:
+            "inset -18px -22px 35px rgba(0,0,0,0.25), inset 14px 12px 24px rgba(255,255,255,0.72), 0 18px 45px rgba(0,0,0,0.25)",
+          animation:
+            "liveBallReveal 700ms cubic-bezier(.2,.8,.2,1)",
+        }}
+      >
+        <strong
+          style={{
+            fontSize:
+              "clamp(70px, 20vw, 110px)",
+            lineHeight: 1,
+            fontWeight: 950,
+            color: "#17191c",
+            textShadow:
+              "0 3px 0 rgba(255,255,255,0.55)",
+          }}
+        >
+          {winner.number}
+        </strong>
       </div>
 
-      <span className="live-ball-label">
-        አሸናፊ ቁጥር
+      <span
+        className="live-ball-label"
+        style={{
+          fontWeight: 900,
+          fontSize: "14px",
+          textAlign: "center",
+        }}
+      >
+        🎱 {winner.rank}ኛ ዕጣ — አሸናፊ ቁጥር
       </span>
 
-      <strong className="live-ball-name">
+      <strong
+        className="live-ball-name"
+        style={{
+          fontSize: "20px",
+          textAlign: "center",
+        }}
+      >
         {getWinnerName(
           winner.firstName,
           winner.lastName,
@@ -53,8 +161,14 @@ function WinnerBall({ winner }: { winner: PublicWinner }) {
         )}
       </strong>
 
-      <span className="live-ball-prize">
-        #{winner.rank} · {formatMoney(winner.prizeAmount)}
+      <span
+        className="live-ball-prize"
+        style={{
+          fontSize: "17px",
+          fontWeight: 900,
+        }}
+      >
+        🏆 {formatMoney(winner.prizeAmount)}
       </span>
     </div>
   );
@@ -87,7 +201,9 @@ function WinnerRow({
         <span>ቁጥር</span>
 
         <strong>
-          {revealed ? `#${winner.number}` : "•••"}
+          {revealed
+            ? `#${winner.number}`
+            : "•••"}
         </strong>
       </div>
 
@@ -117,7 +233,8 @@ function CompletedDraw({
 }: {
   result: PublicDrawResult;
 }) {
-  const [visibleCount, setVisibleCount] = useState(0);
+  const [visibleCount, setVisibleCount] =
+    useState(0);
 
   useEffect(() => {
     setVisibleCount(0);
@@ -126,26 +243,34 @@ function CompletedDraw({
       return;
     }
 
-    const firstTimer = window.setTimeout(() => {
-      setVisibleCount(1);
-    }, 700);
+    const firstTimer =
+      window.setTimeout(() => {
+        setVisibleCount(1);
+      }, 700);
 
-    const interval = window.setInterval(() => {
-      setVisibleCount((current) => {
-        if (current >= result.winners.length) {
-          window.clearInterval(interval);
-          return current;
-        }
+    const interval =
+      window.setInterval(() => {
+        setVisibleCount((current) => {
+          if (
+            current >=
+            result.winners.length
+          ) {
+            window.clearInterval(interval);
+            return current;
+          }
 
-        return current + 1;
-      });
-    }, 700);
+          return current + 1;
+        });
+      }, 700);
 
     return () => {
       window.clearTimeout(firstTimer);
       window.clearInterval(interval);
     };
-  }, [result.drawId, result.winners.length]);
+  }, [
+    result.drawId,
+    result.winners.length,
+  ]);
 
   const latestWinner =
     visibleCount > 0
@@ -176,7 +301,9 @@ function CompletedDraw({
         </div>
 
         <div className="live-draw-counter">
-          <strong>{result.winners.length}</strong>
+          <strong>
+            {result.winners.length}
+          </strong>
 
           <span>
             {" / "}
@@ -186,7 +313,9 @@ function CompletedDraw({
       </div>
 
       {latestWinner ? (
-        <WinnerBall winner={latestWinner} />
+        <WinnerBall
+          winner={latestWinner}
+        />
       ) : (
         <div className="live-draw-waiting">
           <div className="live-draw-spinner">
@@ -200,18 +329,26 @@ function CompletedDraw({
       )}
 
       <div className="live-winners-list">
-        {result.winners.map((winner, index) => (
-          <WinnerRow
-            key={winner.id}
-            winner={winner}
-            revealed={index < visibleCount}
-            current={index === visibleCount - 1}
-          />
-        ))}
+        {result.winners.map(
+          (winner, index) => (
+            <WinnerRow
+              key={winner.id}
+              winner={winner}
+              revealed={
+                index < visibleCount
+              }
+              current={
+                index ===
+                visibleCount - 1
+              }
+            />
+          ),
+        )}
       </div>
 
       <div className="live-draw-footer">
-        🔐 የአሸናፊ ምርጫው በbackend በsecure random ተወስኗል።
+        🔐 የአሸናፊ ምርጫው በbackend
+        በsecure random ተወስኗል።
       </div>
     </section>
   );
@@ -222,31 +359,41 @@ function LiveDrawing({
 }: {
   live: LiveDrawState;
 }) {
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] =
+    useState(Date.now());
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      setNow(Date.now());
-    }, 250);
+    const timer =
+      window.setInterval(() => {
+        setNow(Date.now());
+      }, 250);
 
-    return () => {
+    return () =>
       window.clearInterval(timer);
-    };
   }, []);
 
   const elapsedMs = Math.max(
     0,
-    now - new Date(live.executedAt).getTime(),
+    now -
+      new Date(
+        live.executedAt,
+      ).getTime(),
   );
 
-  const countdownSeconds = Math.max(
-    0,
-    Math.ceil((3000 - elapsedMs) / 1000),
-  );
+  const countdownSeconds =
+    Math.max(
+      0,
+      Math.ceil(
+        (5000 - elapsedMs) /
+          1000,
+      ),
+    );
 
   const currentWinner =
     live.winners.length > 0
-      ? live.winners[live.winners.length - 1]
+      ? live.winners[
+          live.winners.length - 1
+        ]
       : null;
 
   const progressPercent =
@@ -266,7 +413,7 @@ function LiveDrawing({
         : "የመጀመሪያው አሸናፊ እየተገለጠ ነው..."
       : live.revealedWinnerCount <
           live.totalWinnerCount
-        ? "ቀጣዩ አሸናፊ እየተጠበቀ ነው..."
+        ? "ቀጣዩ አሸናፊ በ8 ሰከንድ ውስጥ..."
         : "ሁሉም አሸናፊዎች ተገልጠዋል።";
 
   return (
@@ -319,7 +466,9 @@ function LiveDrawing({
       </div>
 
       {currentWinner ? (
-        <WinnerBall winner={currentWinner} />
+        <WinnerBall
+          winner={currentWinner}
+        />
       ) : (
         <div className="live-draw-waiting">
           <div className="live-draw-spinner">
@@ -342,9 +491,11 @@ function LiveDrawing({
 
       <div className="live-winners-list">
         {Array.from({
-          length: live.totalWinnerCount,
+          length:
+            live.totalWinnerCount,
         }).map((_, index) => {
-          const winner = live.winners[index];
+          const winner =
+            live.winners[index];
 
           if (winner) {
             return (
@@ -380,7 +531,9 @@ function LiveDrawing({
                   አሸናፊው እየተጠበቀ ነው
                 </strong>
 
-                <small>በቅርቡ...</small>
+                <small>
+                  በቅርቡ...
+                </small>
               </div>
             </div>
           );
@@ -402,8 +555,53 @@ export default function LiveDraw(
   props: LiveDrawProps,
 ) {
   if (props.live) {
-    return <LiveDrawing live={props.live} />;
+    if (
+      props.live.status ===
+      "completed"
+    ) {
+      return (
+        <CompletedDraw
+          result={{
+            drawId:
+              props.live.drawId,
+            drawName:
+              props.live.drawName,
+            prizeType:
+              props.live.prizeType,
+            prizeName:
+              props.live.prizeName,
+            prizeImageUrl:
+              props.live.prizeImageUrl,
+            displayedPrizeValue:
+              props.live
+                .displayedPrizeValue,
+            winnerCount:
+              props.live.winnerCount,
+            eligibleEntryCount:
+              props.live
+                .eligibleEntryCount,
+            executedAt:
+              props.live.executedAt,
+            publishedAt:
+              props.live.publishedAt ??
+              props.live.executedAt,
+            winners:
+              props.live.winners,
+          }}
+        />
+      );
+    }
+
+    return (
+      <LiveDrawing
+        live={props.live}
+      />
+    );
   }
 
-  return <CompletedDraw result={props.result} />;
+  return (
+    <CompletedDraw
+      result={props.result}
+    />
+  );
 }
