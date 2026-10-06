@@ -8,7 +8,6 @@ import {
 import {
   approveWinnerPayout,
   getPendingWinnerPayouts,
-  getPayoutById,
   getPayoutByTelegramUser,
   rejectWinnerPayout,
   saveWinnerScreenshot,
@@ -69,10 +68,325 @@ router.get(
 );
 
 /*
+ * ADMIN
+ *
+ * GET /winner-payouts/admin/pending
+ *
+ * Returns submitted/approved payouts.
+ *
+ * IMPORTANT:
+ * Admin routes must appear before
+ * the dynamic /:payoutId route.
+ */
+router.get(
+  "/admin/pending",
+  requireAdmin,
+  async (_req, res) => {
+    try {
+      const payouts =
+        await getPendingWinnerPayouts();
+
+      res.status(200).json({
+        payouts,
+      });
+    } catch (error) {
+      console.error(
+        "Get pending winner payouts error:",
+        error,
+      );
+
+      res.status(500).json({
+        error:
+          "PENDING_WINNER_PAYOUTS_LOAD_FAILED",
+        message:
+          "Pending winner payouts could not be loaded.",
+      });
+    }
+  },
+);
+
+/*
+ * ADMIN
+ *
+ * POST /winner-payouts/admin/:payoutId/approve
+ */
+router.post(
+  "/admin/:payoutId/approve",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          error: "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
+        });
+        return;
+      }
+
+      const payoutId =
+        req.params.payoutId?.trim();
+
+      if (!payoutId) {
+        res.status(400).json({
+          error: "INVALID_PAYOUT_ID",
+          message:
+            "Payout ID is required.",
+        });
+        return;
+      }
+
+      const payout =
+        await approveWinnerPayout(
+          payoutId,
+          req.user.id,
+        );
+
+      res.status(200).json({
+        payout,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "PAYOUT_APPROVAL_FAILED";
+
+      const clientErrors =
+        new Set([
+          "INVALID_PAYOUT_ID",
+          "INVALID_ADMIN_USER_ID",
+          "PAYOUT_NOT_APPROVABLE",
+          "PAYOUT_NOT_FOUND",
+        ]);
+
+      if (clientErrors.has(message)) {
+        res.status(400).json({
+          error: message,
+          message:
+            "The winner payout could not be approved.",
+        });
+        return;
+      }
+
+      console.error(
+        "Approve winner payout error:",
+        error,
+      );
+
+      res.status(500).json({
+        error:
+          "PAYOUT_APPROVAL_FAILED",
+        message:
+          "The winner payout could not be approved.",
+      });
+    }
+  },
+);
+
+/*
+ * ADMIN
+ *
+ * POST /winner-payouts/admin/:payoutId/reject
+ */
+router.post(
+  "/admin/:payoutId/reject",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          error: "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
+        });
+        return;
+      }
+
+      const payoutId =
+        req.params.payoutId?.trim();
+
+      const reason =
+        typeof req.body?.reason === "string"
+          ? req.body.reason.trim()
+          : "";
+
+      if (!payoutId) {
+        res.status(400).json({
+          error: "INVALID_PAYOUT_ID",
+          message:
+            "Payout ID is required.",
+        });
+        return;
+      }
+
+      if (!reason) {
+        res.status(400).json({
+          error:
+            "REJECTION_REASON_REQUIRED",
+          message:
+            "A rejection reason is required.",
+        });
+        return;
+      }
+
+      const payout =
+        await rejectWinnerPayout(
+          payoutId,
+          req.user.id,
+          reason,
+        );
+
+      res.status(200).json({
+        payout,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "PAYOUT_REJECTION_FAILED";
+
+      const clientErrors =
+        new Set([
+          "INVALID_PAYOUT_ID",
+          "INVALID_ADMIN_USER_ID",
+          "REJECTION_REASON_REQUIRED",
+          "REJECTION_REASON_TOO_LONG",
+          "PAYOUT_NOT_REJECTABLE",
+          "PAYOUT_NOT_FOUND",
+        ]);
+
+      if (clientErrors.has(message)) {
+        res.status(400).json({
+          error: message,
+          message:
+            "The winner payout could not be rejected.",
+        });
+        return;
+      }
+
+      console.error(
+        "Reject winner payout error:",
+        error,
+      );
+
+      res.status(500).json({
+        error:
+          "PAYOUT_REJECTION_FAILED",
+        message:
+          "The winner payout could not be rejected.",
+      });
+    }
+  },
+);
+
+/*
+ * ADMIN
+ *
+ * POST /winner-payouts/admin/:payoutId/paid
+ *
+ * Records the actual Telebirr payout.
+ */
+router.post(
+  "/admin/:payoutId/paid",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          error: "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
+        });
+        return;
+      }
+
+      const payoutId =
+        req.params.payoutId?.trim();
+
+      const paymentReference =
+        typeof req.body?.paymentReference ===
+        "string"
+          ? req.body.paymentReference.trim()
+          : "";
+
+      if (!payoutId) {
+        res.status(400).json({
+          error: "INVALID_PAYOUT_ID",
+          message:
+            "Payout ID is required.",
+        });
+        return;
+      }
+
+      if (!paymentReference) {
+        res.status(400).json({
+          error:
+            "PAYMENT_REFERENCE_REQUIRED",
+          message:
+            "Payment reference is required.",
+        });
+        return;
+      }
+
+      const payout =
+        await markWinnerPayoutPaid(
+          payoutId,
+          req.user.id,
+          paymentReference,
+        );
+
+      res.status(200).json({
+        payout,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "PAYOUT_PAYMENT_FAILED";
+
+      const clientErrors =
+        new Set([
+          "INVALID_PAYOUT_ID",
+          "INVALID_ADMIN_USER_ID",
+          "PAYMENT_REFERENCE_REQUIRED",
+          "PAYMENT_REFERENCE_TOO_LONG",
+          "PAYOUT_NOT_PAYABLE",
+          "PAYOUT_NOT_FOUND",
+        ]);
+
+      if (clientErrors.has(message)) {
+        res.status(400).json({
+          error: message,
+          message:
+            "The winner payout could not be marked as paid.",
+        });
+        return;
+      }
+
+      console.error(
+        "Mark winner payout paid error:",
+        error,
+      );
+
+      res.status(500).json({
+        error:
+          "PAYOUT_PAYMENT_FAILED",
+        message:
+          "The winner payout could not be marked as paid.",
+      });
+    }
+  },
+);
+
+/*
  * GET /winner-payouts/:payoutId
  *
  * Returns a payout only when it belongs to
  * the authenticated Telegram user.
+ *
+ * IMPORTANT:
+ * This dynamic route is intentionally
+ * placed AFTER all /admin routes.
  */
 router.get(
   "/:payoutId",
@@ -430,313 +744,6 @@ router.post(
           "PAYOUT_SUBMISSION_FAILED",
         message:
           "The Telebirr information could not be submitted.",
-      });
-    }
-  },
-);
-
-/*
- * ADMIN
- *
- * GET /winner-payouts/admin/pending
- *
- * Returns submitted/approved payouts.
- */
-router.get(
-  "/admin/pending",
-  requireAdmin,
-  async (_req, res) => {
-    try {
-      const payouts =
-        await getPendingWinnerPayouts();
-
-      res.status(200).json({
-        payouts,
-      });
-    } catch (error) {
-      console.error(
-        "Get pending winner payouts error:",
-        error,
-      );
-
-      res.status(500).json({
-        error:
-          "PENDING_WINNER_PAYOUTS_LOAD_FAILED",
-        message:
-          "Pending winner payouts could not be loaded.",
-      });
-    }
-  },
-);
-
-/*
- * ADMIN
- *
- * POST /winner-payouts/admin/:payoutId/approve
- */
-router.post(
-  "/admin/:payoutId/approve",
-  requireAdmin,
-  async (req, res) => {
-    try {
-      if (!req.user) {
-        res.status(401).json({
-          error: "AUTHENTICATION_REQUIRED",
-          message:
-            "Authentication is required.",
-        });
-        return;
-      }
-
-      const payoutId =
-        req.params.payoutId?.trim();
-
-      if (!payoutId) {
-        res.status(400).json({
-          error: "INVALID_PAYOUT_ID",
-          message:
-            "Payout ID is required.",
-        });
-        return;
-      }
-
-      const payout =
-        await approveWinnerPayout(
-          payoutId,
-          req.user.id,
-        );
-
-      res.status(200).json({
-        payout,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "PAYOUT_APPROVAL_FAILED";
-
-      const clientErrors =
-        new Set([
-          "INVALID_PAYOUT_ID",
-          "INVALID_ADMIN_USER_ID",
-          "PAYOUT_NOT_APPROVABLE",
-          "PAYOUT_NOT_FOUND",
-        ]);
-
-      if (clientErrors.has(message)) {
-        res.status(400).json({
-          error: message,
-          message:
-            "The winner payout could not be approved.",
-        });
-        return;
-      }
-
-      console.error(
-        "Approve winner payout error:",
-        error,
-      );
-
-      res.status(500).json({
-        error:
-          "PAYOUT_APPROVAL_FAILED",
-        message:
-          "The winner payout could not be approved.",
-      });
-    }
-  },
-);
-
-/*
- * ADMIN
- *
- * POST /winner-payouts/admin/:payoutId/reject
- */
-router.post(
-  "/admin/:payoutId/reject",
-  requireAdmin,
-  async (req, res) => {
-    try {
-      if (!req.user) {
-        res.status(401).json({
-          error: "AUTHENTICATION_REQUIRED",
-          message:
-            "Authentication is required.",
-        });
-        return;
-      }
-
-      const payoutId =
-        req.params.payoutId?.trim();
-
-      const reason =
-        typeof req.body?.reason === "string"
-          ? req.body.reason.trim()
-          : "";
-
-      if (!payoutId) {
-        res.status(400).json({
-          error: "INVALID_PAYOUT_ID",
-          message:
-            "Payout ID is required.",
-        });
-        return;
-      }
-
-      if (!reason) {
-        res.status(400).json({
-          error:
-            "REJECTION_REASON_REQUIRED",
-          message:
-            "A rejection reason is required.",
-        });
-        return;
-      }
-
-      const payout =
-        await rejectWinnerPayout(
-          payoutId,
-          req.user.id,
-          reason,
-        );
-
-      res.status(200).json({
-        payout,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "PAYOUT_REJECTION_FAILED";
-
-      const clientErrors =
-        new Set([
-          "INVALID_PAYOUT_ID",
-          "INVALID_ADMIN_USER_ID",
-          "REJECTION_REASON_REQUIRED",
-          "REJECTION_REASON_TOO_LONG",
-          "PAYOUT_NOT_REJECTABLE",
-          "PAYOUT_NOT_FOUND",
-        ]);
-
-      if (clientErrors.has(message)) {
-        res.status(400).json({
-          error: message,
-          message:
-            "The winner payout could not be rejected.",
-        });
-        return;
-      }
-
-      console.error(
-        "Reject winner payout error:",
-        error,
-      );
-
-      res.status(500).json({
-        error:
-          "PAYOUT_REJECTION_FAILED",
-        message:
-          "The winner payout could not be rejected.",
-      });
-    }
-  },
-);
-
-/*
- * ADMIN
- *
- * POST /winner-payouts/admin/:payoutId/paid
- *
- * Records the actual Telebirr payout.
- */
-router.post(
-  "/admin/:payoutId/paid",
-  requireAdmin,
-  async (req, res) => {
-    try {
-      if (!req.user) {
-        res.status(401).json({
-          error: "AUTHENTICATION_REQUIRED",
-          message:
-            "Authentication is required.",
-        });
-        return;
-      }
-
-      const payoutId =
-        req.params.payoutId?.trim();
-
-      const paymentReference =
-        typeof req.body?.paymentReference ===
-        "string"
-          ? req.body.paymentReference.trim()
-          : "";
-
-      if (!payoutId) {
-        res.status(400).json({
-          error: "INVALID_PAYOUT_ID",
-          message:
-            "Payout ID is required.",
-        });
-        return;
-      }
-
-      if (!paymentReference) {
-        res.status(400).json({
-          error:
-            "PAYMENT_REFERENCE_REQUIRED",
-          message:
-            "Payment reference is required.",
-        });
-        return;
-      }
-
-      const payout =
-        await markWinnerPayoutPaid(
-          payoutId,
-          req.user.id,
-          paymentReference,
-        );
-
-      res.status(200).json({
-        payout,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "PAYOUT_PAYMENT_FAILED";
-
-      const clientErrors =
-        new Set([
-          "INVALID_PAYOUT_ID",
-          "INVALID_ADMIN_USER_ID",
-          "PAYMENT_REFERENCE_REQUIRED",
-          "PAYMENT_REFERENCE_TOO_LONG",
-          "PAYOUT_NOT_PAYABLE",
-          "PAYOUT_NOT_FOUND",
-        ]);
-
-      if (clientErrors.has(message)) {
-        res.status(400).json({
-          error: message,
-          message:
-            "The winner payout could not be marked as paid.",
-        });
-        return;
-      }
-
-      console.error(
-        "Mark winner payout paid error:",
-        error,
-      );
-
-      res.status(500).json({
-        error:
-          "PAYOUT_PAYMENT_FAILED",
-        message:
-          "The winner payout could not be marked as paid.",
       });
     }
   },
