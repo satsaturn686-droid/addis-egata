@@ -31,6 +31,24 @@ function getRouteParam(
   return value?.trim() ?? "";
 }
 
+/**
+ * Express Request.body can be typed as unknown/string[]
+ * depending on the installed Express/@types versions.
+ * Normalize every body field through this helper before
+ * calling string methods.
+ */
+function getBodyString(value: unknown): string {
+  if (Array.isArray(value)) {
+    return typeof value[0] === "string"
+      ? value[0].trim()
+      : "";
+  }
+
+  return typeof value === "string"
+    ? value.trim()
+    : "";
+}
+
 async function sendTelegramMessage(
   chatId: number | string,
   text: string,
@@ -39,7 +57,6 @@ async function sendTelegramMessage(
     console.warn(
       "Telegram payout notification skipped: TELEGRAM_BOT_TOKEN is missing.",
     );
-
     return false;
   }
 
@@ -64,16 +81,11 @@ async function sendTelegramMessage(
         description?: string;
       };
 
-    if (
-      !response.ok ||
-      !data.ok
-    ) {
+    if (!response.ok || !data.ok) {
       console.error(
         "Telegram payout notification failed:",
-        data.description ??
-          response.statusText,
+        data.description ?? response.statusText,
       );
-
       return false;
     }
 
@@ -83,7 +95,6 @@ async function sendTelegramMessage(
       "Telegram payout notification request failed:",
       error,
     );
-
     return false;
   }
 }
@@ -100,8 +111,7 @@ async function sendWinnerPaidNotification(
   },
 ): Promise<void> {
   const reference =
-    payout.paymentReference?.trim() ||
-    "N/A";
+    payout.paymentReference?.trim() || "N/A";
 
   await sendTelegramMessage(
     payout.telegramId,
@@ -130,17 +140,14 @@ router.get(
       if (!req.user) {
         res.status(401).json({
           error: "AUTHENTICATION_REQUIRED",
-          message:
-            "Authentication is required.",
+          message: "Authentication is required.",
         });
         return;
       }
 
       const payout =
         await getPayoutByTelegramUser(
-          Number(
-            req.user.telegramId,
-          ),
+          Number(req.user.telegramId),
         );
 
       res.status(200).json({
@@ -153,8 +160,7 @@ router.get(
       );
 
       res.status(500).json({
-        error:
-          "WINNER_PAYOUT_LOAD_FAILED",
+        error: "WINNER_PAYOUT_LOAD_FAILED",
         message:
           "Winner payout could not be loaded.",
       });
@@ -174,25 +180,20 @@ router.get(
     try {
       if (!req.user) {
         res.status(401).json({
-          error:
-            "AUTHENTICATION_REQUIRED",
-          message:
-            "Authentication is required.",
+          error: "AUTHENTICATION_REQUIRED",
+          message: "Authentication is required.",
         });
         return;
       }
 
-      const winnerId =
-        getRouteParam(
-          req.params.winnerId,
-        );
+      const winnerId = getRouteParam(
+        req.params.winnerId,
+      );
 
       if (!winnerId) {
         res.status(400).json({
-          error:
-            "INVALID_WINNER_ID",
-          message:
-            "Winner ID is required.",
+          error: "INVALID_WINNER_ID",
+          message: "Winner ID is required.",
         });
         return;
       }
@@ -200,9 +201,7 @@ router.get(
       const payout =
         await startWinnerClaim(
           winnerId,
-          Number(
-            req.user.telegramId,
-          ),
+          Number(req.user.telegramId),
         );
 
       if (!TELEGRAM_BOT_TOKEN) {
@@ -211,17 +210,15 @@ router.get(
         );
       }
 
-      const response =
-        await fetch(
-          `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe`,
-          {
-            method: "POST",
-            headers: {
-              "content-type":
-                "application/json",
-            },
+      const response = await fetch(
+        `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
           },
-        );
+        },
+      );
 
       const data =
         (await response.json()) as {
@@ -249,9 +246,8 @@ router.get(
       }
 
       const claimUrl =
-        `https://t.me/${data.result.username}?start=claim_${encodeURIComponent(
-          winnerId,
-        )}`;
+        `https://t.me/${data.result.username}` +
+        `?start=claim_${encodeURIComponent(winnerId)}`;
 
       res.status(200).json({
         claimUrl,
@@ -263,19 +259,14 @@ router.get(
           ? error.message
           : "WINNER_CLAIM_LINK_FAILED";
 
-      const clientErrors =
-        new Set([
-          "INVALID_WINNER_ID",
-          "INVALID_TELEGRAM_USER_ID",
-          "WINNER_NOT_AUTHORIZED",
-          "PAYOUT_NOT_FOUND",
-        ]);
+      const clientErrors = new Set([
+        "INVALID_WINNER_ID",
+        "INVALID_TELEGRAM_USER_ID",
+        "WINNER_NOT_AUTHORIZED",
+        "PAYOUT_NOT_FOUND",
+      ]);
 
-      if (
-        clientErrors.has(
-          message,
-        )
-      ) {
+      if (clientErrors.has(message)) {
         res.status(400).json({
           error: message,
           message:
@@ -290,8 +281,7 @@ router.get(
       );
 
       res.status(500).json({
-        error:
-          "WINNER_CLAIM_LINK_FAILED",
+        error: "WINNER_CLAIM_LINK_FAILED",
         message:
           "The winner claim link could not be created.",
       });
@@ -343,25 +333,20 @@ router.post(
     try {
       if (!req.user) {
         res.status(401).json({
-          error:
-            "AUTHENTICATION_REQUIRED",
-          message:
-            "Authentication is required.",
+          error: "AUTHENTICATION_REQUIRED",
+          message: "Authentication is required.",
         });
         return;
       }
 
-      const payoutId =
-        getRouteParam(
-          req.params.payoutId,
-        );
+      const payoutId = getRouteParam(
+        req.params.payoutId,
+      );
 
       if (!payoutId) {
         res.status(400).json({
-          error:
-            "INVALID_PAYOUT_ID",
-          message:
-            "Payout ID is required.",
+          error: "INVALID_PAYOUT_ID",
+          message: "Payout ID is required.",
         });
         return;
       }
@@ -381,19 +366,14 @@ router.post(
           ? error.message
           : "PAYOUT_APPROVAL_FAILED";
 
-      const clientErrors =
-        new Set([
-          "INVALID_PAYOUT_ID",
-          "INVALID_ADMIN_USER_ID",
-          "PAYOUT_NOT_APPROVABLE",
-          "PAYOUT_NOT_FOUND",
-        ]);
+      const clientErrors = new Set([
+        "INVALID_PAYOUT_ID",
+        "INVALID_ADMIN_USER_ID",
+        "PAYOUT_NOT_APPROVABLE",
+        "PAYOUT_NOT_FOUND",
+      ]);
 
-      if (
-        clientErrors.has(
-          message,
-        )
-      ) {
+      if (clientErrors.has(message)) {
         res.status(400).json({
           error: message,
           message:
@@ -408,8 +388,7 @@ router.post(
       );
 
       res.status(500).json({
-        error:
-          "PAYOUT_APPROVAL_FAILED",
+        error: "PAYOUT_APPROVAL_FAILED",
         message:
           "The winner payout could not be approved.",
       });
@@ -429,39 +408,31 @@ router.post(
     try {
       if (!req.user) {
         res.status(401).json({
-          error:
-            "AUTHENTICATION_REQUIRED",
-          message:
-            "Authentication is required.",
+          error: "AUTHENTICATION_REQUIRED",
+          message: "Authentication is required.",
         });
         return;
       }
 
-      const payoutId =
-        getRouteParam(
-          req.params.payoutId,
-        );
+      const payoutId = getRouteParam(
+        req.params.payoutId,
+      );
 
-      const reason =
-        typeof req.body?.reason ===
-        "string"
-          ? req.body.reason.trim()
-          : "";
+      const reason = getBodyString(
+        req.body?.reason,
+      );
 
       if (!payoutId) {
         res.status(400).json({
-          error:
-            "INVALID_PAYOUT_ID",
-          message:
-            "Payout ID is required.",
+          error: "INVALID_PAYOUT_ID",
+          message: "Payout ID is required.",
         });
         return;
       }
 
       if (!reason) {
         res.status(400).json({
-          error:
-            "REJECTION_REASON_REQUIRED",
+          error: "REJECTION_REASON_REQUIRED",
           message:
             "A rejection reason is required.",
         });
@@ -484,21 +455,16 @@ router.post(
           ? error.message
           : "PAYOUT_REJECTION_FAILED";
 
-      const clientErrors =
-        new Set([
-          "INVALID_PAYOUT_ID",
-          "INVALID_ADMIN_USER_ID",
-          "REJECTION_REASON_REQUIRED",
-          "REJECTION_REASON_TOO_LONG",
-          "PAYOUT_NOT_REJECTABLE",
-          "PAYOUT_NOT_FOUND",
-        ]);
+      const clientErrors = new Set([
+        "INVALID_PAYOUT_ID",
+        "INVALID_ADMIN_USER_ID",
+        "REJECTION_REASON_REQUIRED",
+        "REJECTION_REASON_TOO_LONG",
+        "PAYOUT_NOT_REJECTABLE",
+        "PAYOUT_NOT_FOUND",
+      ]);
 
-      if (
-        clientErrors.has(
-          message,
-        )
-      ) {
+      if (clientErrors.has(message)) {
         res.status(400).json({
           error: message,
           message:
@@ -513,8 +479,7 @@ router.post(
       );
 
       res.status(500).json({
-        error:
-          "PAYOUT_REJECTION_FAILED",
+        error: "PAYOUT_REJECTION_FAILED",
         message:
           "The winner payout could not be rejected.",
       });
@@ -527,8 +492,7 @@ router.post(
  *
  * POST /winner-payouts/admin/:payoutId/paid
  *
- * Important:
- * The database payment is completed first.
+ * Database payment is completed first.
  * Telegram notification failure must NOT
  * roll the payment back.
  */
@@ -539,31 +503,25 @@ router.post(
     try {
       if (!req.user) {
         res.status(401).json({
-          error:
-            "AUTHENTICATION_REQUIRED",
-          message:
-            "Authentication is required.",
+          error: "AUTHENTICATION_REQUIRED",
+          message: "Authentication is required.",
         });
         return;
       }
 
-      const payoutId =
-        getRouteParam(
-          req.params.payoutId,
-        );
+      const payoutId = getRouteParam(
+        req.params.payoutId,
+      );
 
       const paymentReference =
-        typeof req.body?.paymentReference ===
-        "string"
-          ? req.body.paymentReference.trim()
-          : "";
+        getBodyString(
+          req.body?.paymentReference,
+        );
 
       if (!payoutId) {
         res.status(400).json({
-          error:
-            "INVALID_PAYOUT_ID",
-          message:
-            "Payout ID is required.",
+          error: "INVALID_PAYOUT_ID",
+          message: "Payout ID is required.",
         });
         return;
       }
@@ -600,9 +558,7 @@ router.post(
       res.status(200).json({
         payout,
         notificationSent:
-          Boolean(
-            TELEGRAM_BOT_TOKEN,
-          ),
+          Boolean(TELEGRAM_BOT_TOKEN),
       });
     } catch (error) {
       const message =
@@ -610,21 +566,16 @@ router.post(
           ? error.message
           : "PAYOUT_PAYMENT_FAILED";
 
-      const clientErrors =
-        new Set([
-          "INVALID_PAYOUT_ID",
-          "INVALID_ADMIN_USER_ID",
-          "PAYMENT_REFERENCE_REQUIRED",
-          "PAYMENT_REFERENCE_TOO_LONG",
-          "PAYOUT_NOT_PAYABLE",
-          "PAYOUT_NOT_FOUND",
-        ]);
+      const clientErrors = new Set([
+        "INVALID_PAYOUT_ID",
+        "INVALID_ADMIN_USER_ID",
+        "PAYMENT_REFERENCE_REQUIRED",
+        "PAYMENT_REFERENCE_TOO_LONG",
+        "PAYOUT_NOT_PAYABLE",
+        "PAYOUT_NOT_FOUND",
+      ]);
 
-      if (
-        clientErrors.has(
-          message,
-        )
-      ) {
+      if (clientErrors.has(message)) {
         res.status(400).json({
           error: message,
           message:
@@ -639,8 +590,7 @@ router.post(
       );
 
       res.status(500).json({
-        error:
-          "PAYOUT_PAYMENT_FAILED",
+        error: "PAYOUT_PAYMENT_FAILED",
         message:
           "The winner payout could not be marked as paid.",
       });
@@ -657,34 +607,27 @@ router.get(
     try {
       if (!req.user) {
         res.status(401).json({
-          error:
-            "AUTHENTICATION_REQUIRED",
-          message:
-            "Authentication is required.",
+          error: "AUTHENTICATION_REQUIRED",
+          message: "Authentication is required.",
         });
         return;
       }
 
-      const payoutId =
-        getRouteParam(
-          req.params.payoutId,
-        );
+      const payoutId = getRouteParam(
+        req.params.payoutId,
+      );
 
       if (!payoutId) {
         res.status(400).json({
-          error:
-            "INVALID_PAYOUT_ID",
-          message:
-            "Payout ID is required.",
+          error: "INVALID_PAYOUT_ID",
+          message: "Payout ID is required.",
         });
         return;
       }
 
       const payout =
         await getPayoutByTelegramUser(
-          Number(
-            req.user.telegramId,
-          ),
+          Number(req.user.telegramId),
           payoutId,
         );
 
@@ -726,25 +669,20 @@ router.post(
     try {
       if (!req.user) {
         res.status(401).json({
-          error:
-            "AUTHENTICATION_REQUIRED",
-          message:
-            "Authentication is required.",
+          error: "AUTHENTICATION_REQUIRED",
+          message: "Authentication is required.",
         });
         return;
       }
 
-      const winnerId =
-        getRouteParam(
-          req.params.winnerId,
-        );
+      const winnerId = getRouteParam(
+        req.params.winnerId,
+      );
 
       if (!winnerId) {
         res.status(400).json({
-          error:
-            "INVALID_WINNER_ID",
-          message:
-            "Winner ID is required.",
+          error: "INVALID_WINNER_ID",
+          message: "Winner ID is required.",
         });
         return;
       }
@@ -752,9 +690,7 @@ router.post(
       const payout =
         await startWinnerClaim(
           winnerId,
-          Number(
-            req.user.telegramId,
-          ),
+          Number(req.user.telegramId),
         );
 
       res.status(200).json({
@@ -766,19 +702,14 @@ router.post(
           ? error.message
           : "WINNER_CLAIM_FAILED";
 
-      const clientErrors =
-        new Set([
-          "INVALID_WINNER_ID",
-          "INVALID_TELEGRAM_USER_ID",
-          "WINNER_NOT_AUTHORIZED",
-          "PAYOUT_NOT_FOUND",
-        ]);
+      const clientErrors = new Set([
+        "INVALID_WINNER_ID",
+        "INVALID_TELEGRAM_USER_ID",
+        "WINNER_NOT_AUTHORIZED",
+        "PAYOUT_NOT_FOUND",
+      ]);
 
-      if (
-        clientErrors.has(
-          message,
-        )
-      ) {
+      if (clientErrors.has(message)) {
         res.status(400).json({
           error: message,
           message:
@@ -793,8 +724,7 @@ router.post(
       );
 
       res.status(500).json({
-        error:
-          "WINNER_CLAIM_FAILED",
+        error: "WINNER_CLAIM_FAILED",
         message:
           "The winner claim could not be started.",
       });
@@ -811,37 +741,29 @@ router.post(
     try {
       if (!req.user) {
         res.status(401).json({
-          error:
-            "AUTHENTICATION_REQUIRED",
-          message:
-            "Authentication is required.",
+          error: "AUTHENTICATION_REQUIRED",
+          message: "Authentication is required.",
         });
         return;
       }
 
-      const payoutId =
-        getRouteParam(
-          req.params.payoutId,
-        );
+      const payoutId = getRouteParam(
+        req.params.payoutId,
+      );
 
-      const fileId =
-        typeof req.body?.fileId ===
-        "string"
-          ? req.body.fileId.trim()
-          : "";
+      const fileId = getBodyString(
+        req.body?.fileId,
+      );
 
       const fileUniqueId =
-        typeof req.body?.fileUniqueId ===
-        "string"
-          ? req.body.fileUniqueId.trim()
-          : "";
+        getBodyString(
+          req.body?.fileUniqueId,
+        );
 
       if (!payoutId) {
         res.status(400).json({
-          error:
-            "INVALID_PAYOUT_ID",
-          message:
-            "Payout ID is required.",
+          error: "INVALID_PAYOUT_ID",
+          message: "Payout ID is required.",
         });
         return;
       }
@@ -859,12 +781,9 @@ router.post(
       const payout =
         await saveWinnerScreenshot(
           payoutId,
-          Number(
-            req.user.telegramId,
-          ),
+          Number(req.user.telegramId),
           fileId,
-          fileUniqueId ||
-            undefined,
+          fileUniqueId || undefined,
         );
 
       res.status(200).json({
@@ -876,20 +795,15 @@ router.post(
           ? error.message
           : "SCREENSHOT_SAVE_FAILED";
 
-      const clientErrors =
-        new Set([
-          "INVALID_PAYOUT_ID",
-          "INVALID_TELEGRAM_USER_ID",
-          "SCREENSHOT_FILE_ID_REQUIRED",
-          "SCREENSHOT_NOT_ACCEPTED",
-          "PAYOUT_NOT_FOUND",
-        ]);
+      const clientErrors = new Set([
+        "INVALID_PAYOUT_ID",
+        "INVALID_TELEGRAM_USER_ID",
+        "SCREENSHOT_FILE_ID_REQUIRED",
+        "SCREENSHOT_NOT_ACCEPTED",
+        "PAYOUT_NOT_FOUND",
+      ]);
 
-      if (
-        clientErrors.has(
-          message,
-        )
-      ) {
+      if (clientErrors.has(message)) {
         res.status(400).json({
           error: message,
           message:
@@ -904,8 +818,7 @@ router.post(
       );
 
       res.status(500).json({
-        error:
-          "SCREENSHOT_SAVE_FAILED",
+        error: "SCREENSHOT_SAVE_FAILED",
         message:
           "The screenshot could not be saved.",
       });
@@ -922,37 +835,29 @@ router.post(
     try {
       if (!req.user) {
         res.status(401).json({
-          error:
-            "AUTHENTICATION_REQUIRED",
-          message:
-            "Authentication is required.",
+          error: "AUTHENTICATION_REQUIRED",
+          message: "Authentication is required.",
         });
         return;
       }
 
-      const payoutId =
-        getRouteParam(
-          req.params.payoutId,
-        );
+      const payoutId = getRouteParam(
+        req.params.payoutId,
+      );
 
       const telebirrNumber =
-        typeof req.body?.telebirrNumber ===
-        "string"
-          ? req.body.telebirrNumber.trim()
-          : "";
+        getBodyString(
+          req.body?.telebirrNumber,
+        );
 
-      const accountName =
-        typeof req.body?.accountName ===
-        "string"
-          ? req.body.accountName.trim()
-          : "";
+      const accountName = getBodyString(
+        req.body?.accountName,
+      );
 
       if (!payoutId) {
         res.status(400).json({
-          error:
-            "INVALID_PAYOUT_ID",
-          message:
-            "Payout ID is required.",
+          error: "INVALID_PAYOUT_ID",
+          message: "Payout ID is required.",
         });
         return;
       }
@@ -980,9 +885,7 @@ router.post(
       const payout =
         await submitWinnerTelebirr(
           payoutId,
-          Number(
-            req.user.telegramId,
-          ),
+          Number(req.user.telegramId),
           telebirrNumber,
           accountName,
         );
@@ -996,23 +899,18 @@ router.post(
           ? error.message
           : "PAYOUT_SUBMISSION_FAILED";
 
-      const clientErrors =
-        new Set([
-          "INVALID_PAYOUT_ID",
-          "INVALID_TELEGRAM_USER_ID",
-          "TELEBIRR_NUMBER_REQUIRED",
-          "TELEBIRR_ACCOUNT_NAME_REQUIRED",
-          "TELEBIRR_NUMBER_TOO_LONG",
-          "TELEBIRR_ACCOUNT_NAME_TOO_LONG",
-          "PAYOUT_SUBMISSION_NOT_ALLOWED",
-          "PAYOUT_NOT_FOUND",
-        ]);
+      const clientErrors = new Set([
+        "INVALID_PAYOUT_ID",
+        "INVALID_TELEGRAM_USER_ID",
+        "TELEBIRR_NUMBER_REQUIRED",
+        "TELEBIRR_ACCOUNT_NAME_REQUIRED",
+        "TELEBIRR_NUMBER_TOO_LONG",
+        "TELEBIRR_ACCOUNT_NAME_TOO_LONG",
+        "PAYOUT_SUBMISSION_NOT_ALLOWED",
+        "PAYOUT_NOT_FOUND",
+      ]);
 
-      if (
-        clientErrors.has(
-          message,
-        )
-      ) {
+      if (clientErrors.has(message)) {
         res.status(400).json({
           error: message,
           message:
