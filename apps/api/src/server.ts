@@ -19,10 +19,19 @@ import adminDrawExecutionRouter from "./routes/admin-draw-execution.js";
 import adminDrawNumbersRouter from "./routes/admin-draw-numbers.js";
 import adminDrawDeleteRouter from "./routes/admin-draw-delete.js";
 import adminDrawTestResetRouter from "./routes/admin-draw-test-reset.js";
+import winnerPayoutsRouter from "./routes/winner-payouts.js";
+
+import {
+  getPayoutByTelegramUser,
+  saveWinnerScreenshot,
+  startWinnerClaim,
+  submitWinnerTelebirr,
+} from "./services/winner-payouts.js";
 
 const app = express();
 
-const PORT = Number(process.env.PORT) || 10000;
+const PORT =
+  Number(process.env.PORT) || 10000;
 
 const TELEGRAM_BOT_TOKEN =
   process.env.TELEGRAM_BOT_TOKEN?.trim() ?? "";
@@ -32,10 +41,15 @@ const MINI_APP_URL =
   "https://addis-egata-web.onrender.com";
 
 const TELEGRAM_WEBHOOK_SECRET =
-  process.env.TELEGRAM_WEBHOOK_SECRET?.trim() || "";
+  process.env.TELEGRAM_WEBHOOK_SECRET?.trim() ||
+  "";
 
 const DEFAULT_API_URL =
   "https://addis-egata-api.onrender.com";
+
+const WINNER_GROUP_CHAT_ID =
+  process.env.WINNER_GROUP_CHAT_ID?.trim() ||
+  "";
 
 function getTelegramApiUrl(
   method: string,
@@ -67,15 +81,20 @@ async function telegramApi(
       },
     );
 
-    const data = (await response.json()) as {
-      ok?: boolean;
-      description?: string;
-    };
+    const data =
+      (await response.json()) as {
+        ok?: boolean;
+        description?: string;
+      };
 
-    if (!response.ok || !data.ok) {
+    if (
+      !response.ok ||
+      !data.ok
+    ) {
       console.error(
         `Telegram API ${method} failed:`,
-        data.description ?? response.statusText,
+        data.description ??
+          response.statusText,
       );
 
       return false;
@@ -92,20 +111,46 @@ async function telegramApi(
   }
 }
 
+async function sendTelegramMessage(
+  chatId: number | string,
+  text: string,
+  replyMarkup?: Record<
+    string,
+    unknown
+  >,
+): Promise<void> {
+  const body: Record<
+    string,
+    unknown
+  > = {
+    chat_id: chatId,
+    text,
+  };
+
+  if (replyMarkup) {
+    body.reply_markup =
+      replyMarkup;
+  }
+
+  await telegramApi(
+    "sendMessage",
+    body,
+  );
+}
+
 async function sendTelegramWelcome(
   chatId: number,
 ): Promise<void> {
-  await telegramApi("sendMessage", {
-    chat_id: chatId,
-    text:
-      "🎟️ ADDIS ዕጣ\n\n" +
+  await sendTelegramMessage(
+    chatId,
+    "🎟️ ADDIS ዕጣ\n\n" +
       "እድልህን ዲጂታል አድርግ።\n\n" +
       "🎯 የሚከፈቱ ዕጣዎችን ይመልከቱ\n" +
       "🎟️ ቁጥርዎን ይምረጡ\n" +
       "💳 በTelebirr ይክፈሉ\n" +
       "🏆 አሸናናፊ ይሁኑ\n\n" +
       "👇 ዕጣውን ለመጀመር ከታች ያለውን ይጫኑ።",
-    reply_markup: {
+    {
       inline_keyboard: [
         [
           {
@@ -117,20 +162,19 @@ async function sendTelegramWelcome(
         ],
       ],
     },
-  });
+  );
 }
 
 async function sendTelegramHelp(
   chatId: number,
 ): Promise<void> {
-  await telegramApi("sendMessage", {
-    chat_id: chatId,
-    text:
-      "🎟️ ADDIS ዕጣ\n\n" +
+  await sendTelegramMessage(
+    chatId,
+    "🎟️ ADDIS ዕጣ\n\n" +
       "ዕጣዎችን ለማየት፣ ቁጥር ለመያዝ እና " +
       "በTelebirr ለመክፈል ከታች ያለውን " +
       "ADDIS ዕጣ ክፈት ይጫኑ።",
-    reply_markup: {
+    {
       inline_keyboard: [
         [
           {
@@ -142,7 +186,327 @@ async function sendTelegramHelp(
         ],
       ],
     },
-  });
+  );
+}
+
+async function sendWinnerClaimStarted(
+  chatId: number,
+  payout: {
+    prizeAmount: number;
+    drawName: string;
+    number: number;
+  },
+): Promise<void> {
+  await sendTelegramMessage(
+    chatId,
+    "🎉 እንኳን ደስ አለዎት!\n\n" +
+      `🏆 ዕጣ፦ ${payout.drawName}\n` +
+      `🎟️ የእርስዎ ቁጥር፦ ${payout.number}\n` +
+      `💰 የሚያገኙት፦ ${payout.prizeAmount.toLocaleString()} ETB\n\n` +
+      "📸 እባክዎ የአሸናናፊነትዎን ማረጋገጫ screenshot እዚህ ይላኩ።\n\n" +
+      "⚠️ Screenshot በዚህ private chat ብቻ ይላኩ።",
+  );
+}
+
+async function sendScreenshotReceived(
+  chatId: number,
+): Promise<void> {
+  await sendTelegramMessage(
+    chatId,
+    "✅ Screenshot ተቀብለናል።\n\n" +
+      "አሁን የሚከፈልበትን Telebirr መለያ ያስገቡ።\n\n" +
+      "በዚህ ቅርጽ ይላኩ፦\n" +
+      "09XXXXXXXX | ሙሉ ስም\n\n" +
+      "ለምሳሌ፦\n" +
+      "0912345678 | Pink Getahun",
+  );
+}
+
+async function sendPayoutSubmitted(
+  chatId: number,
+  payout: {
+    prizeAmount: number;
+    drawName: string;
+    telebirrNumber: string | null;
+  },
+): Promise<void> {
+  await sendTelegramMessage(
+    chatId,
+    "✅ የክፍያ ጥያቄዎ ተልኳል።\n\n" +
+      `🏆 ${payout.drawName}\n` +
+      `💰 ${payout.prizeAmount.toLocaleString()} ETB\n` +
+      `📱 Telebirr፦ ${payout.telebirrNumber ?? ""}\n\n` +
+      "👨‍💼 አስተዳደሩ መረጃውን ካረጋገጠ በኋላ ክፍያዎ ይፈጸማል።",
+  );
+}
+
+async function sendWinnerGroupNotification(
+  payout: {
+    drawName: string;
+    number: number;
+    prizeAmount: number;
+  },
+): Promise<void> {
+  if (!WINNER_GROUP_CHAT_ID) {
+    return;
+  }
+
+  await sendTelegramMessage(
+    WINNER_GROUP_CHAT_ID,
+    "🏆 ADDIS ዕጣ — አዲስ የአሸናናፊ ክፍያ ጥያቄ\n\n" +
+      `🎟️ ዕጣ፦ ${payout.drawName}\n` +
+      `🔢 ቁጥር፦ ${payout.number}\n` +
+      `💰 ሽልማት፦ ${payout.prizeAmount.toLocaleString()} ETB\n\n` +
+      "🔐 የWinner የግል Telebirr መረጃ በዚህ group አይጋራም።\n" +
+      "👨‍💼 እባክዎ Admin Panel ላይ ያረጋግጡ።",
+  );
+}
+
+function parseWinnerStartPayload(
+  text: string,
+): string | null {
+  const match =
+    text.match(
+      /^\/start(?:@\w+)?\s+claim[_:]([A-Za-z0-9-]+)$/i,
+    );
+
+  return match?.[1] ?? null;
+}
+
+function parseTelebirrMessage(
+  text: string,
+): {
+  number: string;
+  accountName: string;
+} | null {
+  const separatorIndex =
+    text.indexOf("|");
+
+  if (separatorIndex < 0) {
+    return null;
+  }
+
+  const number =
+    text
+      .slice(0, separatorIndex)
+      .trim();
+
+  const accountName =
+    text
+      .slice(separatorIndex + 1)
+      .trim();
+
+  if (
+    !number ||
+    !accountName
+  ) {
+    return null;
+  }
+
+  return {
+    number,
+    accountName,
+  };
+}
+
+async function handleWinnerStartClaim(
+  chatId: number,
+  winnerId: string,
+): Promise<void> {
+  try {
+    const payout =
+      await startWinnerClaim(
+        winnerId,
+        chatId,
+      );
+
+    await sendWinnerClaimStarted(
+      chatId,
+      payout,
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "";
+
+    if (
+      message ===
+      "WINNER_NOT_AUTHORIZED"
+    ) {
+      await sendTelegramMessage(
+        chatId,
+        "⚠️ ይህ የአሸናናፊ ጥያቄ ከእርስዎ Telegram መለያ ጋር አልተመዘገበም።\n\n" +
+          "እባክዎ በራስዎ አሸናናፊ መለያ ይጠቀሙ።",
+      );
+      return;
+    }
+
+    console.error(
+      "Winner claim Telegram error:",
+      error,
+    );
+
+    await sendTelegramMessage(
+      chatId,
+      "⚠️ የአሸናናፊ ጥያቄዎን አሁን ማስጀመር አልተቻለም።\n\n" +
+        "እባክዎ እንደገና ይሞክሩ።",
+    );
+  }
+}
+
+async function handleWinnerPhoto(
+  chatId: number,
+  photo: Array<{
+    file_id?: string;
+    file_unique_id?: string;
+    width?: number;
+    height?: number;
+  }>,
+): Promise<void> {
+  if (!photo.length) {
+    return;
+  }
+
+  const payout =
+    await getPayoutByTelegramUser(
+      chatId,
+    );
+
+  if (!payout) {
+    return;
+  }
+
+  if (
+    payout.status !==
+    "awaiting_screenshot"
+  ) {
+    if (
+      payout.status ===
+      "awaiting_telebirr"
+    ) {
+      await sendTelegramMessage(
+        chatId,
+        "ℹ️ Screenshot ቀድሞ ተቀብሏል።\n\n" +
+          "አሁን Telebirr number + account name ይላኩ።\n" +
+          "ምሳሌ፦ 0912345678 | Pink Getahun",
+      );
+    }
+
+    return;
+  }
+
+  const bestPhoto =
+    [...photo].sort(
+      (a, b) =>
+        (b.width ?? 0) *
+          (b.height ?? 0) -
+        (a.width ?? 0) *
+          (a.height ?? 0),
+    )[0];
+
+  if (!bestPhoto?.file_id) {
+    await sendTelegramMessage(
+      chatId,
+      "⚠️ Screenshot ፋይሉን ማንበብ አልተቻለም።\n\n" +
+        "እባክዎ screenshot እንደገና ይላኩ።",
+    );
+    return;
+  }
+
+  try {
+    await saveWinnerScreenshot(
+      payout.id,
+      chatId,
+      bestPhoto.file_id,
+      bestPhoto.file_unique_id,
+    );
+
+    await sendScreenshotReceived(
+      chatId,
+    );
+  } catch (error) {
+    console.error(
+      "Winner screenshot error:",
+      error,
+    );
+
+    await sendTelegramMessage(
+      chatId,
+      "⚠️ Screenshot መቀበል አልተቻለም።\n\n" +
+        "እባክዎ እንደገና ይላኩ።",
+    );
+  }
+}
+
+async function handleWinnerTelebirrText(
+  chatId: number,
+  text: string,
+): Promise<boolean> {
+  const payout =
+    await getPayoutByTelegramUser(
+      chatId,
+    );
+
+  if (!payout) {
+    return false;
+  }
+
+  if (
+    payout.status !==
+    "awaiting_telebirr"
+  ) {
+    return false;
+  }
+
+  const parsed =
+    parseTelebirrMessage(text);
+
+  if (!parsed) {
+    await sendTelegramMessage(
+      chatId,
+      "⚠️ የTelebirr መረጃው ትክክል አይደለም።\n\n" +
+        "እባክዎ በዚህ ቅርጽ ይላኩ፦\n" +
+        "09XXXXXXXX | ሙሉ ስም\n\n" +
+        "ምሳሌ፦\n" +
+        "0912345678 | Pink Getahun",
+    );
+    return true;
+  }
+
+  try {
+    const submitted =
+      await submitWinnerTelebirr(
+        payout.id,
+        chatId,
+        parsed.number,
+        parsed.accountName,
+      );
+
+    await sendPayoutSubmitted(
+      chatId,
+      submitted,
+    );
+
+    await sendWinnerGroupNotification(
+      submitted,
+    );
+
+    return true;
+  } catch (error) {
+    console.error(
+      "Winner Telebirr submission error:",
+      error,
+    );
+
+    await sendTelegramMessage(
+      chatId,
+      "⚠️ የTelebirr መረጃውን ማስገባት አልተቻለም።\n\n" +
+        "እባክዎ ቁጥሩን እና ስሙን በድጋሚ ይላኩ።",
+    );
+
+    return true;
+  }
 }
 
 async function configureTelegramBot(): Promise<void> {
@@ -162,32 +526,44 @@ async function configureTelegramBot(): Promise<void> {
   const webhookUrl =
     `${webhookBaseUrl.replace(/\/+$/, "")}/telegram/webhook`;
 
-  await telegramApi("setMyCommands", {
-    commands: [
-      {
-        command: "start",
-        description: "ADDIS ዕጣን ጀምር",
-      },
-      {
-        command: "help",
-        description: "እገዛ",
-      },
-    ],
-  });
+  await telegramApi(
+    "setMyCommands",
+    {
+      commands: [
+        {
+          command: "start",
+          description:
+            "ADDIS ዕጣን ጀምር",
+        },
+        {
+          command: "help",
+          description: "እገዛ",
+        },
+      ],
+    },
+  );
 
-  await telegramApi("setChatMenuButton", {
-    menu_button: {
-      type: "web_app",
-      text: "🎟️ ADDIS ዕጣ",
-      web_app: {
-        url: MINI_APP_URL,
+  await telegramApi(
+    "setChatMenuButton",
+    {
+      menu_button: {
+        type: "web_app",
+        text: "🎟️ ADDIS ዕጣ",
+        web_app: {
+          url: MINI_APP_URL,
+        },
       },
     },
-  });
+  );
 
-  const webhookBody: Record<string, unknown> = {
+  const webhookBody: Record<
+    string,
+    unknown
+  > = {
     url: webhookUrl,
-    allowed_updates: ["message"],
+    allowed_updates: [
+      "message",
+    ],
   };
 
   if (TELEGRAM_WEBHOOK_SECRET) {
@@ -195,10 +571,11 @@ async function configureTelegramBot(): Promise<void> {
       TELEGRAM_WEBHOOK_SECRET;
   }
 
-  const webhookConfigured = await telegramApi(
-    "setWebhook",
-    webhookBody,
-  );
+  const webhookConfigured =
+    await telegramApi(
+      "setWebhook",
+      webhookBody,
+    );
 
   if (webhookConfigured) {
     console.log(
@@ -256,48 +633,130 @@ app.post(
       ok: true,
     });
 
-    const update = req.body as {
-      message?: {
-        chat?: {
-          id?: number;
+    const update =
+      req.body as {
+        message?: {
+          chat?: {
+            id?: number;
+          };
+          from?: {
+            id?: number;
+          };
+          text?: string;
+          photo?: Array<{
+            file_id?: string;
+            file_unique_id?: string;
+            width?: number;
+            height?: number;
+          }>;
         };
-        text?: string;
       };
-    };
 
-    const message = update.message;
+    const message =
+      update.message;
 
     if (
       !message?.chat ||
-      typeof message.chat.id !== "number"
+      typeof message.chat.id !==
+        "number"
     ) {
       return;
     }
 
-    const chatId = message.chat.id;
+    const chatId =
+      message.chat.id;
+
+    const telegramUserId =
+      typeof message.from?.id ===
+      "number"
+        ? message.from.id
+        : chatId;
+
     const text =
-      typeof message.text === "string"
+      typeof message.text ===
+      "string"
         ? message.text.trim()
         : "";
 
+    /*
+     * Winner screenshot
+     */
+    if (
+      Array.isArray(
+        message.photo,
+      ) &&
+      message.photo.length > 0
+    ) {
+      await handleWinnerPhoto(
+        telegramUserId,
+        message.photo,
+      );
+
+      return;
+    }
+
+    /*
+     * Winner deep-link claim
+     *
+     * /start claim_<winnerId>
+     */
+    const winnerId =
+      parseWinnerStartPayload(
+        text,
+      );
+
+    if (winnerId) {
+      await handleWinnerStartClaim(
+        telegramUserId,
+        winnerId,
+      );
+
+      return;
+    }
+
+    /*
+     * Normal /start
+     */
     if (
       text === "/start" ||
       text.startsWith("/start ")
     ) {
-      await sendTelegramWelcome(chatId);
+      await sendTelegramWelcome(
+        chatId,
+      );
       return;
     }
 
+    /*
+     * Help
+     */
     if (
       text === "/help" ||
       text.startsWith("/help ")
     ) {
-      await sendTelegramHelp(chatId);
+      await sendTelegramHelp(
+        chatId,
+      );
       return;
     }
 
+    /*
+     * Winner Telebirr submission
+     */
     if (text) {
-      await sendTelegramWelcome(chatId);
+      const handled =
+        await handleWinnerTelebirrText(
+          telegramUserId,
+          text,
+        );
+
+      if (handled) {
+        return;
+      }
+
+      await sendTelegramWelcome(
+        chatId,
+      );
     }
   },
 );
@@ -307,35 +766,54 @@ app.post(
  *
  * GET /health
  */
-app.get("/health", async (_req, res) => {
-  const databaseOk = await checkDatabase();
+app.get(
+  "/health",
+  async (_req, res) => {
+    const databaseOk =
+      await checkDatabase();
 
-  res.status(databaseOk ? 200 : 503).json({
-    ok: databaseOk,
-    service: "addis-egata-api",
-    database: databaseOk
-      ? "connected"
-      : "unavailable",
-    timestamp: new Date().toISOString(),
-  });
-});
+    res
+      .status(
+        databaseOk
+          ? 200
+          : 503,
+      )
+      .json({
+        ok: databaseOk,
+        service:
+          "addis-egata-api",
+        database: databaseOk
+          ? "connected"
+          : "unavailable",
+        timestamp:
+          new Date().toISOString(),
+      });
+  },
+);
 
 /*
  * API root
  */
-app.get("/", (_req, res) => {
-  res.status(200).json({
-    name: "Addis ዕጣ",
-    message: "API is running",
-  });
-});
+app.get(
+  "/",
+  (_req, res) => {
+    res.status(200).json({
+      name: "Addis ዕጣ",
+      message:
+        "API is running",
+    });
+  },
+);
 
 /*
  * Telegram authentication
  *
  * GET /auth/me
  */
-app.use("/auth", authRouter);
+app.use(
+  "/auth",
+  authRouter,
+);
 
 /*
  * Public draws
@@ -343,7 +821,10 @@ app.use("/auth", authRouter);
  * GET /draws
  * GET /draws/:drawId
  */
-app.use("/draws", drawsRouter);
+app.use(
+  "/draws",
+  drawsRouter,
+);
 
 /*
  * Public published results
@@ -351,7 +832,10 @@ app.use("/draws", drawsRouter);
  * GET /results
  * GET /results/:drawId
  */
-app.use("/results", resultsRouter);
+app.use(
+  "/results",
+  resultsRouter,
+);
 
 /*
  * Entries and number reservations
@@ -360,7 +844,10 @@ app.use("/results", resultsRouter);
  * POST /entries/reserve
  * GET /entries/:entryId
  */
-app.use("/entries", entriesRouter);
+app.use(
+  "/entries",
+  entriesRouter,
+);
 
 /*
  * Manual Telebirr payments
@@ -369,7 +856,10 @@ app.use("/entries", entriesRouter);
  * POST /payments/telebirr
  * GET /payments/:paymentId
  */
-app.use("/payments", paymentsRouter);
+app.use(
+  "/payments",
+  paymentsRouter,
+);
 
 /*
  * Admin payment verification
@@ -381,6 +871,26 @@ app.use("/payments", paymentsRouter);
 app.use(
   "/admin/payments",
   adminPaymentsRouter,
+);
+
+/*
+ * Winner payout and claim flow
+ *
+ * GET  /winner-payouts/mine
+ * GET  /winner-payouts/:payoutId
+ * POST /winner-payouts/claim/:winnerId
+ * POST /winner-payouts/:payoutId/screenshot
+ * POST /winner-payouts/:payoutId/telebirr
+ *
+ * Admin:
+ * GET  /winner-payouts/admin/pending
+ * POST /winner-payouts/admin/:payoutId/approve
+ * POST /winner-payouts/admin/:payoutId/reject
+ * POST /winner-payouts/admin/:payoutId/paid
+ */
+app.use(
+  "/winner-payouts",
+  winnerPayoutsRouter,
 );
 
 /*
@@ -448,13 +958,15 @@ app.use(
 /*
  * 404
  */
-app.use((_req, res) => {
-  res.status(404).json({
-    error: "NOT_FOUND",
-    message:
-      "The requested endpoint does not exist.",
-  });
-});
+app.use(
+  (_req, res) => {
+    res.status(404).json({
+      error: "NOT_FOUND",
+      message:
+        "The requested endpoint does not exist.",
+    });
+  },
+);
 
 /*
  * Global error handler
@@ -472,7 +984,8 @@ app.use(
     );
 
     res.status(500).json({
-      error: "INTERNAL_SERVER_ERROR",
+      error:
+        "INTERNAL_SERVER_ERROR",
       message:
         "An unexpected server error occurred.",
     });
