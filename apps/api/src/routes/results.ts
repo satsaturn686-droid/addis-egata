@@ -1,19 +1,14 @@
 import { Router } from "express";
-
 import {
+  getCurrentLiveDrawState,
   getLiveDrawState,
-  getPublishedResults,
   getPublicDrawResult,
+  getPublishedResults,
 } from "../services/results.js";
 
 const router = Router();
 
-/*
- * የተጠናቀቁ የዕጣ ውጤቶች
- *
- * GET /results
- */
-router.get("/", async (_req, res) => {
+router.get("/results", async (_req, res) => {
   try {
     const results =
       await getPublishedResults();
@@ -36,18 +31,41 @@ router.get("/", async (_req, res) => {
   }
 });
 
-/*
- * Live Draw
+/**
+ * Returns the currently running live draw.
  *
- * GET /results/live/:drawId
- *
- * executed_at ላይ ተመስርቶ ሰርቨሩ
- * የአሸናፊ መግለጫውን ይቆጣጠራል።
- * ስለዚህ ሁሉም ተመልካቾች
- * ተመሳሳይ ሁኔታ ያያሉ።
+ * This route is intentionally declared before
+ * /:drawId so the literal "live" path is never
+ * interpreted as a draw ID.
  */
 router.get(
-  "/live/:drawId",
+  "/results/live",
+  async (_req, res) => {
+    try {
+      const live =
+        await getCurrentLiveDrawState();
+
+      res.status(200).json({
+        live,
+      });
+    } catch (error) {
+      console.error(
+        "Get current live draw error:",
+        error,
+      );
+
+      res.status(500).json({
+        error:
+          "LIVE_DRAW_LOAD_FAILED",
+        message:
+          "The current live draw could not be loaded.",
+      });
+    }
+  },
+);
+
+router.get(
+  "/results/live/:drawId",
   async (req, res) => {
     try {
       const drawId =
@@ -58,55 +76,48 @@ router.get(
           error:
             "INVALID_DRAW_ID",
           message:
-            "Draw ID is required.",
+            "A draw ID is required.",
         });
         return;
       }
 
-      const state =
+      const live =
         await getLiveDrawState(
           drawId,
         );
 
-      if (!state) {
+      if (!live) {
         res.status(404).json({
           error:
             "LIVE_DRAW_NOT_FOUND",
           message:
-            "The requested live draw does not exist.",
+            "The requested live draw could not be found.",
         });
         return;
       }
 
-      /*
-       * Frontend LiveDraw API contract:
-       * { live: state }
-       */
       res.status(200).json({
-        live: state,
+        live,
       });
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "LIVE_DRAW_LOAD_FAILED";
-
-      if (
-        message ===
-        "INVALID_DRAW_ID"
-      ) {
-        res.status(400).json({
-          error: message,
-          message:
-            "Draw ID is required.",
-        });
-        return;
-      }
-
       console.error(
         "Get live draw state error:",
         error,
       );
+
+      if (
+        error instanceof Error &&
+        error.message ===
+          "INVALID_DRAW_ID"
+      ) {
+        res.status(400).json({
+          error:
+            "INVALID_DRAW_ID",
+          message:
+            "The draw ID is invalid.",
+        });
+        return;
+      }
 
       res.status(500).json({
         error:
@@ -118,13 +129,8 @@ router.get(
   },
 );
 
-/*
- * የአንድ ዕጣ የተጠናቀቀ ውጤት
- *
- * GET /results/:drawId
- */
 router.get(
-  "/:drawId",
+  "/results/:drawId",
   async (req, res) => {
     try {
       const drawId =
@@ -135,7 +141,7 @@ router.get(
           error:
             "INVALID_DRAW_ID",
           message:
-            "Draw ID is required.",
+            "A draw ID is required.",
         });
         return;
       }
@@ -150,7 +156,7 @@ router.get(
           error:
             "RESULT_NOT_FOUND",
           message:
-            "The requested draw result does not exist.",
+            "The requested published result could not be found.",
         });
         return;
       }
@@ -159,27 +165,24 @@ router.get(
         result,
       });
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "RESULT_LOAD_FAILED";
-
-      if (
-        message ===
-        "INVALID_DRAW_ID"
-      ) {
-        res.status(400).json({
-          error: message,
-          message:
-            "Draw ID is required.",
-        });
-        return;
-      }
-
       console.error(
         "Get public draw result error:",
         error,
       );
+
+      if (
+        error instanceof Error &&
+        error.message ===
+          "INVALID_DRAW_ID"
+      ) {
+        res.status(400).json({
+          error:
+            "INVALID_DRAW_ID",
+          message:
+            "The draw ID is invalid.",
+        });
+        return;
+      }
 
       res.status(500).json({
         error:
