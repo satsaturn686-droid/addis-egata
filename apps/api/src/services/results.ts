@@ -71,6 +71,22 @@ type WinnerRow = {
   username: string | null;
 };
 
+type WinnerNotificationRow = {
+  winner_id: string;
+  telegram_id:
+    | number
+    | string
+    | null;
+  rank: number;
+  number: number;
+  prize_amount:
+    | string
+    | number;
+  first_name: string | null;
+  last_name: string | null;
+  username: string | null;
+};
+
 const FIRST_REVEAL_DELAY_MS = 5000;
 const REVEAL_INTERVAL_MS = 8000;
 
@@ -304,6 +320,133 @@ async function sendTelegramResultMessage(
   }
 }
 
+async function sendTelegramWinnerClaimMessage(
+  chatId: number | string,
+  message: string,
+  claimUrl: string,
+): Promise<boolean> {
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.warn(
+      "Telegram winner claim notification skipped: TELEGRAM_BOT_TOKEN is missing.",
+    );
+    return false;
+  }
+
+  try {
+    const response =
+      await fetch(
+        `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
+        {
+          method: "POST",
+          headers: {
+            "content-type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: message,
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  {
+                    text:
+                      "🏆 የሽልማት ጥያቄ ጀምር",
+                    url: claimUrl,
+                  },
+                ],
+                [
+                  {
+                    text:
+                      "🎟️ ADDIS ዕጣ ክፈት",
+                    web_app: {
+                      url: MINI_APP_URL,
+                    },
+                  },
+                ],
+              ],
+            },
+          }),
+        },
+      );
+
+    const data =
+      (await response.json()) as {
+        ok?: boolean;
+        description?: string;
+      };
+
+    if (
+      !response.ok ||
+      !data.ok
+    ) {
+      console.error(
+        "Telegram winner claim notification failed:",
+        data.description ??
+          response.statusText,
+      );
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error(
+      "Telegram winner claim notification request failed:",
+      error,
+    );
+    return false;
+  }
+}
+
+async function getTelegramBotUsername(): Promise<string | null> {
+  if (!TELEGRAM_BOT_TOKEN) {
+    return null;
+  }
+
+  try {
+    const response =
+      await fetch(
+        `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe`,
+        {
+          method: "GET",
+          headers: {
+            accept:
+              "application/json",
+          },
+        },
+      );
+
+    const data =
+      (await response.json()) as {
+        ok?: boolean;
+        description?: string;
+        result?: {
+          username?: string;
+        };
+      };
+
+    if (
+      !response.ok ||
+      !data.ok ||
+      !data.result?.username
+    ) {
+      console.error(
+        "Telegram bot username lookup failed:",
+        data.description ??
+          response.statusText,
+      );
+      return null;
+    }
+
+    return data.result.username;
+  } catch (error) {
+    console.error(
+      "Telegram bot username lookup request failed:",
+      error,
+    );
+    return null;
+  }
+}
+
 function getWinnerDisplayName(
   winner: PublicWinner,
 ): string {
@@ -324,6 +467,220 @@ function getWinnerDisplayName(
   }
 
   return "ተሳታፊ";
+}
+
+async function ensureWinnerPayoutRows(
+  drawId: string,
+): Promise<void> {
+  if (!pool) {
+    throw new Error(
+      "DATABASE_URL is not configured",
+    );
+  }
+
+  await pool.query(
+    `
+      INSERT INTO winner_payouts (
+        winner_id,
+        draw_id,
+        user_id,
+        prize_amount
+      )
+      SELECT
+        w.id,
+        w.draw_id,
+        w.user_id,
+        w.prize_amount
+      FROM winners w
+      WHERE w.draw_id = $1
+      ON CONFLICT (winner_id)
+      DO NOTHING
+    `,
+    [drawId],
+  );
+}
+
+async function getWinnerNotificationRows(
+  drawId: string,
+): Promise<WinnerNotificationRow[]> {
+  if (!pool) {
+    throw new Error(
+      "DATABASE_URL is not configured",
+    );
+  }
+
+  const result =
+    await pool.query<WinnerNotificationRow>(
+      `
+        SELECT
+          w.id AS winner_id,
+          u.telegram_id,
+          w.rank,
+          e.number,
+          w.prize_amount,
+          u.first_name,
+          u.last_name,
+          u.username
+        FROM winners w
+        INNER JOIN entries e
+          ON e.id = w.entry_id
+        INNER JOIN users u
+          ON u.id = w.user_id
+        WHERE w.draw_id = $1
+        ORDER BY w.rank ASC
+      `,
+      [drawId],
+    );
+
+  return result.rows;
+}
+
+async function sendWinnerClaimNotifications(
+  row: ResultRow,
+): Promise<void> {
+  if (
+    !pool ||
+    !TELEGRAM_BOT_TOKEN
+  ) {
+    return;
+  }
+
+  await ensureWinnerPayoutRows(
+    row.draw_id,
+  );
+
+  const botUsername =
+    await getTelegramBotUsername();
+
+  if (!botUsername) {
+    return;
+  }
+
+  const winners =
+    await getWinnerNotificationRows(
+      row.draw_id,
+    );
+
+  if (
+    winners.length === 0
+  ) {
+    return;
+  }
+
+  for (
+    const winner of winners
+  ) {
+    if (
+      winner.telegram_id === null ||
+      winner.telegram_id === undefined
+    ) {
+      continue;
+    }
+
+    const alreadySent =
+      await pool.query(
+        `
+          SELECT id
+          FROM audit_logs
+          WHERE action =
+            'WINNER_CLAIM_TELEGRAM_NOTIFICATION'
+            AND entity_type = 'winner'
+            AND entity_id = $1
+          LIMIT 1
+        `,
+        [winner.winner_id],
+      );
+
+    if (
+      alreadySent.rows.length > 0
+    ) {
+      continue;
+    }
+
+    const claimUrl =
+      `https://t.me/${botUsername}?start=claim_${winner.winner_id}`;
+
+    const winnerName =
+      [
+        winner.first_name,
+        winner.last_name,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .trim() ||
+      (winner.username
+        ? `@${winner.username}`
+        : "ተሳታፊ");
+
+    const message =
+      "🏆 ADDIS ዕጣ — አሸናፊ ነዎት!\n\n" +
+      `🏷️ ዕጣ: ${row.draw_name}\n` +
+      `🥇 ደረጃ: ${winner.rank}ኛ\n` +
+      `🎟️ የዕጣ ቁጥር: #${winner.number}\n` +
+      `👤 ስም: ${winnerName}\n` +
+      `💰 ሽልማት: ${Number(
+        winner.prize_amount,
+      ).toLocaleString(
+        "en-US",
+      )} ብር\n\n` +
+      "የሽልማት ጥያቄዎን ለመጀመር ከታች ያለውን ቁልፍ ይጫኑ።\n" +
+      "ከዚያ የአሸናፊነትዎን ማረጋገጫ ስክሪንሾት በግል ይላኩ።";
+
+    const sent =
+      await sendTelegramWinnerClaimMessage(
+        winner.telegram_id,
+        message,
+        claimUrl,
+      );
+
+    if (!sent) {
+      continue;
+    }
+
+    await pool.query(
+      `
+        UPDATE winner_payouts
+        SET
+          telegram_claim_message_id = NULLIF(
+            telegram_claim_message_id,
+            telegram_claim_message_id
+          ),
+          updated_at = NOW()
+        WHERE winner_id = $1
+      `,
+      [winner.winner_id],
+    );
+
+    await pool.query(
+      `
+        INSERT INTO audit_logs (
+          user_id,
+          action,
+          entity_type,
+          entity_id,
+          details
+        )
+        SELECT
+          w.user_id,
+          'WINNER_CLAIM_TELEGRAM_NOTIFICATION',
+          'winner',
+          w.id,
+          $2
+        FROM winners w
+        WHERE w.id = $1
+      `,
+      [
+        winner.winner_id,
+        JSON.stringify({
+          sentAt:
+            new Date().toISOString(),
+          telegramId:
+            winner.telegram_id,
+          claimUrl,
+        }),
+      ],
+    );
+  }
 }
 
 async function sendPublishedResultToTelegram(
@@ -354,98 +711,115 @@ async function sendPublishedResultToTelegram(
     );
 
   if (
-    existing.rows.length > 0
+    existing.rows.length === 0
   ) {
-    return;
-  }
+    const recipients =
+      await pool.query<{
+        telegram_id:
+          | number
+          | string;
+      }>(
+        `
+          SELECT telegram_id
+          FROM users
+          WHERE telegram_id IS NOT NULL
+          ORDER BY created_at ASC
+        `,
+      );
 
-  const recipients =
-    await pool.query<{
-      telegram_id:
-        | number
-        | string;
-    }>(
-      `
-        SELECT telegram_id
-        FROM users
-        WHERE telegram_id IS NOT NULL
-        ORDER BY created_at ASC
-      `,
-    );
-
-  if (
-    recipients.rows.length === 0
-  ) {
-    return;
-  }
-
-  const winnerLines =
-    winners
-      .sort(
-        (a, b) =>
-          a.rank - b.rank,
-      )
-      .map(
-        (winner) =>
-          `${winner.rank}ኛ — ${getWinnerDisplayName(
-            winner,
-          )} — #${winner.number} — ${winner.prizeAmount.toLocaleString(
-            "en-US",
-          )} ብር`,
-      )
-      .join("\n");
-
-  const message =
-    "🎉 ADDIS ዕጣ — የመጨረሻ ውጤት!\n\n" +
-    `🏷️ ዕጣ: ${row.draw_name}\n` +
-    `🏆 ሽልማት: ${row.prize_name}\n\n` +
-    "🥇 አሸናፊዎች:\n" +
-    winnerLines +
-    "\n\n🔐 Secure Random Draw\n" +
-    "✅ ውጤቱ በተሳካ ሁኔታ ታትሟል።";
-
-  let sent = 0;
-
-  for (
-    const recipient of
-      recipients.rows
-  ) {
     if (
-      await sendTelegramResultMessage(
-        recipient.telegram_id,
-        message,
-      )
+      recipients.rows.length > 0
     ) {
-      sent += 1;
+      const winnerLines =
+        winners
+          .slice()
+          .sort(
+            (a, b) =>
+              a.rank - b.rank,
+          )
+          .map(
+            (winner) =>
+              `${winner.rank}ኛ — ${getWinnerDisplayName(
+                winner,
+              )} — #${winner.number} — ${winner.prizeAmount.toLocaleString(
+                "en-US",
+              )} ብር`,
+          )
+          .join("\n");
+
+      const message =
+        "🎉 ADDIS ዕጣ — የመጨረሻ ውጤት!\n\n" +
+        `🏷️ ዕጣ: ${row.draw_name}\n` +
+        `🏆 ሽልማት: ${row.prize_name}\n\n` +
+        "🥇 አሸናፊዎች:\n" +
+        winnerLines +
+        "\n\n🔐 Secure Random Draw\n" +
+        "✅ ውጤቱ በተሳካ ሁኔታ ታትሟል။";
+
+      let sent = 0;
+
+      for (
+        const recipient of
+          recipients.rows
+      ) {
+        if (
+          await sendTelegramResultMessage(
+            recipient.telegram_id,
+            message,
+          )
+        ) {
+          sent += 1;
+        }
+      }
+
+      if (sent > 0) {
+        await pool.query(
+          `
+            INSERT INTO audit_logs (
+              user_id,
+              action,
+              entity_type,
+              entity_id,
+              details
+            )
+            VALUES (
+              NULL,
+              'DRAW_RESULT_TELEGRAM_NOTIFICATION',
+              'draw',
+              $1,
+              $2
+            )
+          `,
+          [
+            row.draw_id,
+            JSON.stringify({
+              sent,
+              sentAt:
+                new Date().toISOString(),
+            }),
+          ],
+        );
+      }
     }
   }
 
-  if (sent > 0) {
-    await pool.query(
-      `
-        INSERT INTO audit_logs (
-          user_id,
-          action,
-          entity_type,
-          entity_id,
-          details
-        )
-        VALUES (
-          NULL,
-          'DRAW_RESULT_TELEGRAM_NOTIFICATION',
-          'draw',
-          $1,
-          $2
-        )
-      `,
-      [
-        row.draw_id,
-        JSON.stringify({
-          sent,
-          sentAt:
-            new Date().toISOString(),
-        }),
-      ],
+  /*
+   * Winner-specific claim notification
+   * is deliberately independent from the
+   * broadcast-result audit above.
+   *
+   * This means an old draw-result notification
+   * can never prevent the winner claim link
+   * from being created/sent.
+   */
+  try {
+    await sendWinnerClaimNotifications(
+      row,
+    );
+  } catch (error) {
+    console.error(
+      "Failed to send winner claim notifications:",
+      error,
     );
   }
 }
@@ -744,6 +1118,50 @@ export async function getLiveDrawState(
     winners,
     revealedWinners,
     "drawing",
+  );
+}
+
+/**
+ * Finds the currently running live draw
+ * directly from the draw_results/draws state.
+ *
+ * The public Mini App uses this endpoint
+ * for discovery so it does not depend on the
+ * normal /draws list being up to date.
+ */
+export async function getCurrentLiveDrawState(): Promise<
+  LiveDrawState | null
+> {
+  if (!pool) {
+    throw new Error(
+      "DATABASE_URL is not configured",
+    );
+  }
+
+  const result =
+    await pool.query<{
+      id: string;
+    }>(
+      `
+        SELECT id
+        FROM draws
+        WHERE status = 'drawing'
+        ORDER BY
+          updated_at DESC,
+          created_at DESC
+        LIMIT 1
+      `,
+    );
+
+  const drawId =
+    result.rows[0]?.id;
+
+  if (!drawId) {
+    return null;
+  }
+
+  return getLiveDrawState(
+    drawId,
   );
 }
 
