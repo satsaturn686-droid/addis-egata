@@ -10,8 +10,13 @@ import {
 } from "./api";
 import {
   approvePayment,
+  approveWinnerPayout,
   getPendingPayments,
+  getPendingWinnerPayouts,
+  markWinnerPayoutPaid,
   rejectPayment,
+  rejectWinnerPayout,
+  type WinnerPayout,
 } from "./admin-api";
 
 type AdminDashboardProps = {
@@ -60,28 +65,94 @@ function getPaymentStatusLabel(
   }
 }
 
+function getPayoutStatusLabel(
+  status: WinnerPayout["status"],
+): string {
+  switch (status) {
+    case "awaiting_claim":
+      return "Claim ይጠብቃል";
+    case "awaiting_screenshot":
+      return "Screenshot ይጠብቃል";
+    case "awaiting_telebirr":
+      return "Telebirr ይጠብቃል";
+    case "submitted":
+      return "ለማረጋገጥ ዝግጁ";
+    case "approved":
+      return "ተፈቅዷል";
+    case "paid":
+      return "ተከፍሏል";
+    case "rejected":
+      return "ተReject ተደርጓል";
+    default:
+      return status;
+  }
+}
+
+function getWinnerName(
+  payout: WinnerPayout,
+): string {
+  const fullName = [
+    payout.firstName,
+    payout.lastName,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  if (fullName) {
+    return fullName;
+  }
+
+  if (payout.username) {
+    return `@${payout.username}`;
+  }
+
+  return `Telegram ID: ${payout.telegramId}`;
+}
+
 export default function AdminDashboard({
   onBack,
 }: AdminDashboardProps) {
   const [isCheckingAdmin, setIsCheckingAdmin] =
     useState(true);
+
   const [isAdmin, setIsAdmin] = useState(false);
 
   const [payments, setPayments] = useState<Payment[]>(
     [],
   );
 
+  const [payouts, setPayouts] = useState<
+    WinnerPayout[]
+  >([]);
+
   const [loading, setLoading] = useState(false);
+
   const [refreshing, setRefreshing] =
     useState(false);
 
   const [processingId, setProcessingId] =
     useState<string | null>(null);
 
+  const [processingPayoutId, setProcessingPayoutId] =
+    useState<string | null>(null);
+
   const [rejectingId, setRejectingId] =
     useState<string | null>(null);
 
+  const [rejectingPayoutId, setRejectingPayoutId] =
+    useState<string | null>(null);
+
+  const [payingPayoutId, setPayingPayoutId] =
+    useState<string | null>(null);
+
   const [rejectionReason, setRejectionReason] =
+    useState("");
+
+  const [payoutRejectionReason, setPayoutRejectionReason] =
+    useState("");
+
+  const [paymentReference, setPaymentReference] =
     useState("");
 
   const [error, setError] =
@@ -90,7 +161,7 @@ export default function AdminDashboard({
   const [success, setSuccess] =
     useState<string | null>(null);
 
-  const loadPayments = useCallback(
+  const loadAdminData = useCallback(
     async (showRefreshState = false) => {
       if (!isAdmin) {
         return;
@@ -105,12 +176,23 @@ export default function AdminDashboard({
       setError(null);
 
       try {
-        const response =
-          await getPendingPayments();
+        const [
+          paymentResponse,
+          payoutResponse,
+        ] = await Promise.all([
+          getPendingPayments(),
+          getPendingWinnerPayouts(),
+        ]);
 
         setPayments(
-          Array.isArray(response.payments)
-            ? response.payments
+          Array.isArray(paymentResponse.payments)
+            ? paymentResponse.payments
+            : [],
+        );
+
+        setPayouts(
+          Array.isArray(payoutResponse.payouts)
+            ? payoutResponse.payouts
             : [],
         );
       } catch (loadError) {
@@ -124,7 +206,7 @@ export default function AdminDashboard({
         setError(
           loadError instanceof Error
             ? loadError.message
-            : "የክፍያ መረጃ መጫን አልተቻለም።",
+            : "የAdmin መረጃ መጫን አልተቻለም።",
         );
       } finally {
         setLoading(false);
@@ -165,6 +247,7 @@ export default function AdminDashboard({
         }
 
         setIsAdmin(false);
+
         setError(
           authError instanceof Error
             ? authError.message
@@ -189,8 +272,8 @@ export default function AdminDashboard({
       return;
     }
 
-    void loadPayments();
-  }, [isAdmin, loadPayments]);
+    void loadAdminData();
+  }, [isAdmin, loadAdminData]);
 
   async function handleApprove(
     payment: Payment,
@@ -284,7 +367,7 @@ export default function AdminDashboard({
       setRejectionReason("");
 
       setSuccess(
-        "ክፍያው ተReject ተደርጓል። ቁጥሩም እንደገና ሊመረጥ ይችላል።",
+        "ክፍያው Reject ተደርጓል። ቁጥሩም እንደገና ሊመረጥ ይችላል።",
       );
     } catch (rejectError) {
       setError(
@@ -297,12 +380,196 @@ export default function AdminDashboard({
     }
   }
 
+  async function handleApprovePayout(
+    payout: WinnerPayout,
+  ) {
+    const confirmed = window.confirm(
+      `ይህን Winner Payout ማጽደቅ ይፈልጋሉ?\n\n` +
+        `አሸናፊ: ${getWinnerName(
+          payout,
+        )}\n` +
+        `ዕጣ: ${payout.drawName}\n` +
+        `ቁጥር: ${payout.number}\n` +
+        `ሽልማት: ${formatAmount(
+          payout.prizeAmount,
+        )} ETB\n` +
+        `Telebirr: ${
+          payout.telebirrNumber || "—"
+        }`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setProcessingPayoutId(payout.id);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response =
+        await approveWinnerPayout(
+          payout.id,
+        );
+
+      if (response.payout) {
+        setPayouts((current) =>
+          current.map((item) =>
+            item.id === payout.id
+              ? response.payout as WinnerPayout
+              : item,
+          ),
+        );
+      }
+
+      setSuccess(
+        "የWinner Payout ማጽደቅ ተሳክቷል። አሁን Telebirr ክፍያውን ማከናወን ይችላሉ።",
+      );
+    } catch (approveError) {
+      setError(
+        approveError instanceof Error
+          ? approveError.message
+          : "Winner Payout ማጽደቅ አልተቻለም።",
+      );
+    } finally {
+      setProcessingPayoutId(null);
+    }
+  }
+
+  function startPayoutReject(
+    payoutId: string,
+  ) {
+    setRejectingPayoutId(payoutId);
+    setPayoutRejectionReason("");
+    setError(null);
+    setSuccess(null);
+  }
+
+  function cancelPayoutReject() {
+    setRejectingPayoutId(null);
+    setPayoutRejectionReason("");
+  }
+
+  async function handlePayoutRejectSubmit(
+    event: FormEvent<HTMLFormElement>,
+    payout: WinnerPayout,
+  ) {
+    event.preventDefault();
+
+    const reason =
+      payoutRejectionReason.trim();
+
+    if (!reason) {
+      setError(
+        "የWinner Payout Reject ምክንያት ያስገቡ።",
+      );
+      return;
+    }
+
+    setProcessingPayoutId(payout.id);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      await rejectWinnerPayout(
+        payout.id,
+        reason,
+      );
+
+      setPayouts((current) =>
+        current.filter(
+          (item) => item.id !== payout.id,
+        ),
+      );
+
+      setRejectingPayoutId(null);
+      setPayoutRejectionReason("");
+
+      setSuccess(
+        "Winner Payout Reject ተደርጓል።",
+      );
+    } catch (rejectError) {
+      setError(
+        rejectError instanceof Error
+          ? rejectError.message
+          : "Winner Payout Reject ማድረግ አልተቻለም።",
+      );
+    } finally {
+      setProcessingPayoutId(null);
+    }
+  }
+
+  function startMarkPaid(
+    payoutId: string,
+  ) {
+    setPayingPayoutId(payoutId);
+    setPaymentReference("");
+    setError(null);
+    setSuccess(null);
+  }
+
+  function cancelMarkPaid() {
+    setPayingPayoutId(null);
+    setPaymentReference("");
+  }
+
+  async function handleMarkPaidSubmit(
+    event: FormEvent<HTMLFormElement>,
+    payout: WinnerPayout,
+  ) {
+    event.preventDefault();
+
+    const reference =
+      paymentReference.trim();
+
+    if (!reference) {
+      setError(
+        "የTelebirr transaction reference ያስገቡ።",
+      );
+      return;
+    }
+
+    setProcessingPayoutId(payout.id);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      await markWinnerPayoutPaid(
+        payout.id,
+        reference,
+      );
+
+      setPayouts((current) =>
+        current.filter(
+          (item) => item.id !== payout.id,
+        ),
+      );
+
+      setPayingPayoutId(null);
+      setPaymentReference("");
+
+      setSuccess(
+        "የWinner ክፍያ እንደ Paid ተመዝግቧል።",
+      );
+    } catch (paidError) {
+      setError(
+        paidError instanceof Error
+          ? paidError.message
+          : "Winner Payout እንደ Paid ማስመዝገብ አልተቻለም።",
+      );
+    } finally {
+      setProcessingPayoutId(null);
+    }
+  }
+
   if (isCheckingAdmin) {
     return (
       <main className="admin-page">
         <section className="admin-loading">
           <div className="admin-spinner" />
-          <h1>Admin መረጃ በመጫን ላይ...</h1>
+          <h1>
+            Admin መረጃ በመጫን ላይ...
+          </h1>
           <p>
             የፈቃድዎን ሁኔታ በማረጋገጥ ላይ ነን።
           </p>
@@ -315,9 +582,13 @@ export default function AdminDashboard({
     return (
       <main className="admin-page">
         <section className="admin-card admin-denied">
-          <div className="admin-icon">🔒</div>
+          <div className="admin-icon">
+            🔒
+          </div>
 
-          <h1>የAdmin ፈቃድ ያስፈልጋል</h1>
+          <h1>
+            የAdmin ፈቃድ ያስፈልጋል
+          </h1>
 
           <p>
             ይህ ገጽ ለAdmin ብቻ የተዘጋጀ ነው።
@@ -342,6 +613,20 @@ export default function AdminDashboard({
       </main>
     );
   }
+
+  const pendingPaymentAmount =
+    payments.reduce(
+      (total, payment) =>
+        total + payment.amount,
+      0,
+    );
+
+  const pendingPayoutAmount =
+    payouts.reduce(
+      (total, payout) =>
+        total + payout.prizeAmount,
+      0,
+    );
 
   return (
     <main className="admin-page">
@@ -368,7 +653,7 @@ export default function AdminDashboard({
         }
 
         .admin-shell {
-          width: min(100%, 760px);
+          width: min(100%, 820px);
           margin: 0 auto;
         }
 
@@ -405,7 +690,8 @@ export default function AdminDashboard({
         .admin-button,
         .admin-secondary-button,
         .admin-approve-button,
-        .admin-reject-button {
+        .admin-reject-button,
+        .admin-paid-button {
           min-height: 44px;
           border: 0;
           border-radius: 12px;
@@ -422,7 +708,8 @@ export default function AdminDashboard({
         .admin-button:disabled,
         .admin-secondary-button:disabled,
         .admin-approve-button:disabled,
-        .admin-reject-button:disabled {
+        .admin-reject-button:disabled,
+        .admin-paid-button:disabled {
           opacity: 0.55;
           cursor: not-allowed;
         }
@@ -430,7 +717,8 @@ export default function AdminDashboard({
         .admin-button:active,
         .admin-secondary-button:active,
         .admin-approve-button:active,
-        .admin-reject-button:active {
+        .admin-reject-button:active,
+        .admin-paid-button:active {
           transform: scale(0.98);
         }
 
@@ -447,9 +735,12 @@ export default function AdminDashboard({
 
         .admin-summary {
           display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
+          grid-template-columns: repeat(
+            4,
+            minmax(0, 1fr)
+          );
           gap: 10px;
-          margin-bottom: 16px;
+          margin-bottom: 18px;
         }
 
         .admin-stat {
@@ -461,14 +752,48 @@ export default function AdminDashboard({
 
         .admin-stat-label {
           color: #8f9baa;
-          font-size: 12px;
+          font-size: 11px;
         }
 
         .admin-stat-value {
           margin-top: 5px;
-          font-size: 25px;
+          font-size: 22px;
           line-height: 1;
           font-weight: 850;
+        }
+
+        .admin-section {
+          margin-top: 24px;
+        }
+
+        .admin-section-header {
+          display: flex;
+          align-items: flex-end;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 10px;
+        }
+
+        .admin-section-title {
+          margin: 0;
+          font-size: 18px;
+          font-weight: 850;
+        }
+
+        .admin-section-subtitle {
+          margin: 4px 0 0;
+          color: #7f8a98;
+          font-size: 12px;
+        }
+
+        .admin-section-count {
+          flex: 0 0 auto;
+          padding: 6px 10px;
+          border-radius: 999px;
+          background: #18202a;
+          color: #cbd5e1;
+          font-size: 11px;
+          font-weight: 800;
         }
 
         .admin-message {
@@ -481,9 +806,19 @@ export default function AdminDashboard({
 
         .admin-error {
           padding: 12px 14px;
-          border: 1px solid rgba(248, 113, 113, 0.35);
+          border: 1px solid rgba(
+            248,
+            113,
+            113,
+            0.35
+          );
           border-radius: 12px;
-          background: rgba(127, 29, 29, 0.22);
+          background: rgba(
+            127,
+            29,
+            29,
+            0.22
+          );
           color: #fecaca;
           font-size: 13px;
           line-height: 1.55;
@@ -491,9 +826,19 @@ export default function AdminDashboard({
 
         .admin-success {
           padding: 12px 14px;
-          border: 1px solid rgba(74, 222, 128, 0.3);
+          border: 1px solid rgba(
+            74,
+            222,
+            128,
+            0.3
+          );
           border-radius: 12px;
-          background: rgba(20, 83, 45, 0.22);
+          background: rgba(
+            20,
+            83,
+            45,
+            0.22
+          );
           color: #bbf7d0;
           font-size: 13px;
           line-height: 1.55;
@@ -504,14 +849,16 @@ export default function AdminDashboard({
           gap: 12px;
         }
 
-        .admin-payment {
+        .admin-payment,
+        .admin-payout {
           overflow: hidden;
           border: 1px solid #202a35;
           border-radius: 18px;
           background: #111820;
         }
 
-        .admin-payment-top {
+        .admin-payment-top,
+        .admin-payout-top {
           display: flex;
           align-items: flex-start;
           justify-content: space-between;
@@ -520,29 +867,71 @@ export default function AdminDashboard({
           border-bottom: 1px solid #202a35;
         }
 
-        .admin-payment-amount {
+        .admin-payment-amount,
+        .admin-payout-amount {
           margin: 0;
           font-size: 23px;
           font-weight: 850;
         }
 
-        .admin-payment-method {
+        .admin-payment-method,
+        .admin-payout-meta {
           margin-top: 4px;
           color: #8f9baa;
           font-size: 12px;
+        }
+
+        .admin-payout-name {
+          margin: 0;
+          color: #f5f7fa;
+          font-size: 16px;
+          font-weight: 800;
+        }
+
+        .admin-payout-draw {
+          margin-top: 4px;
+          color: #8ee8d8;
+          font-size: 12px;
+          font-weight: 700;
         }
 
         .admin-status {
           flex: 0 0 auto;
           padding: 6px 9px;
           border-radius: 999px;
-          background: rgba(251, 191, 36, 0.12);
+          background: rgba(
+            251,
+            191,
+            36,
+            0.12
+          );
           color: #fcd34d;
           font-size: 11px;
           font-weight: 800;
         }
 
-        .admin-payment-body {
+        .admin-status-paid {
+          background: rgba(
+            74,
+            222,
+            128,
+            0.12
+          );
+          color: #86efac;
+        }
+
+        .admin-status-ready {
+          background: rgba(
+            45,
+            212,
+            191,
+            0.12
+          );
+          color: #8ee8d8;
+        }
+
+        .admin-payment-body,
+        .admin-payout-body {
           padding: 15px;
         }
 
@@ -613,6 +1002,11 @@ export default function AdminDashboard({
           background: #fca5a5;
         }
 
+        .admin-paid-button {
+          color: #042f2e;
+          background: #8ee8d8;
+        }
+
         .admin-reject-form {
           margin-top: 12px;
           padding: 12px;
@@ -659,7 +1053,12 @@ export default function AdminDashboard({
           border: 1px dashed #303b47;
           border-radius: 18px;
           text-align: center;
-          background: rgba(17, 24, 32, 0.7);
+          background: rgba(
+            17,
+            24,
+            32,
+            0.7
+          );
         }
 
         .admin-empty-icon {
@@ -723,13 +1122,33 @@ export default function AdminDashboard({
           text-align: left;
         }
 
-        .admin-denied .admin-secondary-button {
+        .admin-denied
+          .admin-secondary-button {
           margin-top: 14px;
+        }
+
+        .admin-note {
+          margin-top: 12px;
+          padding: 11px 12px;
+          border-radius: 11px;
+          background: #0d131a;
+          color: #9ca8b7;
+          font-size: 12px;
+          line-height: 1.5;
         }
 
         @keyframes admin-spin {
           to {
             transform: rotate(360deg);
+          }
+        }
+
+        @media (max-width: 700px) {
+          .admin-summary {
+            grid-template-columns: repeat(
+              2,
+              minmax(0, 1fr)
+            );
           }
         }
 
@@ -751,11 +1170,19 @@ export default function AdminDashboard({
             flex: 1;
           }
 
+          .admin-summary {
+            grid-template-columns: repeat(
+              2,
+              minmax(0, 1fr)
+            );
+          }
+
           .admin-detail-grid {
             grid-template-columns: 1fr;
           }
 
-          .admin-payment-top {
+          .admin-payment-top,
+          .admin-payout-top {
             flex-direction: column;
           }
 
@@ -771,8 +1198,9 @@ export default function AdminDashboard({
             <h1 className="admin-brand">
               Addis ዕጣ Admin
             </h1>
+
             <p className="admin-subtitle">
-              Wallet & Payment Verification
+              የክፍያ እና Winner Payout አስተዳደር
             </p>
           </div>
 
@@ -791,7 +1219,7 @@ export default function AdminDashboard({
               type="button"
               className="admin-button"
               onClick={() =>
-                void loadPayments(true)
+                void loadAdminData(true)
               }
               disabled={refreshing}
             >
@@ -807,6 +1235,7 @@ export default function AdminDashboard({
             <div className="admin-stat-label">
               Pending Payments
             </div>
+
             <div className="admin-stat-value">
               {payments.length}
             </div>
@@ -816,13 +1245,33 @@ export default function AdminDashboard({
             <div className="admin-stat-label">
               Pending Amount
             </div>
+
             <div className="admin-stat-value">
               {formatAmount(
-                payments.reduce(
-                  (total, payment) =>
-                    total + payment.amount,
-                  0,
-                ),
+                pendingPaymentAmount,
+              )}{" "}
+              ETB
+            </div>
+          </div>
+
+          <div className="admin-stat">
+            <div className="admin-stat-label">
+              Winner Payouts
+            </div>
+
+            <div className="admin-stat-value">
+              {payouts.length}
+            </div>
+          </div>
+
+          <div className="admin-stat">
+            <div className="admin-stat-label">
+              Payout Amount
+            </div>
+
+            <div className="admin-stat-value">
+              {formatAmount(
+                pendingPayoutAmount,
               )}{" "}
               ETB
             </div>
@@ -850,240 +1299,707 @@ export default function AdminDashboard({
         {loading ? (
           <section className="admin-empty">
             <div className="admin-spinner" />
-            <h2>ክፍያዎችን በመጫን ላይ...</h2>
+
+            <h2>
+              Admin መረጃ በመጫን ላይ...
+            </h2>
+
             <p>
-              Pending Telebirr payments
+              Pending Payments እና Winner Payouts
               በማምጣት ላይ ነን።
             </p>
           </section>
-        ) : payments.length === 0 ? (
-          <section className="admin-empty">
-            <div className="admin-empty-icon">
-              ✓
-            </div>
-            <h2>
-              Pending payment የለም
-            </h2>
-            <p>
-              አሁን ለAdmin ማረጋገጥ
-              የሚጠብቅ የTelebirr ክፍያ የለም።
-            </p>
-          </section>
         ) : (
-          <section className="admin-list">
-            {payments.map((payment) => {
-              const isProcessing =
-                processingId === payment.id;
+          <>
+            <section className="admin-section">
+              <div className="admin-section-header">
+                <div>
+                  <h2 className="admin-section-title">
+                    💳 Entry Payment Verification
+                  </h2>
 
-              const isRejecting =
-                rejectingId === payment.id;
+                  <p className="admin-section-subtitle">
+                    ተጠቃሚዎች የገቢያቸውን
+                    Telebirr ክፍያ ያረጋግጡ።
+                  </p>
+                </div>
 
-              return (
-                <article
-                  className="admin-payment"
-                  key={payment.id}
-                >
-                  <div className="admin-payment-top">
-                    <div>
-                      <p className="admin-payment-amount">
-                        {formatAmount(
-                          payment.amount,
-                        )}{" "}
-                        ETB
-                      </p>
+                <span className="admin-section-count">
+                  {payments.length}
+                </span>
+              </div>
 
-                      <div className="admin-payment-method">
-                        Telebirr •{" "}
-                        {formatDate(
-                          payment.createdAt,
-                        )}
-                      </div>
-                    </div>
-
-                    <span className="admin-status">
-                      {getPaymentStatusLabel(
-                        payment.status,
-                      )}
-                    </span>
+              {payments.length === 0 ? (
+                <section className="admin-empty">
+                  <div className="admin-empty-icon">
+                    ✓
                   </div>
 
-                  <div className="admin-payment-body">
-                    <div className="admin-detail-grid">
-                      <div className="admin-detail">
-                        <div className="admin-detail-label">
-                          Transaction Reference
-                        </div>
-                        <div className="admin-detail-value admin-reference">
-                          {
-                            payment.transactionReference
-                          }
-                        </div>
-                      </div>
+                  <h2>
+                    Pending payment የለም
+                  </h2>
 
-                      <div className="admin-detail">
-                        <div className="admin-detail-label">
-                          Sender Name
-                        </div>
-                        <div className="admin-detail-value">
-                          {payment.senderName ||
-                            "—"}
-                        </div>
-                      </div>
+                  <p>
+                    አሁን ለAdmin ማረጋገጥ
+                    የሚጠብቅ የTelebirr
+                    ክፍያ የለም።
+                  </p>
+                </section>
+              ) : (
+                <section className="admin-list">
+                  {payments.map((payment) => {
+                    const isProcessing =
+                      processingId ===
+                      payment.id;
 
-                      <div className="admin-detail">
-                        <div className="admin-detail-label">
-                          Payment ID
-                        </div>
-                        <div className="admin-detail-value admin-reference">
-                          {shortId(payment.id)}
-                        </div>
-                      </div>
+                    const isRejecting =
+                      rejectingId ===
+                      payment.id;
 
-                      <div className="admin-detail">
-                        <div className="admin-detail-label">
-                          Entry ID
-                        </div>
-                        <div className="admin-detail-value admin-reference">
-                          {shortId(
-                            payment.entryId,
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="admin-detail">
-                        <div className="admin-detail-label">
-                          User ID
-                        </div>
-                        <div className="admin-detail-value admin-reference">
-                          {shortId(
-                            payment.userId,
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="admin-detail">
-                        <div className="admin-detail-label">
-                          Created
-                        </div>
-                        <div className="admin-detail-value">
-                          {formatDate(
-                            payment.createdAt,
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {payment.receiptImageUrl && (
-                      <a
-                        className="admin-receipt"
-                        href={
-                          payment.receiptImageUrl
-                        }
-                        target="_blank"
-                        rel="noreferrer"
+                    return (
+                      <article
+                        className="admin-payment"
+                        key={payment.id}
                       >
-                        🧾 Receipt ክፈት
-                      </a>
-                    )}
+                        <div className="admin-payment-top">
+                          <div>
+                            <p className="admin-payment-amount">
+                              {formatAmount(
+                                payment.amount,
+                              )}{" "}
+                              ETB
+                            </p>
 
-                    {!isRejecting && (
-                      <div className="admin-actions">
-                        <button
-                          type="button"
-                          className="admin-approve-button"
-                          onClick={() =>
-                            void handleApprove(
-                              payment,
-                            )
-                          }
-                          disabled={isProcessing}
-                        >
-                          {isProcessing
-                            ? "በመስራት ላይ..."
-                            : "✓ Approve"}
-                        </button>
+                            <div className="admin-payment-method">
+                              Telebirr •{" "}
+                              {formatDate(
+                                payment.createdAt,
+                              )}
+                            </div>
+                          </div>
 
-                        <button
-                          type="button"
-                          className="admin-reject-button"
-                          onClick={() =>
-                            startReject(
-                              payment.id,
-                            )
-                          }
-                          disabled={isProcessing}
-                        >
-                          ✕ Reject
-                        </button>
-                      </div>
-                    )}
-
-                    {isRejecting && (
-                      <form
-                        className="admin-reject-form"
-                        onSubmit={(event) =>
-                          void handleRejectSubmit(
-                            event,
-                            payment,
-                          )
-                        }
-                      >
-                        <label
-                          className="admin-reject-label"
-                          htmlFor={`reject-${payment.id}`}
-                        >
-                          የReject ምክንያት
-                        </label>
-
-                        <textarea
-                          id={`reject-${payment.id}`}
-                          className="admin-reject-input"
-                          value={rejectionReason}
-                          onChange={(event) =>
-                            setRejectionReason(
-                              event.target.value,
-                            )
-                          }
-                          placeholder="ለምሳሌ፦ Transaction reference አልተረጋገጠም።"
-                          maxLength={500}
-                          autoFocus
-                          disabled={isProcessing}
-                        />
-
-                        <div className="admin-reject-actions">
-                          <button
-                            type="button"
-                            className="admin-secondary-button"
-                            onClick={
-                              cancelReject
-                            }
-                            disabled={
-                              isProcessing
-                            }
-                          >
-                            ተመለስ
-                          </button>
-
-                          <button
-                            type="submit"
-                            className="admin-reject-button"
-                            disabled={
-                              isProcessing ||
-                              !rejectionReason.trim()
-                            }
-                          >
-                            {isProcessing
-                              ? "በመላክ ላይ..."
-                              : "Reject አረጋግጥ"}
-                          </button>
+                          <span className="admin-status">
+                            {getPaymentStatusLabel(
+                              payment.status,
+                            )}
+                          </span>
                         </div>
-                      </form>
-                    )}
+
+                        <div className="admin-payment-body">
+                          <div className="admin-detail-grid">
+                            <div className="admin-detail">
+                              <div className="admin-detail-label">
+                                Transaction Reference
+                              </div>
+
+                              <div className="admin-detail-value admin-reference">
+                                {
+                                  payment.transactionReference
+                                }
+                              </div>
+                            </div>
+
+                            <div className="admin-detail">
+                              <div className="admin-detail-label">
+                                Sender Name
+                              </div>
+
+                              <div className="admin-detail-value">
+                                {payment.senderName ||
+                                  "—"}
+                              </div>
+                            </div>
+
+                            <div className="admin-detail">
+                              <div className="admin-detail-label">
+                                Payment ID
+                              </div>
+
+                              <div className="admin-detail-value admin-reference">
+                                {shortId(
+                                  payment.id,
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="admin-detail">
+                              <div className="admin-detail-label">
+                                Entry ID
+                              </div>
+
+                              <div className="admin-detail-value admin-reference">
+                                {shortId(
+                                  payment.entryId,
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="admin-detail">
+                              <div className="admin-detail-label">
+                                User ID
+                              </div>
+
+                              <div className="admin-detail-value admin-reference">
+                                {shortId(
+                                  payment.userId,
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="admin-detail">
+                              <div className="admin-detail-label">
+                                Created
+                              </div>
+
+                              <div className="admin-detail-value">
+                                {formatDate(
+                                  payment.createdAt,
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {payment.receiptImageUrl && (
+                            <a
+                              className="admin-receipt"
+                              href={
+                                payment.receiptImageUrl
+                              }
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              🧾 Receipt ክፈት
+                            </a>
+                          )}
+
+                          {!isRejecting && (
+                            <div className="admin-actions">
+                              <button
+                                type="button"
+                                className="admin-approve-button"
+                                onClick={() =>
+                                  void handleApprove(
+                                    payment,
+                                  )
+                                }
+                                disabled={
+                                  isProcessing
+                                }
+                              >
+                                {isProcessing
+                                  ? "በመስራት ላይ..."
+                                  : "✓ Approve"}
+                              </button>
+
+                              <button
+                                type="button"
+                                className="admin-reject-button"
+                                onClick={() =>
+                                  startReject(
+                                    payment.id,
+                                  )
+                                }
+                                disabled={
+                                  isProcessing
+                                }
+                              >
+                                ✕ Reject
+                              </button>
+                            </div>
+                          )}
+
+                          {isRejecting && (
+                            <form
+                              className="admin-reject-form"
+                              onSubmit={(event) =>
+                                void handleRejectSubmit(
+                                  event,
+                                  payment,
+                                )
+                              }
+                            >
+                              <label
+                                className="admin-reject-label"
+                                htmlFor={`reject-${payment.id}`}
+                              >
+                                የReject ምክንያት
+                              </label>
+
+                              <textarea
+                                id={`reject-${payment.id}`}
+                                className="admin-reject-input"
+                                value={
+                                  rejectionReason
+                                }
+                                onChange={(event) =>
+                                  setRejectionReason(
+                                    event.target
+                                      .value,
+                                  )
+                                }
+                                placeholder="ለምሳሌ፦ Transaction reference አልተረጋገጠም።"
+                                maxLength={500}
+                                autoFocus
+                                disabled={
+                                  isProcessing
+                                }
+                              />
+
+                              <div className="admin-reject-actions">
+                                <button
+                                  type="button"
+                                  className="admin-secondary-button"
+                                  onClick={
+                                    cancelReject
+                                  }
+                                  disabled={
+                                    isProcessing
+                                  }
+                                >
+                                  ተመለስ
+                                </button>
+
+                                <button
+                                  type="submit"
+                                  className="admin-reject-button"
+                                  disabled={
+                                    isProcessing ||
+                                    !rejectionReason.trim()
+                                  }
+                                >
+                                  {isProcessing
+                                    ? "በመላክ ላይ..."
+                                    : "Reject አረጋግጥ"}
+                                </button>
+                              </div>
+                            </form>
+                          )}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </section>
+              )}
+            </section>
+
+            <section className="admin-section">
+              <div className="admin-section-header">
+                <div>
+                  <h2 className="admin-section-title">
+                    🏆 Winner Payout Verification
+                  </h2>
+
+                  <p className="admin-section-subtitle">
+                    አሸናፊዎች የላኩትን Screenshot
+                    እና Telebirr መረጃ አረጋግጠው
+                    ክፍያ ያከናውኑ።
+                  </p>
+                </div>
+
+                <span className="admin-section-count">
+                  {payouts.length}
+                </span>
+              </div>
+
+              {payouts.length === 0 ? (
+                <section className="admin-empty">
+                  <div className="admin-empty-icon">
+                    🏆
                   </div>
-                </article>
-              );
-            })}
-          </section>
+
+                  <h2>
+                    Pending Winner Payout የለም
+                  </h2>
+
+                  <p>
+                    አሁን ለAdmin ማረጋገጥ
+                    የሚጠብቅ የአሸናፊ ክፍያ የለም።
+                  </p>
+                </section>
+              ) : (
+                <section className="admin-list">
+                  {payouts.map((payout) => {
+                    const isProcessing =
+                      processingPayoutId ===
+                      payout.id;
+
+                    const isRejecting =
+                      rejectingPayoutId ===
+                      payout.id;
+
+                    const isPaying =
+                      payingPayoutId ===
+                      payout.id;
+
+                    const canApprove =
+                      payout.status ===
+                        "submitted" ||
+                      payout.status ===
+                        "awaiting_telebirr";
+
+                    const canPay =
+                      payout.status ===
+                      "approved";
+
+                    return (
+                      <article
+                        className="admin-payout"
+                        key={payout.id}
+                      >
+                        <div className="admin-payout-top">
+                          <div>
+                            <p className="admin-payout-name">
+                              {getWinnerName(
+                                payout,
+                              )}
+                            </p>
+
+                            <div className="admin-payout-draw">
+                              🏆{" "}
+                              {payout.drawName}
+                            </div>
+
+                            <div className="admin-payout-meta">
+                              ቁጥር #{payout.number}
+                              {" • "}
+                              {payout.rank}ኛ አሸናፊ
+                            </div>
+                          </div>
+
+                          <span
+                            className={`admin-status ${
+                              payout.status ===
+                              "paid"
+                                ? "admin-status-paid"
+                                : payout.status ===
+                                    "submitted" ||
+                                  payout.status ===
+                                    "approved"
+                                ? "admin-status-ready"
+                                : ""
+                            }`}
+                          >
+                            {getPayoutStatusLabel(
+                              payout.status,
+                            )}
+                          </span>
+                        </div>
+
+                        <div className="admin-payout-body">
+                          <div className="admin-detail-grid">
+                            <div className="admin-detail">
+                              <div className="admin-detail-label">
+                                Prize Amount
+                              </div>
+
+                              <div className="admin-detail-value">
+                                {formatAmount(
+                                  payout.prizeAmount,
+                                )}{" "}
+                                ETB
+                              </div>
+                            </div>
+
+                            <div className="admin-detail">
+                              <div className="admin-detail-label">
+                                Telebirr Number
+                              </div>
+
+                              <div className="admin-detail-value admin-reference">
+                                {payout.telebirrNumber ||
+                                  "—"}
+                              </div>
+                            </div>
+
+                            <div className="admin-detail">
+                              <div className="admin-detail-label">
+                                Account Name
+                              </div>
+
+                              <div className="admin-detail-value">
+                                {payout.telebirrAccountName ||
+                                  "—"}
+                              </div>
+                            </div>
+
+                            <div className="admin-detail">
+                              <div className="admin-detail-label">
+                                Screenshot
+                              </div>
+
+                              <div className="admin-detail-value">
+                                {payout.screenshotFileId
+                                  ? "✓ ተቀብሏል"
+                                  : "አልተላከም"}
+                              </div>
+                            </div>
+
+                            <div className="admin-detail">
+                              <div className="admin-detail-label">
+                                Telegram ID
+                              </div>
+
+                              <div className="admin-detail-value admin-reference">
+                                {payout.telegramId}
+                              </div>
+                            </div>
+
+                            <div className="admin-detail">
+                              <div className="admin-detail-label">
+                                Payout ID
+                              </div>
+
+                              <div className="admin-detail-value admin-reference">
+                                {shortId(
+                                  payout.id,
+                                )}
+                              </div>
+                            </div>
+
+                            {payout.submittedAt && (
+                              <div className="admin-detail">
+                                <div className="admin-detail-label">
+                                  Submitted
+                                </div>
+
+                                <div className="admin-detail-value">
+                                  {formatDate(
+                                    payout.submittedAt,
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {payout.paymentReference && (
+                              <div className="admin-detail">
+                                <div className="admin-detail-label">
+                                  Payment Reference
+                                </div>
+
+                                <div className="admin-detail-value admin-reference">
+                                  {
+                                    payout.paymentReference
+                                  }
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="admin-note">
+                            ⚠️ Screenshot ብቻን እንደ ክፍያ
+                            ማረጋገጫ አትቆጥሩ።
+                            አሸናፊውን፣ ዕጣውን፣ ቁጥሩን
+                            እና Telebirr መረጃውን
+                            ከስርዓቱ ጋር ያረጋግጡ።
+                          </div>
+
+                          {!isRejecting &&
+                            !isPaying &&
+                            (canApprove ||
+                              canPay) && (
+                              <div className="admin-actions">
+                                {canApprove && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="admin-approve-button"
+                                      onClick={() =>
+                                        void handleApprovePayout(
+                                          payout,
+                                        )
+                                      }
+                                      disabled={
+                                        isProcessing
+                                      }
+                                    >
+                                      {isProcessing
+                                        ? "በመስራት ላይ..."
+                                        : "✓ Approve"}
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      className="admin-reject-button"
+                                      onClick={() =>
+                                        startPayoutReject(
+                                          payout.id,
+                                        )
+                                      }
+                                      disabled={
+                                        isProcessing
+                                      }
+                                    >
+                                      ✕ Reject
+                                    </button>
+                                  </>
+                                )}
+
+                                {canPay && (
+                                  <button
+                                    type="button"
+                                    className="admin-paid-button"
+                                    onClick={() =>
+                                      startMarkPaid(
+                                        payout.id,
+                                      )
+                                    }
+                                    disabled={
+                                      isProcessing
+                                    }
+                                  >
+                                    💸 Paid አድርግ
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
+                          {isRejecting && (
+                            <form
+                              className="admin-reject-form"
+                              onSubmit={(event) =>
+                                void handlePayoutRejectSubmit(
+                                  event,
+                                  payout,
+                                )
+                              }
+                            >
+                              <label
+                                className="admin-reject-label"
+                                htmlFor={`payout-reject-${payout.id}`}
+                              >
+                                የPayout Reject ምክንያት
+                              </label>
+
+                              <textarea
+                                id={`payout-reject-${payout.id}`}
+                                className="admin-reject-input"
+                                value={
+                                  payoutRejectionReason
+                                }
+                                onChange={(event) =>
+                                  setPayoutRejectionReason(
+                                    event.target
+                                      .value,
+                                  )
+                                }
+                                placeholder="ለምሳሌ፦ Telebirr መረጃው አልተረጋገጠም።"
+                                maxLength={500}
+                                autoFocus
+                                disabled={
+                                  isProcessing
+                                }
+                              />
+
+                              <div className="admin-reject-actions">
+                                <button
+                                  type="button"
+                                  className="admin-secondary-button"
+                                  onClick={
+                                    cancelPayoutReject
+                                  }
+                                  disabled={
+                                    isProcessing
+                                  }
+                                >
+                                  ተመለስ
+                                </button>
+
+                                <button
+                                  type="submit"
+                                  className="admin-reject-button"
+                                  disabled={
+                                    isProcessing ||
+                                    !payoutRejectionReason.trim()
+                                  }
+                                >
+                                  {isProcessing
+                                    ? "በመላክ ላይ..."
+                                    : "Reject አረጋግጥ"}
+                                </button>
+                              </div>
+                            </form>
+                          )}
+
+                          {isPaying && (
+                            <form
+                              className="admin-reject-form"
+                              onSubmit={(event) =>
+                                void handleMarkPaidSubmit(
+                                  event,
+                                  payout,
+                                )
+                              }
+                            >
+                              <label
+                                className="admin-reject-label"
+                                htmlFor={`payment-reference-${payout.id}`}
+                              >
+                                Telebirr Transaction Reference
+                              </label>
+
+                              <input
+                                id={`payment-reference-${payout.id}`}
+                                className="admin-reject-input"
+                                style={{
+                                  minHeight:
+                                    44,
+                                  resize:
+                                    "none",
+                                }}
+                                value={
+                                  paymentReference
+                                }
+                                onChange={(event) =>
+                                  setPaymentReference(
+                                    event.target
+                                      .value,
+                                  )
+                                }
+                                placeholder="የTelebirr transaction reference"
+                                maxLength={200}
+                                autoFocus
+                                disabled={
+                                  isProcessing
+                                }
+                              />
+
+                              <div className="admin-reject-actions">
+                                <button
+                                  type="button"
+                                  className="admin-secondary-button"
+                                  onClick={
+                                    cancelMarkPaid
+                                  }
+                                  disabled={
+                                    isProcessing
+                                  }
+                                >
+                                  ተመለስ
+                                </button>
+
+                                <button
+                                  type="submit"
+                                  className="admin-paid-button"
+                                  disabled={
+                                    isProcessing ||
+                                    !paymentReference.trim()
+                                  }
+                                >
+                                  {isProcessing
+                                    ? "በመመዝገብ ላይ..."
+                                    : "💸 Paid አረጋግጥ"}
+                                </button>
+                              </div>
+                            </form>
+                          )}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </section>
+              )}
+            </section>
+          </>
         )}
       </div>
     </main>
