@@ -21,6 +21,16 @@ const router = Router();
 const TELEGRAM_BOT_TOKEN =
   process.env.TELEGRAM_BOT_TOKEN?.trim() ?? "";
 
+function getRouteParam(
+  value: string | string[] | undefined,
+): string {
+  if (Array.isArray(value)) {
+    return value[0]?.trim() ?? "";
+  }
+
+  return value?.trim() ?? "";
+}
+
 async function sendTelegramMessage(
   chatId: number | string,
   text: string,
@@ -173,7 +183,9 @@ router.get(
       }
 
       const winnerId =
-        req.params.winnerId?.trim();
+        getRouteParam(
+          req.params.winnerId,
+        );
 
       if (!winnerId) {
         res.status(400).json({
@@ -340,7 +352,9 @@ router.post(
       }
 
       const payoutId =
-        req.params.payoutId?.trim();
+        getRouteParam(
+          req.params.payoutId,
+        );
 
       if (!payoutId) {
         res.status(400).json({
@@ -424,7 +438,9 @@ router.post(
       }
 
       const payoutId =
-        req.params.payoutId?.trim();
+        getRouteParam(
+          req.params.payoutId,
+        );
 
       const reason =
         typeof req.body?.reason ===
@@ -532,7 +548,9 @@ router.post(
       }
 
       const payoutId =
-        req.params.payoutId?.trim();
+        getRouteParam(
+          req.params.payoutId,
+        );
 
       const paymentReference =
         typeof req.body?.paymentReference ===
@@ -648,7 +666,9 @@ router.get(
       }
 
       const payoutId =
-        req.params.payoutId?.trim();
+        getRouteParam(
+          req.params.payoutId,
+        );
 
       if (!payoutId) {
         res.status(400).json({
@@ -715,7 +735,9 @@ router.post(
       }
 
       const winnerId =
-        req.params.winnerId?.trim();
+        getRouteParam(
+          req.params.winnerId,
+        );
 
       if (!winnerId) {
         res.status(400).json({
@@ -798,7 +820,9 @@ router.post(
       }
 
       const payoutId =
-        req.params.payoutId?.trim();
+        getRouteParam(
+          req.params.payoutId,
+        );
 
       const fileId =
         typeof req.body?.fileId ===
@@ -907,7 +931,9 @@ router.post(
       }
 
       const payoutId =
-        req.params.payoutId?.trim();
+        getRouteParam(
+          req.params.payoutId,
+        );
 
       const telebirrNumber =
         typeof req.body?.telebirrNumber ===
