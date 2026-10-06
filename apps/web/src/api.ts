@@ -201,6 +201,20 @@ export type LiveDrawResponse = {
   live: LiveDrawState;
 };
 
+export type WinnerClaimLinkResponse = {
+  claimUrl: string;
+  payout: {
+    id: string;
+    winnerId: string;
+    drawId: string;
+    drawName: string;
+    number: number;
+    rank: number;
+    prizeAmount: number;
+    status: string;
+  };
+};
+
 export type ApiRequestOptions = {
   method?:
     | "GET"
@@ -519,6 +533,22 @@ export async function getLiveDrawState(
 
   return request<LiveDrawResponse>(
     `/results/live/${encodeURIComponent(drawId)}`,
+    {
+      signal,
+    },
+  );
+}
+
+export async function getWinnerClaimLink(
+  winnerId: string,
+  signal?: AbortSignal,
+): Promise<WinnerClaimLinkResponse> {
+  if (!winnerId.trim()) {
+    throw new Error("Winner ID is required.");
+  }
+
+  return request<WinnerClaimLinkResponse>(
+    `/winner-payouts/claim-link/${encodeURIComponent(winnerId)}`,
     {
       signal,
     },
