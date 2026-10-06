@@ -12,6 +12,57 @@ const API_BASE_URL =
     "",
   ) || "";
 
+export type WinnerPayoutStatus =
+  | "awaiting_claim"
+  | "awaiting_screenshot"
+  | "awaiting_telebirr"
+  | "submitted"
+  | "approved"
+  | "paid"
+  | "rejected";
+
+export type WinnerPayout = {
+  id: string;
+  winnerId: string;
+  drawId: string;
+  drawName: string;
+  entryId: string;
+  number: number;
+  userId: string;
+  telegramId: number;
+  firstName: string | null;
+  lastName: string | null;
+  username: string | null;
+  rank: number;
+  prizeAmount: number;
+  status: WinnerPayoutStatus;
+  telebirrNumber: string | null;
+  telebirrAccountName: string | null;
+  screenshotFileId: string | null;
+  screenshotFileUniqueId: string | null;
+  claimStartedAt: string | null;
+  screenshotReceivedAt: string | null;
+  submittedAt: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  paidBy: string | null;
+  paidAt: string | null;
+  paymentReference: string | null;
+  rejectionReason: string | null;
+  telegramClaimMessageId: number | null;
+  telegramAdminMessageId: number | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WinnerPayoutsResponse = {
+  payouts: WinnerPayout[];
+};
+
+export type WinnerPayoutResponse = {
+  payout: WinnerPayout | null;
+};
+
 function getTelegramInitData(): string {
   const webApp = window.Telegram?.WebApp;
 
@@ -90,9 +141,11 @@ async function adminRequest<T>(
 }
 
 /**
- * Load all payments currently waiting for
- * manual admin verification.
+ * ============================
+ * ENTRY PAYMENTS
+ * ============================
  */
+
 export async function getPendingPayments(
   signal?: AbortSignal,
 ): Promise<PaymentsResponse> {
@@ -104,9 +157,6 @@ export async function getPendingPayments(
   );
 }
 
-/**
- * Approve a pending Telebirr payment.
- */
 export async function approvePayment(
   paymentId: string,
   signal?: AbortSignal,
@@ -131,9 +181,6 @@ export async function approvePayment(
   );
 }
 
-/**
- * Reject a pending Telebirr payment.
- */
 export async function rejectPayment(
   paymentId: string,
   rejectionReason?: string,
@@ -177,9 +224,6 @@ export async function rejectPayment(
   );
 }
 
-/**
- * Load the current payment settings.
- */
 export async function getAdminPaymentSettings(
   signal?: AbortSignal,
 ): Promise<PaymentSettingsResponse> {
@@ -191,9 +235,6 @@ export async function getAdminPaymentSettings(
   );
 }
 
-/**
- * Update the Telebirr receiving number.
- */
 export async function updateTelebirrNumber(
   telebirrNumber: string,
   signal?: AbortSignal,
@@ -220,6 +261,134 @@ export async function updateTelebirrNumber(
       body: {
         telebirrNumber:
           normalizedNumber,
+      },
+      signal,
+    },
+  );
+}
+
+/**
+ * ============================
+ * WINNER PAYOUTS
+ * ============================
+ */
+
+export async function getPendingWinnerPayouts(
+  signal?: AbortSignal,
+): Promise<WinnerPayoutsResponse> {
+  return adminRequest<WinnerPayoutsResponse>(
+    "/winner-payouts/admin/pending",
+    {
+      signal,
+    },
+  );
+}
+
+export async function approveWinnerPayout(
+  payoutId: string,
+  signal?: AbortSignal,
+): Promise<WinnerPayoutResponse> {
+  const normalizedPayoutId =
+    payoutId.trim();
+
+  if (!normalizedPayoutId) {
+    throw new Error(
+      "Payout ID is required.",
+    );
+  }
+
+  return adminRequest<WinnerPayoutResponse>(
+    `/winner-payouts/admin/${encodeURIComponent(
+      normalizedPayoutId,
+    )}/approve`,
+    {
+      method: "POST",
+      signal,
+    },
+  );
+}
+
+export async function rejectWinnerPayout(
+  payoutId: string,
+  reason: string,
+  signal?: AbortSignal,
+): Promise<WinnerPayoutResponse> {
+  const normalizedPayoutId =
+    payoutId.trim();
+
+  const normalizedReason =
+    reason.trim();
+
+  if (!normalizedPayoutId) {
+    throw new Error(
+      "Payout ID is required.",
+    );
+  }
+
+  if (!normalizedReason) {
+    throw new Error(
+      "Rejection reason is required.",
+    );
+  }
+
+  if (normalizedReason.length > 500) {
+    throw new Error(
+      "Rejection reason is too long.",
+    );
+  }
+
+  return adminRequest<WinnerPayoutResponse>(
+    `/winner-payouts/admin/${encodeURIComponent(
+      normalizedPayoutId,
+    )}/reject`,
+    {
+      method: "POST",
+      body: {
+        reason: normalizedReason,
+      },
+      signal,
+    },
+  );
+}
+
+export async function markWinnerPayoutPaid(
+  payoutId: string,
+  paymentReference: string,
+  signal?: AbortSignal,
+): Promise<WinnerPayoutResponse> {
+  const normalizedPayoutId =
+    payoutId.trim();
+
+  const normalizedReference =
+    paymentReference.trim();
+
+  if (!normalizedPayoutId) {
+    throw new Error(
+      "Payout ID is required.",
+    );
+  }
+
+  if (!normalizedReference) {
+    throw new Error(
+      "Payment reference is required.",
+    );
+  }
+
+  if (normalizedReference.length > 200) {
+    throw new Error(
+      "Payment reference is too long.",
+    );
+  }
+
+  return adminRequest<WinnerPayoutResponse>(
+    `/winner-payouts/admin/${encodeURIComponent(
+      normalizedPayoutId,
+    )}/paid`,
+    {
+      method: "POST",
+      body: {
+        paymentReference:
+          normalizedReference,
       },
       signal,
     },
