@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 
-import type {
-  LiveDrawState,
-  PublicDrawResult,
-  PublicWinner,
+import {
+  getWinnerClaimLink,
+  type LiveDrawState,
+  type PublicDrawResult,
+  type PublicWinner,
 } from "./api";
 
 type LiveDrawProps =
@@ -228,6 +229,113 @@ function WinnerRow({
   );
 }
 
+function WinnerClaimButton({
+  winner,
+}: {
+  winner: PublicWinner;
+}) {
+  const [loading, setLoading] =
+    useState(false);
+  const [error, setError] =
+    useState<string | null>(null);
+
+  async function handleClaim() {
+    if (loading) {
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response =
+        await getWinnerClaimLink(
+          winner.id,
+        );
+
+      const opened = window.open(
+        response.claimUrl,
+        "_blank",
+        "noopener,noreferrer",
+      );
+
+      if (!opened) {
+        window.location.href =
+          response.claimUrl;
+      }
+    } catch (claimError) {
+      setError(
+        claimError instanceof Error
+          ? claimError.message
+          : "የሽልማት ጥያቄውን ማስጀመር አልተቻለም።",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div
+      style={{
+        width: "100%",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: "8px",
+        marginTop: "4px",
+      }}
+    >
+      <button
+        type="button"
+        onClick={handleClaim}
+        disabled={loading}
+        style={{
+          width: "min(100%, 340px)",
+          border: "0",
+          borderRadius: "14px",
+          padding: "13px 18px",
+          fontSize: "15px",
+          fontWeight: 900,
+          cursor: loading
+            ? "wait"
+            : "pointer",
+          opacity: loading ? 0.7 : 1,
+        }}
+      >
+        {loading
+          ? "⏳ በማስጀመር ላይ..."
+          : "🏆 የሽልማት ጥያቄ አስጀምር"}
+      </button>
+
+      {error ? (
+        <span
+          role="alert"
+          style={{
+            width: "min(100%, 340px)",
+            fontSize: "12px",
+            lineHeight: 1.5,
+            textAlign: "center",
+          }}
+        >
+          ⚠️ {error}
+        </span>
+      ) : null}
+
+      <small
+        style={{
+          maxWidth: "340px",
+          textAlign: "center",
+          lineHeight: 1.5,
+          opacity: 0.72,
+        }}
+      >
+        የሽልማት ጥያቄው በAddis ዕጣ Bot
+        በኩል በግል ይቀጥላል።
+      </small>
+    </div>
+  );
+}
+
 function CompletedDraw({
   result,
 }: {
@@ -327,6 +435,18 @@ function CompletedDraw({
           </strong>
         </div>
       )}
+
+      {visibleCount >=
+      result.winners.length &&
+      result.winners.length > 0 ? (
+        <WinnerClaimButton
+          winner={
+            result.winners[
+              result.winners.length - 1
+            ]
+          }
+        />
+      ) : null}
 
       <div className="live-winners-list">
         {result.winners.map(
