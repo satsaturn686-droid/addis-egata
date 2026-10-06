@@ -2,6 +2,7 @@ import { randomInt } from "node:crypto";
 
 import { pool } from "../db.js";
 import type { Winner } from "../types.js";
+import { getLiveDrawState } from "./results.js";
 
 type DrawRow = {
   id: string;
@@ -50,8 +51,10 @@ function mapWinner(
     entryId: row.entry_id,
     userId: row.user_id,
     rank: row.rank,
-    prizeAmount: Number(row.prize_amount),
-    selectedAt: row.selected_at,
+    prizeAmount:
+      Number(row.prize_amount),
+    selectedAt:
+      row.selected_at,
   };
 }
 
@@ -75,8 +78,12 @@ async function getDrawForUpdate(
       [drawId],
     );
 
-  if (result.rows.length === 0) {
-    throw new Error("DRAW_NOT_FOUND");
+  if (
+    result.rows.length === 0
+  ) {
+    throw new Error(
+      "DRAW_NOT_FOUND",
+    );
   }
 
   return result.rows[0];
@@ -131,7 +138,8 @@ function validatePrizes(
   winnerCount: number,
 ): void {
   if (
-    prizes.length !== winnerCount
+    prizes.length !==
+    winnerCount
   ) {
     throw new Error(
       "PRIZE_COUNT_MUST_MATCH_WINNERS",
@@ -143,10 +151,12 @@ function validatePrizes(
     index < prizes.length;
     index += 1
   ) {
-    const prize = prizes[index];
+    const prize =
+      prizes[index];
 
     if (
-      prize.rank !== index + 1
+      prize.rank !==
+      index + 1
     ) {
       throw new Error(
         "PRIZE_RANKS_MUST_BE_SEQUENTIAL",
@@ -157,7 +167,9 @@ function validatePrizes(
       Number(prize.amount);
 
     if (
-      !Number.isFinite(amount) ||
+      !Number.isFinite(
+        amount,
+      ) ||
       amount < 0
     ) {
       throw new Error(
@@ -167,13 +179,6 @@ function validatePrizes(
   }
 }
 
-/*
- * Select N different array positions using
- * cryptographically secure random integers.
- *
- * The returned array contains indexes into the
- * original entries array.
- */
 function selectRandomIndexes(
   count: number,
   selectionSize: number,
@@ -188,7 +193,9 @@ function selectRandomIndexes(
   }
 
   if (
-    !Number.isInteger(selectionSize) ||
+    !Number.isInteger(
+      selectionSize,
+    ) ||
     selectionSize < 1 ||
     selectionSize > count
   ) {
@@ -197,17 +204,15 @@ function selectRandomIndexes(
     );
   }
 
-  const indexes = Array.from(
-    { length: count },
-    (_value, index) => index,
-  );
+  const indexes =
+    Array.from(
+      {
+        length: count,
+      },
+      (_value, index) =>
+        index,
+    );
 
-  /*
-   * Partial Fisher-Yates shuffle.
-   *
-   * randomInt() uses Node's cryptographic
-   * random source rather than Math.random().
-   */
   for (
     let i = 0;
     i < selectionSize;
@@ -216,10 +221,14 @@ function selectRandomIndexes(
     const j =
       randomInt(i, count);
 
-    const temp = indexes[i];
+    const temp =
+      indexes[i];
 
-    indexes[i] = indexes[j];
-    indexes[j] = temp;
+    indexes[i] =
+      indexes[j];
+
+    indexes[j] =
+      temp;
   }
 
   return indexes.slice(
@@ -233,29 +242,31 @@ function selectUniqueWinnerIndexes(
   winnerCount: number,
 ): number[] {
   if (
-    entries.length < winnerCount
+    entries.length <
+    winnerCount
   ) {
     throw new Error(
       "NOT_ENOUGH_ELIGIBLE_ENTRIES",
     );
   }
 
-  /*
-   * Build one candidate list per user.
-   * A user can have multiple paid numbers,
-   * but only one of them may win when
-   * unique_winners is enabled.
-   */
   const byUser =
-    new Map<string, number[]>();
+    new Map<
+      string,
+      number[]
+    >();
 
   entries.forEach(
     (entry, index) => {
       const existing =
-        byUser.get(entry.user_id);
+        byUser.get(
+          entry.user_id,
+        );
 
       if (existing) {
-        existing.push(index);
+        existing.push(
+          index,
+        );
       } else {
         byUser.set(
           entry.user_id,
@@ -266,16 +277,18 @@ function selectUniqueWinnerIndexes(
   );
 
   if (
-    byUser.size < winnerCount
+    byUser.size <
+    winnerCount
   ) {
     throw new Error(
       "NOT_ENOUGH_UNIQUE_WINNERS",
     );
   }
 
-  const users = Array.from(
-    byUser.keys(),
-  );
+  const users =
+    Array.from(
+      byUser.keys(),
+    );
 
   const selectedUserIndexes =
     selectRandomIndexes(
@@ -293,7 +306,8 @@ function selectUniqueWinnerIndexes(
 
       if (
         !candidateIndexes ||
-        candidateIndexes.length === 0
+        candidateIndexes.length ===
+          0
       ) {
         throw new Error(
           "WINNER_SELECTION_FAILED",
@@ -323,8 +337,10 @@ function createEligibleSnapshot(
   return entries.map(
     (entry) => ({
       entryId: entry.id,
-      userId: entry.user_id,
-      number: entry.number,
+      userId:
+        entry.user_id,
+      number:
+        entry.number,
     }),
   );
 }
@@ -351,10 +367,13 @@ export async function executeDraw(
     );
   }
 
-  const client = await pool.connect();
+  const client =
+    await pool.connect();
 
   try {
-    await client.query("BEGIN");
+    await client.query(
+      "BEGIN",
+    );
 
     const draw =
       await getDrawForUpdate(
@@ -362,10 +381,6 @@ export async function executeDraw(
         drawId,
       );
 
-    /*
-     * Only a full or manually closed draw can
-     * enter the drawing state.
-     */
     if (
       draw.status !== "full" &&
       draw.status !== "closed"
@@ -375,11 +390,6 @@ export async function executeDraw(
       );
     }
 
-    /*
-     * Because the draw row is locked, another
-     * admin cannot start a second draw execution
-     * for the same draw concurrently.
-     */
     const existingResult =
       await client.query<{
         id: string;
@@ -394,7 +404,8 @@ export async function executeDraw(
       );
 
     if (
-      existingResult.rows.length > 0
+      existingResult.rows.length >
+      0
     ) {
       throw new Error(
         "DRAW_ALREADY_EXECUTED",
@@ -427,10 +438,6 @@ export async function executeDraw(
       );
     }
 
-    /*
-     * If unique winners are required, there must
-     * be at least winner_count different users.
-     */
     if (
       draw.unique_winners
     ) {
@@ -452,16 +459,6 @@ export async function executeDraw(
       }
     }
 
-    /*
-     * Put the draw into drawing state.
-     *
-     * IMPORTANT:
-     * We intentionally do NOT mark it completed here.
-     *
-     * The Live Draw API will reveal the immutable
-     * winners over time and will finalize the draw
-     * after the reveal sequence is complete.
-     */
     await client.query(
       `
         UPDATE draws
@@ -484,10 +481,6 @@ export async function executeDraw(
             draw.winner_count,
           );
 
-    /*
-     * Snapshot the exact eligible entries used
-     * by this draw before inserting winners.
-     */
     const eligibleSnapshot =
       createEligibleSnapshot(
         entries,
@@ -496,23 +489,15 @@ export async function executeDraw(
     const executedAt =
       new Date().toISOString();
 
-    /*
-     * random_seed_hash is retained for compatibility
-     * with the existing schema. It records a SHA-256
-     * commitment to the execution metadata rather
-     * than exposing random internals.
-     *
-     * The actual selection itself is performed with
-     * Node's cryptographically secure randomInt().
-     */
-    const hashInput = JSON.stringify({
-      drawId,
-      adminUserId,
-      executedAt,
-      eligibleEntryCount:
-        entries.length,
-      selectedIndexes,
-    });
+    const hashInput =
+      JSON.stringify({
+        drawId,
+        adminUserId,
+        executedAt,
+        eligibleEntryCount:
+          entries.length,
+        selectedIndexes,
+      });
 
     const hashResult =
       await client.query<{
@@ -585,7 +570,9 @@ export async function executeDraw(
     ) {
       const entry =
         entries[
-          selectedIndexes[index]
+          selectedIndexes[
+            index
+          ]
         ];
 
       const prize =
@@ -624,7 +611,9 @@ export async function executeDraw(
             entry.id,
             entry.user_id,
             index + 1,
-            Number(prize.amount),
+            Number(
+              prize.amount,
+            ),
             executedAt,
           ],
         );
@@ -634,16 +623,6 @@ export async function executeDraw(
       );
     }
 
-    /*
-     * DO NOT publish the result yet.
-     *
-     * published_at remains NULL while the
-     * Live Draw sequence is running.
-     *
-     * The Live Draw endpoint will publish the
-     * result after the final winner has been
-     * revealed.
-     */
     await client.query(
       `
         UPDATE draw_results
@@ -682,27 +661,65 @@ export async function executeDraw(
           uniqueWinners:
             draw.unique_winners,
           drawResultId:
-            resultInsert.rows[0].id,
+            resultInsert.rows[0]
+              .id,
           randomSeedHash,
           executedAt,
-          status: "drawing",
+          status:
+            "drawing",
         }),
       ],
     );
 
-    await client.query("COMMIT");
+    await client.query(
+      "COMMIT",
+    );
+
+    /*
+     * 5 sec before winner #1,
+     * then 8 sec between each winner.
+     *
+     * For 5 winners:
+     * 5 + (4 × 8) = 37 seconds.
+     *
+     * This timer makes the backend finalize
+     * the draw and trigger Telegram notification
+     * even if nobody is watching the Mini App.
+     */
+    const finalRevealDelayMs =
+      5000 +
+      Math.max(
+        0,
+        winnerRows.length - 1,
+      ) *
+        8000;
+
+    setTimeout(() => {
+      void getLiveDrawState(
+        drawId,
+      ).catch((error) => {
+        console.error(
+          `Live draw finalization failed: ${drawId}`,
+          error,
+        );
+      });
+    }, finalRevealDelayMs);
 
     return {
       drawId,
       eligibleEntryCount:
         entries.length,
       winners:
-        winnerRows.map(mapWinner),
+        winnerRows.map(
+          mapWinner,
+        ),
       executedAt,
       publishedAt: null,
     };
   } catch (error) {
-    await client.query("ROLLBACK");
+    await client.query(
+      "ROLLBACK",
+    );
     throw error;
   } finally {
     client.release();
