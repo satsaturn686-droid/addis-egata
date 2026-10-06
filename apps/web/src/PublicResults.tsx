@@ -14,15 +14,11 @@ import {
 
 import LiveDraw from "./LiveDraw";
 
-function formatMoney(
-  value: number,
-): string {
+function formatMoney(value: number): string {
   return `${value.toLocaleString("en-US")} ብር`;
 }
 
-function formatDate(
-  value: string | null,
-): string {
+function formatDate(value: string | null): string {
   if (!value) {
     return "—";
   }
@@ -33,14 +29,11 @@ function formatDate(
     return "—";
   }
 
-  return date.toLocaleDateString(
-    "am-ET",
-    {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    },
-  );
+  return date.toLocaleDateString("am-ET", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function getWinnerName(
@@ -67,6 +60,89 @@ function getWinnerName(
   return "ተሳታፊ";
 }
 
+function LiveOverlay({
+  liveDraw,
+  onClose,
+}: {
+  liveDraw: LiveDrawState;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="ቀጥታ ዕጣ"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9999,
+        overflowY: "auto",
+        background:
+          "rgba(4,7,12,0.94)",
+        backdropFilter: "blur(14px)",
+        WebkitBackdropFilter: "blur(14px)",
+        padding:
+          "max(16px, env(safe-area-inset-top)) 12px max(24px, env(safe-area-inset-bottom))",
+        boxSizing: "border-box",
+      }}
+    >
+      <div
+        style={{
+          width: "min(100%, 760px)",
+          margin: "0 auto",
+          minHeight: "100%",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            marginBottom: "8px",
+          }}
+        >
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="የLive Draw ማሳያውን ዝጋ"
+            style={{
+              border:
+                "1px solid rgba(255,255,255,0.18)",
+              borderRadius: "999px",
+              background:
+                "rgba(255,255,255,0.08)",
+              color: "inherit",
+              padding: "9px 14px",
+              fontSize: "14px",
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
+          >
+            ✕ ዝጋ
+          </button>
+        </div>
+
+        <div
+          style={{
+            borderRadius: "22px",
+            border:
+              "1px solid rgba(255,255,255,0.12)",
+            background:
+              "rgba(255,255,255,0.035)",
+            boxShadow:
+              "0 30px 100px rgba(0,0,0,0.45)",
+            overflow: "hidden",
+          }}
+        >
+          <LiveDraw live={liveDraw} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PublicResults() {
   const [results, setResults] =
     useState<PublicDrawResult[]>([]);
@@ -86,7 +162,13 @@ export default function PublicResults() {
   const [selectedDrawId, setSelectedDrawId] =
     useState<string | null>(null);
 
+  const [liveOverlayOpen, setLiveOverlayOpen] =
+    useState(false);
+
   const latestResultIdRef =
+    useRef<string | null>(null);
+
+  const previousLiveDrawIdRef =
     useRef<string | null>(null);
 
   useEffect(() => {
@@ -94,6 +176,7 @@ export default function PublicResults() {
       new AbortController();
 
     let firstLoad = true;
+    let stopped = false;
 
     async function loadResults() {
       try {
@@ -112,6 +195,10 @@ export default function PublicResults() {
             controller.signal,
           ),
         ]);
+
+        if (stopped) {
+          return;
+        }
 
         const latestResult =
           publishedResponse.results[0] ??
@@ -132,6 +219,10 @@ export default function PublicResults() {
         );
 
         if (activeDrawing) {
+          const isNewLiveDraw =
+            previousLiveDrawIdRef.current !==
+            activeDrawing.id;
+
           setActiveLiveDrawId(
             activeDrawing.id,
           );
@@ -146,12 +237,28 @@ export default function PublicResults() {
                 return activeDrawing.id;
               }
 
-              return currentSelectedId;
+              if (
+                currentSelectedId ===
+                activeDrawing.id
+              ) {
+                return currentSelectedId;
+              }
+
+              return activeDrawing.id;
             },
           );
+
+          if (isNewLiveDraw) {
+            setLiveOverlayOpen(true);
+          }
+
+          previousLiveDrawIdRef.current =
+            activeDrawing.id;
         } else {
           setActiveLiveDrawId(null);
-          setLiveDraw(null);
+
+          previousLiveDrawIdRef.current =
+            null;
 
           setSelectedDrawId(
             (currentSelectedId) => {
@@ -228,6 +335,7 @@ export default function PublicResults() {
       );
 
     return () => {
+      stopped = true;
       controller.abort();
 
       window.clearInterval(
@@ -262,18 +370,24 @@ export default function PublicResults() {
           return;
         }
 
+        /*
+         * completed ሲሆን የመጨረሻውን
+         * live state እንዳይጠፋ እንይዛለን።
+         *
+         * /results በቀጣይ polling ላይ
+         * published result ይዞ ይመጣል።
+         */
+        setLiveDraw(
+          response.live,
+        );
+
         if (
           response.live.status ===
             "completed" ||
           response.live.publishedAt
         ) {
-          setLiveDraw(null);
-          return;
+          setLiveOverlayOpen(true);
         }
-
-        setLiveDraw(
-          response.live,
-        );
       } catch (loadError) {
         if (
           loadError instanceof DOMException &&
@@ -312,6 +426,37 @@ export default function PublicResults() {
     };
   }, [activeLiveDrawId]);
 
+  useEffect(() => {
+    if (
+      !liveDraw ||
+      liveDraw.status !==
+        "completed"
+    ) {
+      return;
+    }
+
+    /*
+     * የተጠናቀቀ ውጤት ከታተመ በኋላ
+     * Live overlay እንዲዘጋ እና
+     * published result እንዲታይ እንደገና
+     * public results እንዲጫን እንረዳለን።
+     */
+    const timer =
+      window.setTimeout(
+        () => {
+          setLiveOverlayOpen(false);
+        },
+        3500,
+      );
+
+    return () =>
+      window.clearTimeout(timer);
+  }, [
+    liveDraw?.drawId,
+    liveDraw?.status,
+    liveDraw?.publishedAt,
+  ]);
+
   const selectedResult =
     results.find(
       (result) =>
@@ -321,8 +466,16 @@ export default function PublicResults() {
 
   const showingLiveDraw =
     liveDraw !== null &&
+    liveDraw.status ===
+      "drawing" &&
     liveDraw.drawId ===
       selectedDrawId;
+
+  const showLiveOverlay =
+    liveOverlayOpen &&
+    liveDraw !== null &&
+    liveDraw.drawId ===
+      activeLiveDrawId;
 
   if (loading) {
     return (
@@ -365,239 +518,232 @@ export default function PublicResults() {
     );
   }
 
-  if (
-    results.length === 0 &&
-    !liveDraw
-  ) {
-    return (
-      <section className="results-section">
-        <div className="results-header">
-          <span className="status-badge">
-            አሁን የለም
-          </span>
-
-          <h2>
-            የዕጣ ውጤቶች
-          </h2>
-
-          <p>
-            እስካሁን የታተመ የዕጣ
-            ውጤት የለም።
-          </p>
-        </div>
-      </section>
-    );
-  }
-
   const resultList =
     results;
 
   return (
-    <section className="results-section">
-      <div className="results-header">
-        <span className="status-badge">
-          {showingLiveDraw
-            ? "🔴 ቀጥታ"
-            : "የታተመ"}
-        </span>
-
-        <h2>
-          {showingLiveDraw
-            ? "የቀጥታ ዕጣ"
-            : "የዕጣ ውጤቶች"}
-        </h2>
-
-        <p>
-          {showingLiveDraw
-            ? "የዕጣውን ሂደት በቀጥታ ይመልከቱ።"
-            : "የተጠናቀቁ ዕጣዎችንና አሸናፊዎችን ይመልከቱ።"}
-        </p>
-      </div>
-
-      {showingLiveDraw &&
+    <>
+      {showLiveOverlay &&
       liveDraw ? (
-        <LiveDraw
-          live={liveDraw}
-        />
-      ) : selectedResult ? (
-        <LiveDraw
-          result={selectedResult}
+        <LiveOverlay
+          liveDraw={liveDraw}
+          onClose={() =>
+            setLiveOverlayOpen(false)
+          }
         />
       ) : null}
 
-      {resultList.length > 0 ? (
-        <div
-          className="results-draw-list"
-          role="tablist"
-          aria-label="የዕጣ ውጤቶች"
-        >
-          {resultList.map(
-            (result) => {
-              const active =
-                result.drawId ===
-                selectedDrawId;
+      <section className="results-section">
+        <div className="results-header">
+          <span className="status-badge">
+            {showingLiveDraw
+              ? "🔴 ቀጥታ"
+              : "የታተመ"}
+          </span>
 
-              return (
-                <button
-                  key={
-                    result.drawId
+          <h2>
+            {showingLiveDraw
+              ? "የቀጥታ ዕጣ"
+              : "የዕጣ ውጤቶች"}
+          </h2>
+
+          <p>
+            {showingLiveDraw
+              ? "የዕጣውን ሂደት በቀጥታ ይመልከቱ።"
+              : "የተጠናቀቁ ዕጣዎችንና አሸናፊዎችን ይመልከቱ።"}
+          </p>
+        </div>
+
+        {showingLiveDraw &&
+        liveDraw ? (
+          <LiveDraw
+            live={liveDraw}
+          />
+        ) : selectedResult ? (
+          <LiveDraw
+            result={selectedResult}
+          />
+        ) : (
+          <div className="results-card">
+            <div className="results-header">
+              <span className="status-badge">
+                አሁን የለም
+              </span>
+
+              <h3>
+                የዕጣ ውጤት
+              </h3>
+
+              <p>
+                እስካሁን የታተመ የዕጣ
+                ውጤት የለም።
+              </p>
+            </div>
+          </div>
+        )}
+
+        {resultList.length > 0 ? (
+          <div
+            className="results-draw-list"
+            role="tablist"
+            aria-label="የዕጣ ውጤቶች"
+          >
+            {resultList.map(
+              (result) => {
+                const active =
+                  result.drawId ===
+                  selectedDrawId;
+
+                return (
+                  <button
+                    key={
+                      result.drawId
+                    }
+                    type="button"
+                    role="tab"
+                    aria-selected={
+                      active
+                    }
+                    className={
+                      active
+                        ? "results-draw-button active"
+                        : "results-draw-button"
+                    }
+                    onClick={() =>
+                      setSelectedDrawId(
+                        result.drawId,
+                      )
+                    }
+                  >
+                    <span>
+                      {result.drawName}
+                    </span>
+
+                    <small>
+                      {formatDate(
+                        result.publishedAt,
+                      )}
+                    </small>
+                  </button>
+                );
+              },
+            )}
+          </div>
+        ) : null}
+
+        {showingLiveDraw &&
+        liveDraw ? (
+          <div className="results-card">
+            <div className="results-card-top">
+              <div>
+                <p className="results-kicker">
+                  🔴 በቀጥታ ላይ
+                </p>
+
+                <h3>
+                  {liveDraw.drawName}
+                </h3>
+              </div>
+
+              <span className="results-completed">
+                {liveDraw.revealedWinnerCount}
+                {" / "}
+                {liveDraw.totalWinnerCount}
+              </span>
+            </div>
+
+            <div className="results-prize">
+              {liveDraw.prizeImageUrl ? (
+                <img
+                  src={
+                    liveDraw.prizeImageUrl
                   }
-                  type="button"
-                  role="tab"
-                  aria-selected={
-                    active
+                  alt={
+                    liveDraw.prizeName
                   }
-                  className={
-                    active
-                      ? "results-draw-button active"
-                      : "results-draw-button"
-                  }
-                  onClick={() =>
-                    setSelectedDrawId(
-                      result.drawId,
-                    )
-                  }
+                  className="results-prize-image"
+                />
+              ) : (
+                <div
+                  className="results-prize-placeholder"
+                  aria-hidden="true"
                 >
-                  <span>
-                    {result.drawName}
-                  </span>
+                  🎁
+                </div>
+              )}
 
+              <div>
+                <span>
+                  ሽልማት
+                </span>
+
+                <strong>
+                  {liveDraw.prizeName}
+                </strong>
+
+                {liveDraw.displayedPrizeValue !==
+                null ? (
                   <small>
-                    {formatDate(
-                      result.publishedAt,
+                    {formatMoney(
+                      liveDraw.displayedPrizeValue,
                     )}
                   </small>
-                </button>
-              );
-            },
-          )}
-        </div>
-      ) : null}
-
-      {showingLiveDraw &&
-      liveDraw ? (
-        <div className="results-card">
-          <div className="results-card-top">
-            <div>
-              <p className="results-kicker">
-                🔴 በቀጥታ ላይ
-              </p>
-
-              <h3>
-                {liveDraw.drawName}
-              </h3>
-            </div>
-
-            <span className="results-completed">
-              {liveDraw.revealedWinnerCount}
-              {" / "}
-              {liveDraw.totalWinnerCount}
-            </span>
-          </div>
-
-          <div className="results-prize">
-            {liveDraw.prizeImageUrl ? (
-              <img
-                src={
-                  liveDraw.prizeImageUrl
-                }
-                alt={
-                  liveDraw.prizeName
-                }
-                className="results-prize-image"
-              />
-            ) : (
-              <div
-                className="results-prize-placeholder"
-                aria-hidden="true"
-              >
-                🎁
+                ) : null}
               </div>
-            )}
-
-            <div>
-              <span>
-                ሽልማት
-              </span>
-
-              <strong>
-                {liveDraw.prizeName}
-              </strong>
-
-              {liveDraw
-                .displayedPrizeValue !==
-                null ? (
-                <small>
-                  {formatMoney(
-                    liveDraw
-                      .displayedPrizeValue,
-                  )}
-                </small>
-              ) : null}
             </div>
-          </div>
 
-          <div className="results-summary">
-            <div>
-              <span>
-                ተሳታፊዎች
-              </span>
+            <div className="results-summary">
+              <div>
+                <span>
+                  ተሳታፊዎች
+                </span>
 
-              <strong>
-                {liveDraw
-                  .eligibleEntryCount
-                  .toLocaleString(
+                <strong>
+                  {liveDraw.eligibleEntryCount.toLocaleString(
                     "en-US",
                   )}
-              </strong>
-            </div>
+                </strong>
+              </div>
 
-            <div>
-              <span>
-                አሸናፊዎች
-              </span>
+              <div>
+                <span>
+                  አሸናፊዎች
+                </span>
 
-              <strong>
-                {liveDraw
-                  .totalWinnerCount
-                  .toLocaleString(
+                <strong>
+                  {liveDraw.totalWinnerCount.toLocaleString(
                     "en-US",
                   )}
-              </strong>
-            </div>
+                </strong>
+              </div>
 
-            <div>
-              <span>
-                የተገለጹ
-              </span>
+              <div>
+                <span>
+                  የተገለጹ
+                </span>
 
-              <strong>
-                {liveDraw
-                  .revealedWinnerCount
-                  .toLocaleString(
+                <strong>
+                  {liveDraw.revealedWinnerCount.toLocaleString(
                     "en-US",
                   )}
-              </strong>
-            </div>
-          </div>
-
-          <div className="results-winners">
-            <div className="results-winners-heading">
-              <h3>
-                🎱 እየወጡ ያሉ አሸናፊዎች
-              </h3>
-
-              <span>
-                {
-                  liveDraw
-                    .winners
-                    .length
-                }
-              </span>
+                </strong>
+              </div>
             </div>
 
-            {liveDraw.winners
-              .map(
+            <div className="results-winners">
+              <div className="results-winners-heading">
+                <h3>
+                  🎱 እየወጡ ያሉ አሸናፊዎች
+                </h3>
+
+                <span>
+                  {
+                    liveDraw.winners.length
+                  }
+                </span>
+              </div>
+
+              {liveDraw.winners.map(
                 (winner) => (
                   <div
                     key={
@@ -643,205 +789,196 @@ export default function PublicResults() {
                   </div>
                 ),
               )}
-          </div>
+            </div>
 
-          <div className="results-note">
-            <strong>
-              🔴 የቀጥታ ማስታወሻ
-            </strong>
+            <div className="results-note">
+              <strong>
+                🔴 የቀጥታ ማስታወሻ
+              </strong>
 
-            <p>
-              አሸናፊዎች በተወሰነ
-              የጊዜ ልዩነት አንድ
-              በአንድ እየተገለጹ
-              ነው። ሁሉም ተመልካቾች
-              ከሰርቨሩ የሚመጣውን
-              ተመሳሳይ የዕጣ ሁኔታ
-              ይመለከታሉ።
-            </p>
-          </div>
-        </div>
-      ) : selectedResult ? (
-        <div className="results-card">
-          <div className="results-card-top">
-            <div>
-              <p className="results-kicker">
-                የተጠናቀቀ ዕጣ
+              <p>
+                አሸናፊዎች ከሰርቨሩ
+                በሚመጣው ተመሳሳይ
+                የዕጣ ሁኔታ መሰረት
+                አንድ በአንድ
+                እየተገለጹ ነው።
               </p>
-
-              <h3>
-                {selectedResult.drawName}
-              </h3>
             </div>
-
-            <span className="results-completed">
-              ✓ ተጠናቋል
-            </span>
           </div>
+        ) : selectedResult ? (
+          <div className="results-card">
+            <div className="results-card-top">
+              <div>
+                <p className="results-kicker">
+                  የተጠናቀቀ ዕጣ
+                </p>
 
-          <div className="results-prize">
-            {selectedResult.prizeImageUrl ? (
-              <img
-                src={
-                  selectedResult.prizeImageUrl
-                }
-                alt={
-                  selectedResult.prizeName
-                }
-                className="results-prize-image"
-              />
-            ) : (
-              <div
-                className="results-prize-placeholder"
-                aria-hidden="true"
-              >
-                🎁
+                <h3>
+                  {selectedResult.drawName}
+                </h3>
               </div>
-            )}
 
-            <div>
-              <span>
-                ሽልማት
-              </span>
-
-              <strong>
-                {selectedResult.prizeName}
-              </strong>
-
-              {selectedResult
-                .displayedPrizeValue !==
-                null ? (
-                <small>
-                  {formatMoney(
-                    selectedResult
-                      .displayedPrizeValue,
-                  )}
-                </small>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="results-summary">
-            <div>
-              <span>
-                ተሳታፊዎች
-              </span>
-
-              <strong>
-                {selectedResult
-                  .eligibleEntryCount
-                  .toLocaleString(
-                    "en-US",
-                  )}
-              </strong>
-            </div>
-
-            <div>
-              <span>
-                አሸናፊዎች
-              </span>
-
-              <strong>
-                {selectedResult
-                  .winnerCount
-                  .toLocaleString(
-                    "en-US",
-                  )}
-              </strong>
-            </div>
-
-            <div>
-              <span>
-                የተወጣበት ቀን
-              </span>
-
-              <strong>
-                {formatDate(
-                  selectedResult
-                    .executedAt,
-                )}
-              </strong>
-            </div>
-          </div>
-
-          <div className="results-winners">
-            <div className="results-winners-heading">
-              <h3>
-                🏆 አሸናፊዎች
-              </h3>
-
-              <span>
-                {
-                  selectedResult
-                    .winners
-                    .length
-                }
+              <span className="results-completed">
+                ✓ ተጠናቋል
               </span>
             </div>
 
-            {selectedResult.winners.map(
-              (winner) => (
-                <div
-                  key={
-                    winner.id
+            <div className="results-prize">
+              {selectedResult.prizeImageUrl ? (
+                <img
+                  src={
+                    selectedResult.prizeImageUrl
                   }
-                  className="winner-row"
+                  alt={
+                    selectedResult.prizeName
+                  }
+                  className="results-prize-image"
+                />
+              ) : (
+                <div
+                  className="results-prize-placeholder"
+                  aria-hidden="true"
                 >
-                  <div className="winner-rank">
-                    {winner.rank}
-                  </div>
-
-                  <div className="winner-number">
-                    <span>
-                      ቁጥር
-                    </span>
-
-                    <strong>
-                      #{winner.number}
-                    </strong>
-                  </div>
-
-                  <div className="winner-user">
-                    <strong>
-                      {getWinnerName(
-                        winner.firstName,
-                        winner.lastName,
-                        winner.username,
-                      )}
-                    </strong>
-
-                    <small>
-                      {formatDate(
-                        winner.selectedAt,
-                      )}
-                    </small>
-                  </div>
-
-                  <div className="winner-prize">
-                    {formatMoney(
-                      winner.prizeAmount,
-                    )}
-                  </div>
+                  🎁
                 </div>
-              ),
-            )}
-          </div>
+              )}
 
-          <div className="results-note">
-            <strong>
-              የውጤት ማስታወሻ
-            </strong>
+              <div>
+                <span>
+                  ሽልማት
+                </span>
 
-            <p>
-              ይህ ውጤት በስርዓቱ
-              ከተረጋገጠ የክፍያ
-              መረጃ በኋላ የተፈጸመ
-              እና የታተመ የዕጣ
-              ውጤት ነው።
-            </p>
+                <strong>
+                  {selectedResult.prizeName}
+                </strong>
+
+                {selectedResult.displayedPrizeValue !==
+                null ? (
+                  <small>
+                    {formatMoney(
+                      selectedResult.displayedPrizeValue,
+                    )}
+                  </small>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="results-summary">
+              <div>
+                <span>
+                  ተሳታፊዎች
+                </span>
+
+                <strong>
+                  {selectedResult.eligibleEntryCount.toLocaleString(
+                    "en-US",
+                  )}
+                </strong>
+              </div>
+
+              <div>
+                <span>
+                  አሸናፊዎች
+                </span>
+
+                <strong>
+                  {selectedResult.winnerCount.toLocaleString(
+                    "en-US",
+                  )}
+                </strong>
+              </div>
+
+              <div>
+                <span>
+                  የተወጣበት ቀን
+                </span>
+
+                <strong>
+                  {formatDate(
+                    selectedResult.executedAt,
+                  )}
+                </strong>
+              </div>
+            </div>
+
+            <div className="results-winners">
+              <div className="results-winners-heading">
+                <h3>
+                  🏆 አሸናፊዎች
+                </h3>
+
+                <span>
+                  {
+                    selectedResult
+                      .winners
+                      .length
+                  }
+                </span>
+              </div>
+
+              {selectedResult.winners.map(
+                (winner) => (
+                  <div
+                    key={
+                      winner.id
+                    }
+                    className="winner-row"
+                  >
+                    <div className="winner-rank">
+                      {winner.rank}
+                    </div>
+
+                    <div className="winner-number">
+                      <span>
+                        ቁጥር
+                      </span>
+
+                      <strong>
+                        #{winner.number}
+                      </strong>
+                    </div>
+
+                    <div className="winner-user">
+                      <strong>
+                        {getWinnerName(
+                          winner.firstName,
+                          winner.lastName,
+                          winner.username,
+                        )}
+                      </strong>
+
+                      <small>
+                        {formatDate(
+                          winner.selectedAt,
+                        )}
+                      </small>
+                    </div>
+
+                    <div className="winner-prize">
+                      {formatMoney(
+                        winner.prizeAmount,
+                      )}
+                    </div>
+                  </div>
+                ),
+              )}
+            </div>
+
+            <div className="results-note">
+              <strong>
+                የውጤት ማስታወሻ
+              </strong>
+
+              <p>
+                ይህ ውጤት በbackend
+                በsecure random
+                ተወስኖ የታተመ
+                የዕጣ ውጤት ነው።
+              </p>
+            </div>
           </div>
-        </div>
-      ) : null}
-    </section>
+        ) : null}
+      </section>
+    </>
   );
 }
