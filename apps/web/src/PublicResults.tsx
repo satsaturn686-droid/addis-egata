@@ -5,7 +5,7 @@ import {
 } from "react";
 
 import {
-  getDraws,
+  getCurrentLiveDrawState,
   getLiveDrawState,
   getPublishedResults,
   type LiveDrawState,
@@ -186,12 +186,12 @@ export default function PublicResults() {
 
         const [
           publishedResponse,
-          drawsResponse,
+          currentLiveDraw,
         ] = await Promise.all([
           getPublishedResults(
             controller.signal,
           ),
-          getDraws(
+          getCurrentLiveDrawState(
             controller.signal,
           ),
         ]);
@@ -205,11 +205,14 @@ export default function PublicResults() {
           null;
 
         const activeDrawing =
-          drawsResponse.draws.find(
-            (draw) =>
-              draw.status ===
-              "drawing",
-          ) ?? null;
+          currentLiveDraw
+            ? {
+                id:
+                  currentLiveDraw.drawId,
+                status:
+                  currentLiveDraw.status,
+              }
+            : null;
 
         const previousLatestResultId =
           latestResultIdRef.current;
@@ -435,12 +438,6 @@ export default function PublicResults() {
       return;
     }
 
-    /*
-     * የተጠናቀቀ ውጤት ከታተመ በኋላ
-     * Live overlay እንዲዘጋ እና
-     * published result እንዲታይ እንደገና
-     * public results እንዲጫን እንረዳለን።
-     */
     const timer =
       window.setTimeout(
         () => {
