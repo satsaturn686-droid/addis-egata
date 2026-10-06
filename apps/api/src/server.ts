@@ -638,6 +638,11 @@ app.post(
         message?: {
           chat?: {
             id?: number;
+            type?:
+              | "private"
+              | "group"
+              | "supergroup"
+              | "channel";
           };
           from?: {
             id?: number;
@@ -672,6 +677,10 @@ app.post(
         ? message.from.id
         : chatId;
 
+    const isPrivateChat =
+      message.chat.type ===
+      "private";
+
     const text =
       typeof message.text ===
       "string"
@@ -680,8 +689,13 @@ app.post(
 
     /*
      * Winner screenshot
+     *
+     * Winner payout screenshots are
+     * accepted only from a private
+     * Telegram chat.
      */
     if (
+      isPrivateChat &&
       Array.isArray(
         message.photo,
       ) &&
@@ -699,13 +713,19 @@ app.post(
      * Winner deep-link claim
      *
      * /start claim_<winnerId>
+     *
+     * Claims are accepted only from
+     * a private Telegram chat.
      */
     const winnerId =
       parseWinnerStartPayload(
         text,
       );
 
-    if (winnerId) {
+    if (
+      isPrivateChat &&
+      winnerId
+    ) {
       await handleWinnerStartClaim(
         telegramUserId,
         winnerId,
@@ -742,8 +762,15 @@ app.post(
 
     /*
      * Winner Telebirr submission
+     *
+     * Sensitive payout information
+     * is accepted only from a private
+     * Telegram chat.
      */
-    if (text) {
+    if (
+      isPrivateChat &&
+      text
+    ) {
       const handled =
         await handleWinnerTelebirrText(
           telegramUserId,
@@ -878,6 +905,7 @@ app.use(
  *
  * GET  /winner-payouts/mine
  * GET  /winner-payouts/:payoutId
+ * GET  /winner-payouts/claim-link/:winnerId
  * POST /winner-payouts/claim/:winnerId
  * POST /winner-payouts/:payoutId/screenshot
  * POST /winner-payouts/:payoutId/telebirr
