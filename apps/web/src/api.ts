@@ -201,6 +201,10 @@ export type LiveDrawResponse = {
   live: LiveDrawState;
 };
 
+export type CurrentLiveDrawResponse = {
+  live: LiveDrawState | null;
+};
+
 export type WinnerClaimLinkResponse = {
   claimUrl: string;
   payout: {
@@ -398,10 +402,13 @@ export async function createTelebirrPayment(
   signal?: AbortSignal,
 ): Promise<PaymentResponse> {
   const entryId = input.entryId.trim();
+
   const transactionReference =
     input.transactionReference.trim();
+
   const senderName =
     input.senderName?.trim() || undefined;
+
   const receiptImageUrl =
     input.receiptImageUrl?.trim() || undefined;
 
@@ -505,6 +512,20 @@ export async function getPublishedResults(
       signal,
     },
   );
+}
+
+export async function getCurrentLiveDrawState(
+  signal?: AbortSignal,
+): Promise<LiveDrawState | null> {
+  const payload =
+    await request<CurrentLiveDrawResponse>(
+      "/results/live",
+      {
+        signal,
+      },
+    );
+
+  return payload.live;
 }
 
 export async function getPublicDrawResult(
