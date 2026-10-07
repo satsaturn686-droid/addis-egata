@@ -1,0 +1,20 @@
+name: Scheduled Draws
+
+on:
+  schedule:
+    - cron: "* * * * *"
+  workflow_dispatch:
+
+jobs:
+  process-scheduled-draws:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Process scheduled draws
+        env:
+          CRON_TOKEN: ${{ secrets.SCHEDULED_DRAWS_CRON_TOKEN }}
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer ${CRON_TOKEN}" \
+            --header "Content-Type: application/json" \
+            "https://addis-egata-api.onrender.com/internal/scheduled-draws"
