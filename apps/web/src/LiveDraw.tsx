@@ -283,8 +283,24 @@ function WinnerClaimButton({
         alignItems: "center",
         gap: "8px",
         marginTop: "4px",
+        padding: "12px 0",
       }}
     >
+      <div
+        style={{
+          width: "min(100%, 340px)",
+          textAlign: "center",
+          fontSize: "13px",
+          fontWeight: 900,
+          opacity: 0.82,
+        }}
+      >
+        🏆 {winner.rank}ኛ አሸናፊ —{" "}
+        {winner.number}
+        <br />
+        💰 {formatMoney(winner.prizeAmount)}
+      </div>
+
       <button
         type="button"
         onClick={handleClaim}
@@ -439,13 +455,36 @@ function CompletedDraw({
       {visibleCount >=
       result.winners.length &&
       result.winners.length > 0 ? (
-        <WinnerClaimButton
-          winner={
-            result.winners[
-              result.winners.length - 1
-            ]
-          }
-        />
+        <div
+          style={{
+            width: "100%",
+            display: "flex",
+            flexDirection: "column",
+            gap: "10px",
+            marginTop: "8px",
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              textAlign: "center",
+              fontSize: "14px",
+              fontWeight: 900,
+              marginBottom: "2px",
+            }}
+          >
+            🎉 ሁሉም አሸናፊዎች ተገልጠዋል
+          </div>
+
+          {result.winners.map(
+            (winner) => (
+              <WinnerClaimButton
+                key={`claim-${winner.id}`}
+                winner={winner}
+              />
+            ),
+          )}
+        </div>
       ) : null}
 
       <div className="live-winners-list">
