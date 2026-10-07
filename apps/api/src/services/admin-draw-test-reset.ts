@@ -77,11 +77,21 @@ export async function resetTestDraw(
     }
 
     /*
-     * Remove only the generated result/winner records.
+     * Remove generated payout records first because
+     * winner_payouts.winner_id references winners.id.
+     *
      * Paid entries, payments, numbers, and draw configuration
      * are intentionally preserved so the same test draw can
      * be executed again.
      */
+    await client.query(
+      `
+        DELETE FROM winner_payouts
+        WHERE draw_id = $1
+      `,
+      [normalizedDrawId],
+    );
+
     await client.query(
       `
         DELETE FROM winners
