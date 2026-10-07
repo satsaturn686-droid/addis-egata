@@ -244,27 +244,16 @@ async function getDrawNotificationData(
   const result =
     await pool.query<DrawNotificationRow>(
       `
-        SELECT
+                SELECT
           d.id,
           d.name,
-          COALESCE(
-            dp.name,
-            d.name
-          ) AS prize_name,
-          COALESCE(
-            dp.prize_type,
-            'cash'
-          ) AS prize_type,
-          COALESCE(
-            dp.displayed_value,
-            d.prize_amount
-          ) AS displayed_prize_value,
+          d.prize_name,
+          d.prize_type,
+          d.displayed_prize_value,
           d.total_numbers,
           d.entry_fee,
           d.winner_count
         FROM draws d
-        LEFT JOIN draw_prizes dp
-          ON dp.draw_id = d.id
         WHERE d.id = $1
         LIMIT 1
       `,
