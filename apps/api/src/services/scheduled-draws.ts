@@ -650,6 +650,23 @@ async function executeScheduledDraw(
         ? error.message
         : "DRAW_EXECUTION_FAILED";
 
+    const benignExecutionRace =
+      errorCode ===
+        "DRAW_ALREADY_EXECUTED" ||
+      errorCode ===
+        "DRAW_NOT_READY_FOR_DRAWING";
+
+    if (benignExecutionRace) {
+      console.log(
+        `Scheduled draw skipped because it is already being processed or completed: draw=${draw.id}, error=${errorCode}`,
+      );
+
+      return {
+        executed: false,
+        failed: false,
+      };
+    }
+
     console.error(
       `Scheduled draw failed: draw=${draw.id}, error=${errorCode}`,
     );
