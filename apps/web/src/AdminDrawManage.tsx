@@ -833,9 +833,11 @@ export default function AdminDrawManage() {
 
       setLiveDrawId(draw.id);
 
-      setSuccess(
+            setSuccess(
         `“${draw.name}” ዕጣ ተሳክቶ ወጥቷል።`,
       );
+
+      await loadDraws(true);
 
       if (
         selectedNumberDrawId ===
@@ -847,11 +849,33 @@ export default function AdminDrawManage() {
         );
       }
     } catch (actionError) {
-      setError(
+      const message =
         actionError instanceof Error
           ? actionError.message
-          : "ዕጣውን ማውጣት አልተቻለም።",
-      );
+          : "";
+
+      if (
+        message ===
+        "The draw could not be executed."
+      ) {
+        setError(
+          "ዕጣው ከዚህ በፊት ተወጥቷል። የአሁኑን ሁኔታ እያደስን ነው።",
+        );
+      } else if (
+        message ===
+        "DRAW_ALREADY_EXECUTED"
+      ) {
+        setError(
+          "ዕጣው ከዚህ በፊት ተወጥቷል። የአሁኑን ሁኔታ እያደስን ነው።",
+        );
+      } else {
+        setError(
+          message ||
+            "ዕጣውን ማውጣት አልተቻለም።",
+        );
+      }
+
+      await loadDraws(true);
     } finally {
       setBusyDrawId(null);
     }
