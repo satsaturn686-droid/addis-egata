@@ -994,8 +994,8 @@ app.use(
  *
  * POST /internal/scheduled-draws
  *
- * Called by the Render cron service.
- * The cron service does not receive the
+ * Called by the Render/GitHub scheduler.
+ * The scheduler does not receive the
  * database or Telegram secrets; it
  * authenticates here with a dedicated
  * bearer token.
@@ -1055,6 +1055,58 @@ app.post(
 );
 
 /*
+ * In-process scheduled draw worker
+ *
+ * Runs inside the API process every minute.
+ * GitHub Actions remains a backup trigger.
+ *
+ * The guard prevents overlapping runs if
+ * one processing cycle takes longer than
+ * one minute.
+ */
+const SCHEDULED_DRAWS_INTERVAL_MS =
+  60_000;
+
+let scheduledDrawsRunning =
+  false;
+
+async function runScheduledDrawsLoop(): Promise<void> {
+  if (scheduledDrawsRunning) {
+    return;
+  }
+
+  scheduledDrawsRunning = true;
+
+  try {
+    const result =
+      await processScheduledDraws();
+
+    console.log(
+      "Scheduled draws worker tick:",
+      result,
+    );
+  } catch (error) {
+    console.error(
+      "Scheduled draws worker tick failed:",
+      error,
+    );
+  } finally {
+    scheduledDrawsRunning = false;
+  }
+}
+
+function startScheduledDrawsLoop(): void {
+  void runScheduledDrawsLoop();
+
+  setInterval(
+    () => {
+      void runScheduledDrawsLoop();
+    },
+    SCHEDULED_DRAWS_INTERVAL_MS,
+  );
+}
+
+/*
  * 404
  */
 app.use(
@@ -1101,6 +1153,8 @@ app.listen(
     console.log(
       `Addis ዕጣ API running on port ${PORT}`,
     );
+
+    startScheduledDrawsLoop();
 
     void configureTelegramBot();
   },
