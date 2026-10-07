@@ -21,6 +21,8 @@ import adminDrawDeleteRouter from "./routes/admin-draw-delete.js";
 import adminDrawTestResetRouter from "./routes/admin-draw-test-reset.js";
 import winnerPayoutsRouter from "./routes/winner-payouts.js";
 
+import { processScheduledDraws } from "./services/scheduled-draws.js";
+
 import {
   getPayoutByTelegramUser,
   saveWinnerScreenshot,
@@ -49,6 +51,10 @@ const DEFAULT_API_URL =
 
 const WINNER_GROUP_CHAT_ID =
   process.env.WINNER_GROUP_CHAT_ID?.trim() ||
+  "";
+
+const SCHEDULED_DRAWS_CRON_TOKEN =
+  process.env.SCHEDULED_DRAWS_CRON_TOKEN?.trim() ||
   "";
 
 function getTelegramApiUrl(
@@ -981,6 +987,71 @@ app.use(
 app.use(
   "/admin/draw-test-reset",
   adminDrawTestResetRouter,
+);
+
+/*
+ * Internal scheduled-draw worker
+ *
+ * POST /internal/scheduled-draws
+ *
+ * Called by the Render cron service.
+ * The cron service does not receive the
+ * database or Telegram secrets; it
+ * authenticates here with a dedicated
+ * bearer token.
+ */
+app.post(
+  "/internal/scheduled-draws",
+  async (req, res) => {
+    if (!SCHEDULED_DRAWS_CRON_TOKEN) {
+      res.status(503).json({
+        error:
+          "SCHEDULED_DRAWS_CRON_TOKEN_NOT_CONFIGURED",
+      });
+
+      return;
+    }
+
+    const authorization =
+      req.header("authorization") ?? "";
+
+    const expected =
+      `Bearer ${SCHEDULED_DRAWS_CRON_TOKEN}`;
+
+    if (
+      authorization !==
+      expected
+    ) {
+      res.status(401).json({
+        error: "UNAUTHORIZED",
+      });
+
+      return;
+    }
+
+    try {
+      const result =
+        await processScheduledDraws();
+
+      res.status(200).json({
+        ok: true,
+        ...result,
+        processedAt:
+          new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error(
+        "Scheduled draw worker failed:",
+        error,
+      );
+
+      res.status(500).json({
+        ok: false,
+        error:
+          "SCHEDULED_DRAWS_PROCESSING_FAILED",
+      });
+    }
+  },
 );
 
 /*
