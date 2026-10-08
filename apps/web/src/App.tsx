@@ -602,7 +602,6 @@ const numberBoardSummary = useMemo(() => {
   if (loading) {
     return (
       <main className="app-shell">
-        ‎<UserWalletButton />
         <header className="topbar">
           <div>
             <p className="brand">ADDIS ዕጣ</p>
@@ -688,7 +687,7 @@ const numberBoardSummary = useMemo(() => {
               እድልህን ዲጂታል አድርግ
             </p>
           </div>
-
+<UserWalletButton />
           <button
             className="profile-button"
             type="button"
@@ -750,7 +749,6 @@ const numberBoardSummary = useMemo(() => {
   }
   return (
     <main className="app-shell">
-      ‎<UserWalletButton />
       <header className="topbar">
         <div>
           <p className="brand">ADDIS ዕጣ</p>
@@ -758,7 +756,7 @@ const numberBoardSummary = useMemo(() => {
             እድልህን ዲጂታል አድርግ
           </p>
         </div>
-
+<UserWalletButton />
         <button
           className="profile-button"
           type="button"
