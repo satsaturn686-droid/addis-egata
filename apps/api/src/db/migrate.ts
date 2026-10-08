@@ -33,35 +33,16 @@ async function migrate() {
 
     await client.query(schema);
 
-    /*
-     * Existing installations may still have the original
-     * UNIQUE(draw_id, number) constraint on entries.
-     *
-     * That constraint prevents a released number from being
-     * reused while preserving the historical entry row.
-     *
-     * Remove only the old uniqueness constraint. Do not delete
-     * any entries or payment history.
-     */
+    await ensureWalletTransactionTypes(client);
+
     await removeLegacyEntryNumberConstraint(client);
 
-    /*
-     * The new partial unique index allows historical entries
-     * with the same number while guaranteeing that only one
-     * active entry can hold a number at a time.
-     */
     await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS uq_entries_active_number
       ON entries(draw_id, number)
       WHERE status IN ('reserved', 'pending_payment', 'paid')
     `);
 
-    /*
-     * Existing installations may have been created with
-     * ON DELETE CASCADE relationships. Remove those
-     * destructive cascades so historical payment, winner,
-     * and result records cannot disappear accidentally.
-     */
     await removeDestructiveCascades(client);
 
     await client.query("COMMIT");
@@ -75,6 +56,70 @@ async function migrate() {
     client.release();
     await pool.end();
   }
+}
+
+async function ensureWalletTransactionTypes(
+  client: import("pg").PoolClient,
+): Promise<void> {
+  const result = await client.query<{
+    constraint_name: string;
+    definition: string;
+  }>(`
+    SELECT
+      con.conname AS constraint_name,
+      pg_get_constraintdef(con.oid) AS definition
+    FROM pg_constraint con
+    INNER JOIN pg_class rel
+      ON rel.oid = con.conrelid
+    INNER JOIN pg_namespace nsp
+      ON nsp.oid = rel.relnamespace
+    WHERE con.contype = 'c'
+      AND nsp.nspname = 'public'
+      AND rel.relname = 'wallet_transactions'
+  `);
+
+  for (const row of result.rows) {
+    const definition =
+      row.definition.toLowerCase();
+
+    if (
+      definition.includes("type") &&
+      definition.includes("deposit") &&
+      definition.includes("purchase")
+    ) {
+      await client.query(
+        `
+          ALTER TABLE wallet_transactions
+          DROP CONSTRAINT ${quoteIdentifier(
+            row.constraint_name,
+          )}
+        `,
+      );
+    }
+  }
+
+  await client.query(`
+    ALTER TABLE wallet_transactions
+    ADD CONSTRAINT wallet_transactions_type_check
+    CHECK (
+      type IN (
+        'deposit',
+        'purchase',
+        'refund',
+        'payout_credit',
+        'withdrawal'
+      )
+    )
+  `).catch(async (error) => {
+    if (
+      error instanceof Error &&
+      /already exists/i.test(error.message)
+    ) {
+      return;
+    }
+
+    throw error;
+  });
 }
 
 async function removeLegacyEntryNumberConstraint(
@@ -121,7 +166,9 @@ async function removeLegacyEntryNumberConstraint(
       await client.query(
         `
           ALTER TABLE entries
-          DROP CONSTRAINT ${quoteIdentifier(constraintName)}
+          DROP CONSTRAINT ${quoteIdentifier(
+            constraintName,
+          )}
         `,
       );
 
@@ -172,7 +219,8 @@ async function removeDestructiveCascades(
       continue;
     }
 
-    const definition = definitionResult.rows[0].definition;
+    const definition =
+      definitionResult.rows[0].definition;
 
     if (!/ON DELETE CASCADE/i.test(definition)) {
       continue;
@@ -181,30 +229,41 @@ async function removeDestructiveCascades(
     await client.query(
       `
         ALTER TABLE ${quoteIdentifier(tableName)}
-        DROP CONSTRAINT ${quoteIdentifier(constraintName)}
+        DROP CONSTRAINT ${quoteIdentifier(
+          constraintName,
+        )}
       `,
     );
 
-    const safeDefinition = definition.replace(
-      /\s+ON DELETE CASCADE/gi,
-      "",
-    );
+    const safeDefinition =
+      definition.replace(
+        /\s+ON DELETE CASCADE/gi,
+        "",
+      );
 
     await client.query(
       `
         ALTER TABLE ${quoteIdentifier(tableName)}
-        ADD CONSTRAINT ${quoteIdentifier(constraintName)}
+        ADD CONSTRAINT ${quoteIdentifier(
+          constraintName,
+        )}
         ${safeDefinition}
       `,
     );
   }
 }
 
-function quoteIdentifier(value: string): string {
+function quoteIdentifier(
+  value: string,
+): string {
   return `"${value.replace(/"/g, '""')}"`;
 }
 
 migrate().catch((error) => {
-  console.error("Migration runner failed:", error);
+  console.error(
+    "Migration runner failed:",
+    error,
+  );
+
   process.exitCode = 1;
 });
