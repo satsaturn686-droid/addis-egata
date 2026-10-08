@@ -1,5 +1,9 @@
 import { pool } from "../db.js";
 
+import {
+  creditCashWinnerToWallet,
+} from "./winner-wallet-payouts.js";
+
 export type PublicWinner = {
   id: string;
   rank: number;
@@ -534,25 +538,22 @@ async function getWinnerNotificationRows(
 
   return result.rows;
 }
-
 async function sendWinnerClaimNotifications(
   row: ResultRow,
 ): Promise<void> {
-  if (
-    !pool ||
-    !TELEGRAM_BOT_TOKEN
-  ) {
+  if (!pool) {
     return;
   }
 
-  await ensureWinnerPayoutRows(
-    row.draw_id,
-  );
-
   const botUsername =
-    await getTelegramBotUsername();
+    row.prize_type === "physical"
+      ? await getTelegramBotUsername()
+      : null;
 
-  if (!botUsername) {
+  if (
+    row.prize_type === "physical" &&
+    !botUsername
+  ) {
     return;
   }
 
@@ -577,6 +578,143 @@ async function sendWinnerClaimNotifications(
       continue;
     }
 
+    const winnerName =
+      [
+        winner.first_name,
+        winner.last_name,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .trim() ||
+      (winner.username
+        ? `@${winner.username}`
+        : "ተሳታፊ");
+
+    /*
+     * CASH WINNER
+     *
+     * The prize is credited directly to
+     * the winner's Addis ዕጣ Wallet.
+     *
+     * creditCashWinnerToWallet() is
+     * idempotent through winner_wallet_credits,
+     * so the same winner can never receive
+     * the same payout twice.
+     */
+    if (
+      row.prize_type === "cash"
+    ) {
+      let credit:
+        | Awaited<
+            ReturnType<
+              typeof creditCashWinnerToWallet
+            >
+          >
+        | null = null;
+
+      try {
+        credit =
+          await creditCashWinnerToWallet(
+            winner.winner_id,
+          );
+      } catch (error) {
+        console.error(
+          "Cash winner wallet payout failed:",
+          error,
+        );
+        continue;
+      }
+
+      const alreadySent =
+        await pool.query(
+          `
+            SELECT id
+            FROM audit_logs
+            WHERE action =
+              'WINNER_WALLET_PAYOUT_TELEGRAM_NOTIFICATION'
+              AND entity_type = 'winner'
+              AND entity_id = $1
+            LIMIT 1
+          `,
+          [winner.winner_id],
+        );
+
+      if (
+        alreadySent.rows.length > 0
+      ) {
+        continue;
+      }
+
+      const message =
+        "🏆 ADDIS ዕጣ — አሸናፊ ነዎት!\n\n" +
+        `🏷️ ዕጣ: ${row.draw_name}\n` +
+        `🥇 ደረጃ: ${winner.rank}ኛ\n` +
+        `🎟️ የዕጣ ቁጥር: #${winner.number}\n` +
+        `👤 ስም: ${winnerName}\n` +
+        `💰 ሽልማት: ${Number(
+          winner.prize_amount,
+        ).toLocaleString(
+          "en-US",
+        )} ብር\n\n` +
+        "🎉 የገንዘብ ሽልማትዎ በቀጥታ " +
+        `Wallet ውስጥ ተጨምሯል።\n` +
+        `💳 አዲሱ Wallet Balance: ${credit.walletBalance.toLocaleString(
+          "en-US",
+        )} ብር`;
+
+      const sent =
+        await sendTelegramWinnerClaimMessage(
+          winner.telegram_id,
+          message,
+          undefined,
+        );
+
+      if (!sent) {
+        continue;
+      }
+
+      await pool.query(
+        `
+          INSERT INTO audit_logs (
+            user_id,
+            action,
+            entity_type,
+            entity_id,
+            details
+          )
+          SELECT
+            w.user_id,
+            'WINNER_WALLET_PAYOUT_TELEGRAM_NOTIFICATION',
+            'winner',
+            w.id,
+            $2
+          FROM winners w
+          WHERE w.id = $1
+        `,
+        [
+          winner.winner_id,
+          JSON.stringify({
+            sentAt:
+              new Date().toISOString(),
+            telegramId:
+              winner.telegram_id,
+            walletBalance:
+              credit.walletBalance,
+            walletTransactionId:
+              credit.walletTransactionId,
+          }),
+        ],
+      );
+
+      continue;
+    }
+
+    /*
+     * PHYSICAL PRIZE
+     *
+     * Keep the existing screenshot +
+     * Telebirr claim flow unchanged.
+     */
     const alreadySent =
       await pool.query(
         `
@@ -599,18 +737,6 @@ async function sendWinnerClaimNotifications(
 
     const claimUrl =
       `https://t.me/${botUsername}?start=claim_${winner.winner_id}`;
-
-    const winnerName =
-      [
-        winner.first_name,
-        winner.last_name,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .trim() ||
-      (winner.username
-        ? `@${winner.username}`
-        : "ተሳታፊ");
 
     const message =
       "🏆 ADDIS ዕጣ — አሸናፊ ነዎት!\n\n" +
