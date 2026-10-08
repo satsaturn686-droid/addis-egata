@@ -880,15 +880,6 @@ export default function AdminDrawManage() {
           false,
         );
       }
-    } catch (actionError) {
-      setError(
-        actionError instanceof Error
-          ? actionError.message
-          : "ዕጣውን ማውጣት አልተቻለም።",
-      );
-    } finally {
-      setBusyDrawId(null);
-    }
   }
     } catch (actionError) {
       setError(
