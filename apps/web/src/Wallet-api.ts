@@ -6,7 +6,8 @@ const API_BASE_URL =
   (import.meta.env.VITE_API_URL as string | undefined)?.replace(
     /\/+$/,
     "",
-  ) || "https://addis-egata-api.onrender.com";
+  ) ||
+  "https://addis-egata-api.onrender.com";
 
 function getInitData(): string {
   const webApp =
@@ -112,12 +113,33 @@ export type WalletDeposit = {
   updatedAt: string;
 };
 
+export type WalletWithdrawal = {
+  id: string;
+  userId: string;
+  amount: number;
+  telebirrNumber: string;
+  status:
+    | "pending"
+    | "paid"
+    | "rejected";
+  rejectionReason: string | null;
+  processedBy: string | null;
+  processedAt: string | null;
+  paymentReference: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type WalletResponse = {
   wallet: Wallet;
 };
 
 export type WalletDepositResponse = {
   deposit: WalletDeposit;
+};
+
+export type WalletWithdrawalResponse = {
+  withdrawal: WalletWithdrawal;
 };
 
 export type WalletPurchaseResponse = {
@@ -148,6 +170,30 @@ export async function createWalletDeposit(
         senderName,
       },
     },
+  );
+}
+
+export async function createWalletWithdrawal(
+  amount: number,
+  telebirrNumber: string,
+): Promise<WalletWithdrawalResponse> {
+  return request<WalletWithdrawalResponse>(
+    "/payments/wallet/withdraw",
+    {
+      method: "POST",
+      body: {
+        amount,
+        telebirrNumber,
+      },
+    },
+  );
+}
+
+export async function getPendingWalletWithdrawals(): Promise<{
+  withdrawals: WalletWithdrawal[];
+}> {
+  return request(
+    "/payments/wallet/withdrawals/pending",
   );
 }
 
