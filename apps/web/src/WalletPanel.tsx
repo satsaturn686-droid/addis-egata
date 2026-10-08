@@ -8,7 +8,7 @@ import {
   createWalletDeposit,
   getWallet,
   purchaseEntryWithWallet,
-} from "./wallet-api";
+} from "./Wallet-api";
 
 type WalletPanelProps = {
   entryId: string;
