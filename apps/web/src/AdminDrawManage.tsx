@@ -880,7 +880,7 @@ export default function AdminDrawManage() {
           false,
         );
       }
-  
+      } catch (actionError) {
       setError(
         actionError instanceof Error
           ? actionError.message
