@@ -303,6 +303,55 @@ async function request<T>(
   return payload as T;
 }
 
+async function publicRequest<T>(
+  path: string,
+  options: ApiRequestOptions = {},
+): Promise<T> {
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+  };
+
+  if (options.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  const response = await fetch(
+    `${API_BASE_URL}${path}`,
+    {
+      method: options.method ?? "GET",
+      headers,
+      credentials: "include",
+      body:
+        options.body !== undefined
+          ? JSON.stringify(options.body)
+          : undefined,
+      signal: options.signal,
+    },
+  );
+
+  let payload: unknown = null;
+
+  const contentType =
+    response.headers.get("content-type") ?? "";
+
+  if (contentType.includes("application/json")) {
+    payload = await response.json();
+  }
+
+  if (!response.ok) {
+    const errorPayload =
+      payload as ApiError | null;
+
+    throw new Error(
+      errorPayload?.message ||
+        errorPayload?.error ||
+        `API request failed with status ${response.status}.`,
+    );
+  }
+
+  return payload as T;
+}
+
 export async function getCurrentUser(
   signal?: AbortSignal,
 ): Promise<TelegramAuthResponse> {
@@ -506,7 +555,7 @@ export async function getPayment(
 export async function getPublishedResults(
   signal?: AbortSignal,
 ): Promise<PublishedResultsResponse> {
-  return request<PublishedResultsResponse>(
+  return publicRequest<PublishedResultsResponse>(
     "/results",
     {
       signal,
@@ -518,7 +567,7 @@ export async function getCurrentLiveDrawState(
   signal?: AbortSignal,
 ): Promise<LiveDrawState | null> {
   const payload =
-    await request<CurrentLiveDrawResponse>(
+    await publicRequest<CurrentLiveDrawResponse>(
       "/results/live",
       {
         signal,
@@ -536,7 +585,7 @@ export async function getPublicDrawResult(
     throw new Error("Draw ID is required.");
   }
 
-  return request<PublicDrawResultResponse>(
+  return publicRequest<PublicDrawResultResponse>(
     `/results/${encodeURIComponent(drawId)}`,
     {
       signal,
@@ -552,7 +601,7 @@ export async function getLiveDrawState(
     throw new Error("Draw ID is required.");
   }
 
-  return request<LiveDrawResponse>(
+  return publicRequest<LiveDrawResponse>(
     `/results/live/${encodeURIComponent(drawId)}`,
     {
       signal,
