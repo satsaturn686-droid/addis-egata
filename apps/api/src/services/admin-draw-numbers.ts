@@ -270,8 +270,12 @@ export async function getAdminDrawNumbers(
           COALESCE(
             SUM(
               CASE
-                WHEN p.status = 'approved'
-                THEN p.amount
+                WHEN e.status = 'paid'
+                THEN COALESCE(
+                  wallet_purchase.amount,
+                  p.amount,
+                  0
+                )
                 ELSE 0
               END
             ),
@@ -296,6 +300,21 @@ export async function getAdminDrawNumbers(
             p.created_at DESC
           LIMIT 1
         ) AS p
+          ON TRUE
+
+        LEFT JOIN LATERAL (
+          SELECT
+            ABS(wt.amount) AS amount
+          FROM wallet_transactions wt
+          WHERE wt.reference = CONCAT(
+            'purchase:',
+            e.id
+          )
+            AND wt.type = 'purchase'
+            AND wt.amount < 0
+          ORDER BY wt.created_at DESC
+          LIMIT 1
+        ) AS wallet_purchase
           ON TRUE
 
         WHERE e.draw_id = $1
