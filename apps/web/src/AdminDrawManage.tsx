@@ -2373,18 +2373,21 @@ export default function AdminDrawManage() {
             >
               {executionResult.winners.map(
                 (winner) => {
-                  const displayName =
-                    [
-                      winner.firstName,
-                      winner.lastName,
-                    ]
-                      .filter(Boolean)
-                      .join(" ")
-                      .trim() ||
-                    (winner.username
-                      ? `@${winner.username}`
-                      : "ተሳታፊ");
+                  
+                  const matchedNumber =
+                    numberData?.numbers.find(
+                      (item) =>
+                        item.user?.id ===
+                        winner.userId,
+                    );
 
+                  const displayName =
+                    matchedNumber?.user
+                      ?.displayName ||
+                    (matchedNumber?.user
+                      ?.username
+                      ? `@${matchedNumber.user.username}`
+                      : winner.userId);
                   return (
                     <div
                       key={winner.id}
@@ -2419,10 +2422,12 @@ export default function AdminDrawManage() {
                             fontSize: "12px",
                           }}
                         >
-                          {displayName}
-                          {winner.username &&
-                          winner.firstName
-                            ? ` (@${winner.username})`
+                                                    {displayName}
+                          {matchedNumber?.user
+                            ?.username &&
+                          matchedNumber.user
+                            .displayName
+                            ? ` (@${matchedNumber.user.username})`
                             : ""}
                         </div>
                       </div>
@@ -2433,7 +2438,9 @@ export default function AdminDrawManage() {
                         }}
                       >
                         <strong>
-                          #{winner.number}
+                          {matchedNumber
+                            ? `#${matchedNumber.number}`
+                            : "—"}
                         </strong>
 
                         <div
