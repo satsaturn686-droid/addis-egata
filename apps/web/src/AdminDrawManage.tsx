@@ -2315,7 +2315,111 @@ export default function AdminDrawManage() {
                 {executionResult.winners.length}
               </strong>
             </div>
+          <div
+            style={{
+              marginTop: "14px",
+              borderTop: "1px solid #202b36",
+              paddingTop: "14px",
+            }}
+          >
+            <h4
+              style={{
+                margin: "0 0 10px",
+                fontSize: "14px",
+              }}
+            >
+              🏆 የአሸናፊዎች ዝርዝር
+            </h4>
 
+            <div
+              style={{
+                display: "grid",
+                gap: "8px",
+              }}
+            >
+              {executionResult.winners.map(
+                (winner) => {
+                  const displayName =
+                    [
+                      winner.firstName,
+                      winner.lastName,
+                    ]
+                      .filter(Boolean)
+                      .join(" ")
+                      .trim() ||
+                    (winner.username
+                      ? `@${winner.username}`
+                      : "ተሳታፊ");
+
+                  return (
+                    <div
+                      key={winner.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: "10px",
+                        padding: "11px 12px",
+                        borderRadius: "10px",
+                        background: "#0b1016",
+                        border:
+                          "1px solid #202b36",
+                      }}
+                    >
+                      <div>
+                        <strong>
+                          {winner.rank === 1
+                            ? "🥇"
+                            : winner.rank === 2
+                              ? "🥈"
+                              : winner.rank === 3
+                                ? "🥉"
+                                : "🏅"}{" "}
+                          {winner.rank}ኛ
+                        </strong>
+
+                        <div
+                          style={{
+                            marginTop: "3px",
+                            color: "#aeb9c5",
+                            fontSize: "12px",
+                          }}
+                        >
+                          {displayName}
+                          {winner.username &&
+                          winner.firstName
+                            ? ` (@${winner.username})`
+                            : ""}
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          textAlign: "right",
+                        }}
+                      >
+                        <strong>
+                          #{winner.number}
+                        </strong>
+
+                        <div
+                          style={{
+                            marginTop: "3px",
+                            color: "#a9e2bf",
+                            fontSize: "12px",
+                          }}
+                        >
+                          {formatMoney(
+                            winner.prizeAmount,
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                },
+              )}
+            </div>
+          </div>
             <div className="result-item">
               <span>
                 የተመረጡ ተሳታፊዎች
