@@ -10,6 +10,12 @@
  *   balance is deducted atomically
  *   entry becomes paid atomically
  *
+ * Withdrawals:
+ *   pending -> paid/rejected
+ *
+ * Cash winner payouts:
+ *   credited exactly once to wallet
+ *
  * Wallet transactions are immutable ledger records.
  */
 
@@ -74,7 +80,8 @@ CREATE TABLE IF NOT EXISTS wallet_transactions (
         'deposit',
         'purchase',
         'refund',
-        'payout_credit'
+        'payout_credit',
+        'withdrawal'
       )
     ),
 
@@ -91,6 +98,57 @@ CREATE TABLE IF NOT EXISTS wallet_transactions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
   UNIQUE(reference)
+);
+
+CREATE TABLE IF NOT EXISTS withdrawals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  user_id UUID NOT NULL
+    REFERENCES users(id),
+
+  amount NUMERIC(12, 2) NOT NULL
+    CHECK (amount > 0),
+
+  telebirr_number TEXT NOT NULL,
+
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (
+      status IN (
+        'pending',
+        'paid',
+        'rejected'
+      )
+    ),
+
+  rejection_reason TEXT,
+
+  processed_by UUID REFERENCES users(id),
+
+  processed_at TIMESTAMPTZ,
+
+  payment_reference TEXT,
+
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS winner_wallet_credits (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  winner_id UUID NOT NULL UNIQUE
+    REFERENCES winners(id),
+
+  user_id UUID NOT NULL
+    REFERENCES users(id),
+
+  amount NUMERIC(12, 2) NOT NULL
+    CHECK (amount > 0),
+
+  wallet_transaction_id UUID
+    REFERENCES wallet_transactions(id),
+
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_wallets_user
@@ -110,3 +168,15 @@ CREATE INDEX IF NOT EXISTS idx_wallet_transactions_user
 
 CREATE INDEX IF NOT EXISTS idx_wallet_transactions_created
   ON wallet_transactions(created_at);
+
+CREATE INDEX IF NOT EXISTS idx_withdrawals_user
+  ON withdrawals(user_id);
+
+CREATE INDEX IF NOT EXISTS idx_withdrawals_status
+  ON withdrawals(status);
+
+CREATE INDEX IF NOT EXISTS idx_withdrawals_created
+  ON withdrawals(created_at);
+
+CREATE INDEX IF NOT EXISTS idx_winner_wallet_credits_user
+  ON winner_wallet_credits(user_id);
