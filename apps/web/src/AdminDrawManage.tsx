@@ -1507,6 +1507,51 @@ export default function AdminDrawManage() {
 
   return (
     <main className="admin-draw-manage">
+            {liveDraw ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="ቀጥታ ዕጣ"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            overflowY: "auto",
+            background: "rgba(4,7,12,0.96)",
+            backdropFilter: "blur(14px)",
+            WebkitBackdropFilter: "blur(14px)",
+            padding: "16px 12px 24px",
+            boxSizing: "border-box",
+          }}
+        >
+          <div
+            style={{
+              width: "min(100%, 760px)",
+              minHeight: "100%",
+              margin: "0 auto",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <div
+              style={{
+                width: "100%",
+                borderRadius: "22px",
+                overflow: "hidden",
+                border:
+                  "1px solid rgba(255,255,255,0.12)",
+                background:
+                  "rgba(255,255,255,0.035)",
+                boxShadow:
+                  "0 30px 100px rgba(0,0,0,0.55)",
+              }}
+            >
+              <LiveDraw live={liveDraw} />
+            </div>
+          </div>
+        </div>
+      ) : null}
       <style>
         {`
           .admin-draw-manage {
