@@ -22,24 +22,19 @@ import {
   rejectWalletDeposit,
 } from "../services/wallet.js";
 
-const router = Router();
+import {
+  getPendingWalletWithdrawals,
+  approveWalletWithdrawal,
+  rejectWalletWithdrawal,
+} from "../services/wallet-withdrawals.js";
 
-/*
- * All routes in this file require:
- * 1. Valid Telegram authentication
- * 2. Administrator privileges
- */
+const router = Router();
 
 router.use(
   requireTelegramAuth,
   requireAdmin,
 );
 
-/*
- * GET /admin/payments/settings
- *
- * Returns the current Telebirr payment settings.
- */
 router.get(
   "/settings",
   async (_req, res) => {
@@ -66,11 +61,6 @@ router.get(
   },
 );
 
-/*
- * POST /admin/payments/settings
- *
- * Updates the Telebirr receiving number.
- */
 router.post(
   "/settings",
   async (req, res) => {
@@ -101,7 +91,9 @@ router.post(
         return;
       }
 
-      if (telebirrNumber.length > 100) {
+      if (
+        telebirrNumber.length > 100
+      ) {
         res.status(400).json({
           error:
             "TELEBIRR_NUMBER_TOO_LONG",
@@ -126,13 +118,16 @@ router.post(
           ? error.message
           : "PAYMENT_SETTINGS_UPDATE_FAILED";
 
-      const clientErrors = new Set([
-        "INVALID_ADMIN_USER_ID",
-        "TELEBIRR_NUMBER_REQUIRED",
-        "TELEBIRR_NUMBER_TOO_LONG",
-      ]);
+      const clientErrors =
+        new Set([
+          "INVALID_ADMIN_USER_ID",
+          "TELEBIRR_NUMBER_REQUIRED",
+          "TELEBIRR_NUMBER_TOO_LONG",
+        ]);
 
-      if (clientErrors.has(message)) {
+      if (
+        clientErrors.has(message)
+      ) {
         res.status(400).json({
           error: message,
           message:
@@ -156,11 +151,6 @@ router.post(
   },
 );
 
-/*
- * GET /admin/payments/wallet/deposits/pending
- *
- * Returns wallet deposits waiting for admin approval.
- */
 router.get(
   "/wallet/deposits/pending",
   async (_req, res) => {
@@ -187,12 +177,6 @@ router.get(
   },
 );
 
-/*
- * POST /admin/payments/wallet/deposits/:depositId/approve
- *
- * Approves a pending wallet deposit and credits
- * the user's wallet balance.
- */
 router.post(
   "/wallet/deposits/:depositId/approve",
   async (req, res) => {
@@ -235,14 +219,17 @@ router.post(
           ? error.message
           : "WALLET_DEPOSIT_APPROVAL_FAILED";
 
-      const clientErrors = new Set([
-        "INVALID_DEPOSIT_ID",
-        "INVALID_ADMIN_USER_ID",
-        "DEPOSIT_NOT_FOUND",
-        "DEPOSIT_ALREADY_PROCESSED",
-      ]);
+      const clientErrors =
+        new Set([
+          "INVALID_DEPOSIT_ID",
+          "INVALID_ADMIN_USER_ID",
+          "DEPOSIT_NOT_FOUND",
+          "DEPOSIT_ALREADY_PROCESSED",
+        ]);
 
-      if (clientErrors.has(message)) {
+      if (
+        clientErrors.has(message)
+      ) {
         res.status(400).json({
           error: message,
           message:
@@ -266,11 +253,6 @@ router.post(
   },
 );
 
-/*
- * POST /admin/payments/wallet/deposits/:depositId/reject
- *
- * Rejects a pending wallet deposit.
- */
 router.post(
   "/wallet/deposits/:depositId/reject",
   async (req, res) => {
@@ -330,16 +312,19 @@ router.post(
           ? error.message
           : "WALLET_DEPOSIT_REJECTION_FAILED";
 
-      const clientErrors = new Set([
-        "INVALID_DEPOSIT_ID",
-        "INVALID_ADMIN_USER_ID",
-        "REJECTION_REASON_REQUIRED",
-        "REJECTION_REASON_TOO_LONG",
-        "DEPOSIT_NOT_FOUND",
-        "DEPOSIT_ALREADY_PROCESSED",
-      ]);
+      const clientErrors =
+        new Set([
+          "INVALID_DEPOSIT_ID",
+          "INVALID_ADMIN_USER_ID",
+          "REJECTION_REASON_REQUIRED",
+          "REJECTION_REASON_TOO_LONG",
+          "DEPOSIT_NOT_FOUND",
+          "DEPOSIT_ALREADY_PROCESSED",
+        ]);
 
-      if (clientErrors.has(message)) {
+      if (
+        clientErrors.has(message)
+      ) {
         res.status(400).json({
           error: message,
           message:
@@ -363,11 +348,223 @@ router.post(
   },
 );
 
-/*
- * GET /admin/payments/pending
- *
- * Returns payments waiting for manual Telebirr verification.
- */
+router.get(
+  "/wallet/withdrawals/pending",
+  async (_req, res) => {
+    try {
+      const withdrawals =
+        await getPendingWalletWithdrawals();
+
+      res.status(200).json({
+        withdrawals,
+      });
+    } catch (error) {
+      console.error(
+        "Get pending wallet withdrawals error:",
+        error,
+      );
+
+      res.status(500).json({
+        error:
+          "WALLET_WITHDRAWALS_LOAD_FAILED",
+        message:
+          "Pending wallet withdrawals could not be loaded.",
+      });
+    }
+  },
+);
+
+router.post(
+  "/wallet/withdrawals/:withdrawalId/approve",
+  async (req, res) => {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          error:
+            "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
+        });
+        return;
+      }
+
+      const withdrawalId =
+        req.params.withdrawalId?.trim();
+
+      const paymentReference =
+        typeof req.body?.paymentReference ===
+        "string"
+          ? req.body.paymentReference.trim()
+          : "";
+
+      if (!withdrawalId) {
+        res.status(400).json({
+          error:
+            "INVALID_WITHDRAWAL_ID",
+          message:
+            "Withdrawal ID is required.",
+        });
+        return;
+      }
+
+      if (!paymentReference) {
+        res.status(400).json({
+          error:
+            "PAYMENT_REFERENCE_REQUIRED",
+          message:
+            "Payment reference is required.",
+        });
+        return;
+      }
+
+      const withdrawal =
+        await approveWalletWithdrawal(
+          withdrawalId,
+          req.user.id,
+          paymentReference,
+        );
+
+      res.status(200).json({
+        withdrawal,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "WALLET_WITHDRAWAL_APPROVAL_FAILED";
+
+      const clientErrors =
+        new Set([
+          "INVALID_WITHDRAWAL_ID",
+          "INVALID_ADMIN_USER_ID",
+          "PAYMENT_REFERENCE_REQUIRED",
+          "PAYMENT_REFERENCE_TOO_LONG",
+          "WITHDRAWAL_NOT_FOUND",
+          "WITHDRAWAL_ALREADY_PROCESSED",
+        ]);
+
+      if (
+        clientErrors.has(message)
+      ) {
+        res.status(400).json({
+          error: message,
+          message:
+            "The wallet withdrawal could not be approved.",
+        });
+        return;
+      }
+
+      console.error(
+        "Approve wallet withdrawal error:",
+        error,
+      );
+
+      res.status(500).json({
+        error:
+          "WALLET_WITHDRAWAL_APPROVAL_FAILED",
+        message:
+          "The wallet withdrawal could not be approved.",
+      });
+    }
+  },
+);
+
+router.post(
+  "/wallet/withdrawals/:withdrawalId/reject",
+  async (req, res) => {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          error:
+            "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
+        });
+        return;
+      }
+
+      const withdrawalId =
+        req.params.withdrawalId?.trim();
+
+      const rejectionReason =
+        typeof req.body?.rejectionReason ===
+        "string"
+          ? req.body.rejectionReason.trim()
+          : "";
+
+      if (!withdrawalId) {
+        res.status(400).json({
+          error:
+            "INVALID_WITHDRAWAL_ID",
+          message:
+            "Withdrawal ID is required.",
+        });
+        return;
+      }
+
+      if (!rejectionReason) {
+        res.status(400).json({
+          error:
+            "REJECTION_REASON_REQUIRED",
+          message:
+            "A rejection reason is required.",
+        });
+        return;
+      }
+
+      const withdrawal =
+        await rejectWalletWithdrawal(
+          withdrawalId,
+          req.user.id,
+          rejectionReason,
+        );
+
+      res.status(200).json({
+        withdrawal,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "WALLET_WITHDRAWAL_REJECTION_FAILED";
+
+      const clientErrors =
+        new Set([
+          "INVALID_WITHDRAWAL_ID",
+          "INVALID_ADMIN_USER_ID",
+          "REJECTION_REASON_REQUIRED",
+          "REJECTION_REASON_TOO_LONG",
+          "WITHDRAWAL_NOT_FOUND",
+          "WITHDRAWAL_ALREADY_PROCESSED",
+          "WALLET_NOT_FOUND",
+        ]);
+
+      if (
+        clientErrors.has(message)
+      ) {
+        res.status(400).json({
+          error: message,
+          message:
+            "The wallet withdrawal could not be rejected.",
+        });
+        return;
+      }
+
+      console.error(
+        "Reject wallet withdrawal error:",
+        error,
+      );
+
+      res.status(500).json({
+        error:
+          "WALLET_WITHDRAWAL_REJECTION_FAILED",
+        message:
+          "The wallet withdrawal could not be rejected.",
+      });
+    }
+  },
+);
+
 router.get(
   "/pending",
   async (_req, res) => {
@@ -394,18 +591,6 @@ router.get(
   },
 );
 
-/*
- * POST /admin/payments/:paymentId/approve
- *
- * Approves a pending Telebirr payment.
- *
- * Important:
- * The 30-minute reservation applies to payment
- * submission. Once the payment has been submitted
- * and remains pending, it can still be approved
- * after the reservation period, provided the draw
- * deadline has not passed.
- */
 router.post(
   "/:paymentId/approve",
   async (req, res) => {
@@ -448,21 +633,24 @@ router.post(
           ? error.message
           : "PAYMENT_APPROVAL_FAILED";
 
-      const clientErrors = new Set([
-        "INVALID_ADMIN_USER_ID",
-        "PAYMENT_NOT_FOUND",
-        "PAYMENT_ALREADY_PROCESSED",
-        "ENTRY_NOT_FOUND",
-        "PAYMENT_ENTRY_MISMATCH",
-        "PAYMENT_AMOUNT_MISMATCH",
-        "ENTRY_NOT_VERIFIABLE",
-        "DRAW_NOT_VERIFIABLE",
-        "DRAW_NOT_STARTED",
-        "DRAW_DEADLINE_PASSED",
-        "ENTRY_ALREADY_PAID",
-      ]);
+      const clientErrors =
+        new Set([
+          "INVALID_ADMIN_USER_ID",
+          "PAYMENT_NOT_FOUND",
+          "PAYMENT_ALREADY_PROCESSED",
+          "ENTRY_NOT_FOUND",
+          "PAYMENT_ENTRY_MISMATCH",
+          "PAYMENT_AMOUNT_MISMATCH",
+          "ENTRY_NOT_VERIFIABLE",
+          "DRAW_NOT_VERIFIABLE",
+          "DRAW_NOT_STARTED",
+          "DRAW_DEADLINE_PASSED",
+          "ENTRY_ALREADY_PAID",
+        ]);
 
-      if (clientErrors.has(message)) {
+      if (
+        clientErrors.has(message)
+      ) {
         res.status(400).json({
           error: message,
           message:
@@ -486,12 +674,6 @@ router.post(
   },
 );
 
-/*
- * POST /admin/payments/:paymentId/reject
- *
- * Rejects a pending Telebirr payment and
- * releases the selected number.
- */
 router.post(
   "/:paymentId/reject",
   async (req, res) => {
@@ -551,18 +733,21 @@ router.post(
           ? error.message
           : "PAYMENT_REJECTION_FAILED";
 
-      const clientErrors = new Set([
-        "INVALID_ADMIN_USER_ID",
-        "REJECTION_REASON_REQUIRED",
-        "REJECTION_REASON_TOO_LONG",
-        "PAYMENT_NOT_FOUND",
-        "PAYMENT_ALREADY_PROCESSED",
-        "ENTRY_NOT_FOUND",
-        "PAYMENT_ENTRY_MISMATCH",
-        "ENTRY_NOT_REJECTABLE",
-      ]);
+      const clientErrors =
+        new Set([
+          "INVALID_ADMIN_USER_ID",
+          "REJECTION_REASON_REQUIRED",
+          "REJECTION_REASON_TOO_LONG",
+          "PAYMENT_NOT_FOUND",
+          "PAYMENT_ALREADY_PROCESSED",
+          "ENTRY_NOT_FOUND",
+          "PAYMENT_ENTRY_MISMATCH",
+          "ENTRY_NOT_REJECTABLE",
+        ]);
 
-      if (clientErrors.has(message)) {
+      if (
+        clientErrors.has(message)
+      ) {
         res.status(400).json({
           error: message,
           message:
