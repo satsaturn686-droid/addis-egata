@@ -1,8 +1,9 @@
 import {
   useEffect,
   useState,
+  type FormEvent,
 } from "react";
-
+event: FormEvent<HTMLFormElement>,
 import {
   getPaymentSettings,
 } from "./api";
