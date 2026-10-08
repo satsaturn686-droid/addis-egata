@@ -16,6 +16,7 @@ import {
   type TelegramAuthResponse,
 } from "./api";
 import PublicResults from "./PublicResults";
+  import WalletPanel from "./WalletPanel";
 type TelegramWebApp = {
   ready: () => void;
   expand: () => void;
@@ -1197,178 +1198,35 @@ const numberBoardSummary = useMemo(() => {
                 </strong>
               </div>
             )}
+{selectedEntry.status === "reserved" &&
+  !selectedReservationExpired && (
+    <WalletPanel
+      entryId={selectedEntry.id}
+      entryFee={activeDraw.entryFee}
+      telebirrNumber={telebirrNumber}
+      onPurchased={(balance) => {
+        const updatedEntry: Entry = {
+          ...selectedEntry,
+          status: "paid",
+          reservedUntil: null,
+          paidAt: new Date().toISOString(),
+        };
 
-          {selectedEntry.status === "reserved" &&
-            !selectedReservationExpired && (
-              <form
-                onSubmit={handleSubmitPayment}
-                style={{
-                  marginTop: "16px",
-                  display: "grid",
-                  gap: "12px",
-                }}
-              >
-                <div
-                  style={{
-                    padding: "14px",
-                    borderRadius: "14px",
-                    background:
-                      "rgba(255,255,255,0.04)",
-                    border:
-                      "1px solid rgba(255,255,255,0.10)",
-                  }}
-                >
-                  <strong>
-                    የክፍያ መመሪያ
-                  </strong>
+        setEntries((current) =>
+          current.map((entry) =>
+            entry.id === selectedEntry.id
+              ? updatedEntry
+              : entry,
+          ),
+        );
 
-                  <p
-                    className="hero-description"
-                    style={{
-                      marginBottom: 0,
-                      marginTop: "8px",
-                    }}
-                  >
-                    1. {formatMoney(activeDraw.entryFee)}
-በዚህ የTelebirr ቁጥር ላይ ይላኩ፦{" "}
-<strong>
-  {telebirrNumber || "የክፍያ ቁጥር አልተዘጋጀም"}
-</strong>
-።
-                    <br />
-                    2. ከክፍያው በኋላ የTransaction
-                    Reference ቁጥሩን ከዚህ በታች
-                    ያስገቡ።
-                    <br />
-                    3. Admin ክፍያውን ካረጋገጠ
-                    ቁጥርዎ ይቆለፋል።
-                  </p>
-                </div>
+        setSelectedEntry(updatedEntry);
 
-                <label
-                  style={{
-                    display: "grid",
-                    gap: "7px",
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: "13px",
-                      fontWeight: 700,
-                    }}
-                  >
-                    Telebirr Transaction Reference *
-                  </span>
-
-                  <input
-                    type="text"
-                    value={paymentReference}
-                    onChange={(event) =>
-                      setPaymentReference(
-                        event.target.value,
-                      )
-                    }
-                    placeholder="ለምሳሌ TXN123456"
-                    maxLength={200}
-                    autoComplete="off"
-                    style={{
-                      width: "100%",
-                      boxSizing: "border-box",
-                      minHeight: "48px",
-                      padding: "12px",
-                      borderRadius: "12px",
-                      border:
-                        "1px solid rgba(255,255,255,0.14)",
-                      background:
-                        "rgba(255,255,255,0.05)",
-                      color: "inherit",
-                      fontSize: "16px",
-                    }}
-                  />
-                </label>
-
-                <label
-                  style={{
-                    display: "grid",
-                    gap: "7px",
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: "13px",
-                      fontWeight: 700,
-                    }}
-                  >
-                    የላኪው ስም
-                    <span
-                      style={{
-                        opacity: 0.55,
-                        fontWeight: 400,
-                      }}
-                    >
-                      {" "}
-                      (አማራጭ)
-                    </span>
-                  </span>
-
-                  <input
-                    type="text"
-                    value={senderName}
-                    onChange={(event) =>
-                      setSenderName(
-                        event.target.value,
-                      )
-                    }
-                    placeholder="የTelebirr አካውንት ስም"
-                    maxLength={200}
-                    autoComplete="name"
-                    style={{
-                      width: "100%",
-                      boxSizing: "border-box",
-                      minHeight: "48px",
-                      padding: "12px",
-                      borderRadius: "12px",
-                      border:
-                        "1px solid rgba(255,255,255,0.14)",
-                      background:
-                        "rgba(255,255,255,0.05)",
-                      color: "inherit",
-                      fontSize: "16px",
-                    }}
-                  />
-                </label>
-
-                {paymentError && (
-                  <div
-                    role="alert"
-                    style={{
-                      padding: "12px",
-                      borderRadius: "12px",
-                      background:
-                        "rgba(255,80,80,0.10)",
-                      border:
-                        "1px solid rgba(255,80,80,0.25)",
-                      color: "#ffb4b4",
-                      fontSize: "14px",
-                    }}
-                  >
-                    {paymentError}
-                  </div>
-                )}
-
-                <button
-                  className="primary-button"
-                  type="submit"
-                  disabled={paymentSubmitting}
-                >
-                  {paymentSubmitting
-                    ? "ክፍያውን በማስገባት ላይ..."
-                    : `${formatMoney(
-                        activeDraw.entryFee,
-                      )} ክፍያ አስገባ`}
-                </button>
-              </form>
-            )}
+        setPaymentError(null);
+        setPaymentSuccess(false);
+      }}
+    />
+  )}
 
           {paymentSuccess && (
             <div
