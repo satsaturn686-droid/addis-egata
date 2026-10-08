@@ -807,7 +807,7 @@ export default function AdminDrawManage() {
       setBusyDrawId(null);
     }
   }
-    async function handleExecute(
+      async function handleExecute(
     draw: AdminDrawListItem,
   ) {
     if (!canExecute(draw.status)) {
@@ -831,7 +831,41 @@ export default function AdminDrawManage() {
         response.result,
       );
 
-      setLiveDrawId(draw.id);
+      const immediateLiveState: LiveDrawState = {
+        drawId:
+          response.result.drawId,
+        drawName:
+          draw.name,
+        status: "drawing",
+        prizeType:
+          draw.prizeType,
+        prizeName:
+          draw.prizeName,
+        prizeImageUrl:
+          draw.prizeImageUrl,
+        displayedPrizeValue:
+          draw.displayedPrizeValue,
+        winnerCount:
+          draw.winnerCount,
+        eligibleEntryCount:
+          response.result
+            .eligibleEntryCount,
+        executedAt:
+          response.result.executedAt,
+        publishedAt: null,
+        revealedWinnerCount: 0,
+        totalWinnerCount:
+          draw.winnerCount,
+        winners: [],
+      };
+
+      setLiveDraw(
+        immediateLiveState,
+      );
+
+      setLiveDrawId(
+        draw.id,
+      );
 
       setSuccess(
         `“${draw.name}” ዕጣ ተሳክቶ ወጥቷል።`,
@@ -846,6 +880,16 @@ export default function AdminDrawManage() {
           false,
         );
       }
+    } catch (actionError) {
+      setError(
+        actionError instanceof Error
+          ? actionError.message
+          : "ዕጣውን ማውጣት አልተቻለም።",
+      );
+    } finally {
+      setBusyDrawId(null);
+    }
+  }
     } catch (actionError) {
       setError(
         actionError instanceof Error
