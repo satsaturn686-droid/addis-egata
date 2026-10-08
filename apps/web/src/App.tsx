@@ -16,6 +16,7 @@ import {
   type TelegramAuthResponse,
 } from "./api";
 import PublicResults from "./PublicResults";
+import UserWalletButton from "./UserWalletButton";
   import WalletPanel from "./WalletPanel";
 type TelegramWebApp = {
   ready: () => void;
@@ -601,6 +602,7 @@ const numberBoardSummary = useMemo(() => {
   if (loading) {
     return (
       <main className="app-shell">
+        ‎<UserWalletButton />
         <header className="topbar">
           <div>
             <p className="brand">ADDIS ዕጣ</p>
@@ -748,6 +750,7 @@ const numberBoardSummary = useMemo(() => {
   }
   return (
     <main className="app-shell">
+      ‎<UserWalletButton />
       <header className="topbar">
         <div>
           <p className="brand">ADDIS ዕጣ</p>
