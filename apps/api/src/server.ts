@@ -866,7 +866,7 @@ app.use(
  * GET /results/:drawId
  */
 app.use(
-  "/results",
+  "/",
   resultsRouter,
 );
 
