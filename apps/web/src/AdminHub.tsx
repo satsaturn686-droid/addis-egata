@@ -6,9 +6,11 @@ import AdminDashboard from "./AdminDashboard";
 import AdminDrawCreate from "./AdminDrawCreate";
 import AdminDrawManage from "./AdminDrawManage";
 import AdminPaymentSettings from "./AdminPaymentSettings";
+import AdminWallet from "./AdminWallet";
 
 type AdminSection =
   | "payments"
+  | "wallet"
   | "create-draw"
   | "draw-manage"
   | "payment-settings";
@@ -55,7 +57,7 @@ export default function AdminHub() {
           .admin-hub-tabs {
             display: grid;
             grid-template-columns:
-              repeat(4, minmax(0, 1fr));
+              repeat(5, minmax(0, 1fr));
             gap: 8px;
           }
 
@@ -82,10 +84,10 @@ export default function AdminHub() {
             outline-offset: 2px;
           }
 
-          @media (max-width: 760px) {
+          @media (max-width: 900px) {
             .admin-hub-tabs {
               grid-template-columns:
-                repeat(2, minmax(0, 1fr));
+                repeat(3, minmax(0, 1fr));
             }
           }
 
@@ -129,6 +131,20 @@ export default function AdminHub() {
             }
           >
             የክፍያ ማረጋገጫ
+          </button>
+
+          <button
+            type="button"
+            className={
+              section === "wallet"
+                ? "admin-hub-tab active"
+                : "admin-hub-tab"
+            }
+            onClick={() =>
+              setSection("wallet")
+            }
+          >
+            💰 Wallet
           </button>
 
           <button
@@ -181,6 +197,8 @@ export default function AdminHub() {
             setSection("draw-manage")
           }
         />
+      ) : section === "wallet" ? (
+        <AdminWallet />
       ) : section === "create-draw" ? (
         <AdminDrawCreate
           onCreated={() =>
