@@ -16,6 +16,12 @@ import {
   updateTelebirrNumber,
 } from "../services/payment-settings.js";
 
+import {
+  getPendingWalletDeposits,
+  approveWalletDeposit,
+  rejectWalletDeposit,
+} from "../services/wallet.js";
+
 const router = Router();
 
 /*
@@ -145,6 +151,213 @@ router.post(
           "PAYMENT_SETTINGS_UPDATE_FAILED",
         message:
           "The Telebirr number could not be saved.",
+      });
+    }
+  },
+);
+
+/*
+ * GET /admin/payments/wallet/deposits/pending
+ *
+ * Returns wallet deposits waiting for admin approval.
+ */
+router.get(
+  "/wallet/deposits/pending",
+  async (_req, res) => {
+    try {
+      const deposits =
+        await getPendingWalletDeposits();
+
+      res.status(200).json({
+        deposits,
+      });
+    } catch (error) {
+      console.error(
+        "Get pending wallet deposits error:",
+        error,
+      );
+
+      res.status(500).json({
+        error:
+          "WALLET_DEPOSITS_LOAD_FAILED",
+        message:
+          "Pending wallet deposits could not be loaded.",
+      });
+    }
+  },
+);
+
+/*
+ * POST /admin/payments/wallet/deposits/:depositId/approve
+ *
+ * Approves a pending wallet deposit and credits
+ * the user's wallet balance.
+ */
+router.post(
+  "/wallet/deposits/:depositId/approve",
+  async (req, res) => {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          error:
+            "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
+        });
+        return;
+      }
+
+      const depositId =
+        req.params.depositId?.trim();
+
+      if (!depositId) {
+        res.status(400).json({
+          error:
+            "INVALID_DEPOSIT_ID",
+          message:
+            "Deposit ID is required.",
+        });
+        return;
+      }
+
+      const deposit =
+        await approveWalletDeposit(
+          depositId,
+          req.user.id,
+        );
+
+      res.status(200).json({
+        deposit,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "WALLET_DEPOSIT_APPROVAL_FAILED";
+
+      const clientErrors = new Set([
+        "INVALID_DEPOSIT_ID",
+        "INVALID_ADMIN_USER_ID",
+        "DEPOSIT_NOT_FOUND",
+        "DEPOSIT_ALREADY_PROCESSED",
+      ]);
+
+      if (clientErrors.has(message)) {
+        res.status(400).json({
+          error: message,
+          message:
+            "The wallet deposit could not be approved.",
+        });
+        return;
+      }
+
+      console.error(
+        "Approve wallet deposit error:",
+        error,
+      );
+
+      res.status(500).json({
+        error:
+          "WALLET_DEPOSIT_APPROVAL_FAILED",
+        message:
+          "The wallet deposit could not be approved.",
+      });
+    }
+  },
+);
+
+/*
+ * POST /admin/payments/wallet/deposits/:depositId/reject
+ *
+ * Rejects a pending wallet deposit.
+ */
+router.post(
+  "/wallet/deposits/:depositId/reject",
+  async (req, res) => {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          error:
+            "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
+        });
+        return;
+      }
+
+      const depositId =
+        req.params.depositId?.trim();
+
+      const rejectionReason =
+        typeof req.body?.rejectionReason ===
+        "string"
+          ? req.body.rejectionReason.trim()
+          : "";
+
+      if (!depositId) {
+        res.status(400).json({
+          error:
+            "INVALID_DEPOSIT_ID",
+          message:
+            "Deposit ID is required.",
+        });
+        return;
+      }
+
+      if (!rejectionReason) {
+        res.status(400).json({
+          error:
+            "REJECTION_REASON_REQUIRED",
+          message:
+            "A rejection reason is required.",
+        });
+        return;
+      }
+
+      const deposit =
+        await rejectWalletDeposit(
+          depositId,
+          req.user.id,
+          rejectionReason,
+        );
+
+      res.status(200).json({
+        deposit,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "WALLET_DEPOSIT_REJECTION_FAILED";
+
+      const clientErrors = new Set([
+        "INVALID_DEPOSIT_ID",
+        "INVALID_ADMIN_USER_ID",
+        "REJECTION_REASON_REQUIRED",
+        "REJECTION_REASON_TOO_LONG",
+        "DEPOSIT_NOT_FOUND",
+        "DEPOSIT_ALREADY_PROCESSED",
+      ]);
+
+      if (clientErrors.has(message)) {
+        res.status(400).json({
+          error: message,
+          message:
+            "The wallet deposit could not be rejected.",
+        });
+        return;
+      }
+
+      console.error(
+        "Reject wallet deposit error:",
+        error,
+      );
+
+      res.status(500).json({
+        error:
+          "WALLET_DEPOSIT_REJECTION_FAILED",
+        message:
+          "The wallet deposit could not be rejected.",
       });
     }
   },
