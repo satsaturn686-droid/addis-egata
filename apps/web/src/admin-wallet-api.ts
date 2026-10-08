@@ -6,7 +6,8 @@ const API_BASE_URL =
   (import.meta.env.VITE_API_URL as string | undefined)?.replace(
     /\/+$/,
     "",
-  ) || "https://addis-egata-api.onrender.com";
+  ) ||
+  "https://addis-egata-api.onrender.com";
 
 function getInitData(): string {
   const webApp =
@@ -103,6 +104,27 @@ export type AdminWalletDeposit = {
   lastName: string | null;
 };
 
+export type AdminWalletWithdrawal = {
+  id: string;
+  userId: string;
+  amount: number;
+  telebirrNumber: string;
+  status:
+    | "pending"
+    | "paid"
+    | "rejected";
+  rejectionReason: string | null;
+  processedBy: string | null;
+  processedAt: string | null;
+  paymentReference: string | null;
+  createdAt: string;
+  updatedAt: string;
+  telegramId: string;
+  username: string | null;
+  firstName: string | null;
+  lastName: string | null;
+};
+
 export async function getPendingWalletDeposits(): Promise<{
   deposits: AdminWalletDeposit[];
 }> {
@@ -131,6 +153,48 @@ export async function rejectWalletDeposit(
   return request(
     `/admin/payments/wallet/deposits/${encodeURIComponent(
       depositId,
+    )}/reject`,
+    {
+      method: "POST",
+      body: {
+        rejectionReason,
+      },
+    },
+  );
+}
+
+export async function getPendingWalletWithdrawals(): Promise<{
+  withdrawals: AdminWalletWithdrawal[];
+}> {
+  return request(
+    "/admin/payments/wallet/withdrawals/pending",
+  );
+}
+
+export async function approveWalletWithdrawal(
+  withdrawalId: string,
+  paymentReference: string,
+) {
+  return request(
+    `/admin/payments/wallet/withdrawals/${encodeURIComponent(
+      withdrawalId,
+    )}/approve`,
+    {
+      method: "POST",
+      body: {
+        paymentReference,
+      },
+    },
+  );
+}
+
+export async function rejectWalletWithdrawal(
+  withdrawalId: string,
+  rejectionReason: string,
+) {
+  return request(
+    `/admin/payments/wallet/withdrawals/${encodeURIComponent(
+      withdrawalId,
     )}/reject`,
     {
       method: "POST",
