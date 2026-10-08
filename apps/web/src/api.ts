@@ -321,6 +321,7 @@ async function publicRequest<T>(
       method: options.method ?? "GET",
       headers,
       credentials: "include",
+      cache: "no-store",
       body:
         options.body !== undefined
           ? JSON.stringify(options.body)
