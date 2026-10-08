@@ -663,11 +663,10 @@ async function sendWinnerClaimNotifications(
         )} ብር`;
 
       const sent =
-        await sendTelegramWinnerClaimMessage(
-          winner.telegram_id,
-          message,
-          undefined,
-        );
+  await sendTelegramResultMessage(
+    winner.telegram_id,
+    message,
+  );
 
       if (!sent) {
         continue;
