@@ -3,21 +3,28 @@ import {
   useState,
   type FormEvent,
 } from "react";
+
 import {
   getPaymentSettings,
 } from "./api";
 
 import {
   createWalletDeposit,
+  createWalletWithdrawal,
   getWallet,
 } from "./Wallet-api";
 
-function formatMoney(value: number): string {
-  return `${value.toLocaleString("en-US")} ብር`;
+function formatMoney(
+  value: number,
+): string {
+  return `${value.toLocaleString(
+    "en-US",
+  )} ብር`;
 }
 
 export default function UserWalletButton() {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] =
+    useState(false);
 
   const [balance, setBalance] =
     useState<number | null>(null);
@@ -34,10 +41,19 @@ export default function UserWalletButton() {
   const [senderName, setSenderName] =
     useState("");
 
+  const [withdrawAmount, setWithdrawAmount] =
+    useState("");
+
+  const [withdrawTelebirr, setWithdrawTelebirr] =
+    useState("");
+
   const [loading, setLoading] =
     useState(false);
 
   const [depositing, setDepositing] =
+    useState(false);
+
+  const [withdrawing, setWithdrawing] =
     useState(false);
 
   const [message, setMessage] =
@@ -51,11 +67,13 @@ export default function UserWalletButton() {
     setError(null);
 
     try {
-      const [walletResponse, settingsResponse] =
-        await Promise.all([
-          getWallet(),
-          getPaymentSettings(),
-        ]);
+      const [
+        walletResponse,
+        settingsResponse,
+      ] = await Promise.all([
+        getWallet(),
+        getPaymentSettings(),
+      ]);
 
       setBalance(
         walletResponse.wallet.balance,
@@ -93,7 +111,9 @@ export default function UserWalletButton() {
       Number(amount);
 
     if (
-      !Number.isFinite(numericAmount) ||
+      !Number.isFinite(
+        numericAmount,
+      ) ||
       numericAmount <= 0
     ) {
       setError(
@@ -120,7 +140,8 @@ export default function UserWalletButton() {
       await createWalletDeposit(
         numericAmount,
         trimmedReference,
-        senderName.trim() || undefined,
+        senderName.trim() ||
+          undefined,
       );
 
       setReference("");
@@ -140,6 +161,75 @@ export default function UserWalletButton() {
       );
     } finally {
       setDepositing(false);
+    }
+  }
+
+  async function handleWithdraw(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    const numericAmount =
+      Number(withdrawAmount);
+
+    if (
+      !Number.isFinite(
+        numericAmount,
+      ) ||
+      numericAmount <= 0
+    ) {
+      setError(
+        "ትክክለኛ የWithdraw መጠን ያስገቡ።",
+      );
+      return;
+    }
+
+    if (
+      balance !== null &&
+      numericAmount > balance
+    ) {
+      setError(
+        "በWallet ውስጥ ያለውን ብር በላይ Withdraw ማድረግ አይችሉም።",
+      );
+      return;
+    }
+
+    const number =
+      withdrawTelebirr.trim();
+
+    if (!number) {
+      setError(
+        "የሚቀበሉበት Telebirr ቁጥር ያስገቡ።",
+      );
+      return;
+    }
+
+    setWithdrawing(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      await createWalletWithdrawal(
+        numericAmount,
+        number,
+      );
+
+      setWithdrawAmount("");
+      setWithdrawTelebirr("");
+
+      setMessage(
+        "✓ Withdraw ጥያቄዎ ተልኳል። Admin ክፍያውን ካጠናቀቀ በኋላ ይረጋገጣል።",
+      );
+
+      await loadWallet();
+    } catch (withdrawError) {
+      setError(
+        withdrawError instanceof Error
+          ? withdrawError.message
+          : "Withdraw ማስገባት አልተቻለም።",
+      );
+    } finally {
+      setWithdrawing(false);
     }
   }
 
@@ -378,6 +468,97 @@ export default function UserWalletButton() {
                 {depositing
                   ? "Deposit በመላክ ላይ..."
                   : "Wallet ላይ ገንዘብ ጨምር"}
+              </button>
+            </form>
+
+            <form
+              onSubmit={handleWithdraw}
+              style={{
+                display: "grid",
+                gap: "10px",
+                marginTop: "14px",
+                padding: "14px",
+                borderRadius: "14px",
+                background:
+                  "rgba(255,255,255,0.04)",
+                border:
+                  "1px solid rgba(255,255,255,0.10)",
+              }}
+            >
+              <strong>
+                💸 Wallet ከፍያ ውጣ
+              </strong>
+
+              <p
+                className="hero-description"
+                style={{
+                  margin: 0,
+                }}
+              >
+                የሚቀበሉበትን Telebirr
+                ቁጥር ያስገቡ።
+                <br />
+                ጥያቄው ለAdmin ይላካል።
+                <br />
+                Admin በእጅ ከከፈለ በኋላ
+                Withdraw ይጠናቀቃል።
+              </p>
+
+              <input
+                type="number"
+                min="1"
+                step="0.01"
+                value={withdrawAmount}
+                onChange={(event) =>
+                  setWithdrawAmount(
+                    event.target.value,
+                  )
+                }
+                placeholder="የWithdraw መጠን"
+                style={{
+                  minHeight: "48px",
+                  borderRadius: "12px",
+                  border:
+                    "1px solid rgba(255,255,255,0.14)",
+                  background:
+                    "rgba(255,255,255,0.05)",
+                  color: "inherit",
+                  padding: "12px",
+                  fontSize: "16px",
+                }}
+              />
+
+              <input
+                type="text"
+                value={withdrawTelebirr}
+                onChange={(event) =>
+                  setWithdrawTelebirr(
+                    event.target.value,
+                  )
+                }
+                placeholder="የሚቀበሉበት Telebirr ቁጥር"
+                maxLength={100}
+                style={{
+                  minHeight: "48px",
+                  borderRadius: "12px",
+                  border:
+                    "1px solid rgba(255,255,255,0.14)",
+                  background:
+                    "rgba(255,255,255,0.05)",
+                  color: "inherit",
+                  padding: "12px",
+                  fontSize: "16px",
+                }}
+              />
+
+              <button
+                className="primary-button"
+                type="submit"
+                disabled={withdrawing}
+              >
+                {withdrawing
+                  ? "Withdraw በመላክ ላይ..."
+                  : "💸 Withdraw ጠይቅ"}
               </button>
             </form>
 
