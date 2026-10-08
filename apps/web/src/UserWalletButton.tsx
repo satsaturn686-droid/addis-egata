@@ -3,7 +3,6 @@ import {
   useState,
   type FormEvent,
 } from "react";
-event: FormEvent<HTMLFormElement>,
 import {
   getPaymentSettings,
 } from "./api";
@@ -86,7 +85,7 @@ export default function UserWalletButton() {
   }, [open]);
 
   async function handleDeposit(
-    event: React.FormEvent<HTMLFormElement>,
+    event: FormEvent<HTMLFormElement>,
   ) {
     event.preventDefault();
 
