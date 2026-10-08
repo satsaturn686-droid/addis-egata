@@ -12,6 +12,12 @@ import {
   getPaymentSettings,
 } from "../services/payment-settings.js";
 
+import {
+  getWallet,
+  createWalletDeposit,
+  purchaseEntryWithWallet,
+} from "../services/wallet.js";
+
 const router = Router();
 
 /*
@@ -45,6 +51,280 @@ router.get(
           "PAYMENT_SETTINGS_LOAD_FAILED",
         message:
           "Payment settings could not be loaded.",
+      });
+    }
+  },
+);
+
+/*
+ * GET /payments/wallet
+ *
+ * Returns the authenticated user's wallet.
+ */
+router.get(
+  "/wallet",
+  requireTelegramAuth,
+  async (req, res) => {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          error:
+            "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
+        });
+        return;
+      }
+
+      const wallet =
+        await getWallet(
+          req.user.id,
+        );
+
+      res.status(200).json({
+        wallet,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "WALLET_LOAD_FAILED";
+
+      const clientErrors =
+        new Set([
+          "INVALID_USER_ID",
+        ]);
+
+      if (
+        clientErrors.has(message)
+      ) {
+        res.status(400).json({
+          error: message,
+          message:
+            "The wallet could not be loaded.",
+        });
+        return;
+      }
+
+      console.error(
+        "Get wallet error:",
+        error,
+      );
+
+      res.status(500).json({
+        error:
+          "WALLET_LOAD_FAILED",
+        message:
+          "The wallet could not be loaded.",
+      });
+    }
+  },
+);
+
+/*
+ * POST /payments/wallet/deposit/telebirr
+ *
+ * Creates a pending Telebirr wallet deposit.
+ *
+ * The money is NOT added to the wallet here.
+ * Admin approval adds the balance.
+ */
+router.post(
+  "/wallet/deposit/telebirr",
+  requireTelegramAuth,
+  async (req, res) => {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          error:
+            "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
+        });
+        return;
+      }
+
+      const amount =
+        Number(req.body?.amount);
+
+      const transactionReference =
+        typeof req.body?.transactionReference ===
+        "string"
+          ? req.body.transactionReference.trim()
+          : "";
+
+      const senderName =
+        typeof req.body?.senderName ===
+        "string"
+          ? req.body.senderName.trim()
+          : undefined;
+
+      if (
+        !Number.isFinite(amount) ||
+        amount <= 0
+      ) {
+        res.status(400).json({
+          error:
+            "INVALID_DEPOSIT_AMOUNT",
+          message:
+            "A valid deposit amount is required.",
+        });
+        return;
+      }
+
+      if (!transactionReference) {
+        res.status(400).json({
+          error:
+            "INVALID_TRANSACTION_REFERENCE",
+          message:
+            "Telebirr transaction reference is required.",
+        });
+        return;
+      }
+
+      const deposit =
+        await createWalletDeposit(
+          req.user.id,
+          amount,
+          transactionReference,
+          senderName,
+        );
+
+      res.status(201).json({
+        deposit,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "WALLET_DEPOSIT_FAILED";
+
+      const clientErrors =
+        new Set([
+          "INVALID_USER_ID",
+          "INVALID_DEPOSIT_AMOUNT",
+          "DEPOSIT_AMOUNT_TOO_LARGE",
+          "INVALID_TRANSACTION_REFERENCE",
+          "TRANSACTION_REFERENCE_TOO_LONG",
+          "SENDER_NAME_TOO_LONG",
+          "DUPLICATE_TRANSACTION_REFERENCE",
+        ]);
+
+      if (
+        clientErrors.has(message)
+      ) {
+        res.status(400).json({
+          error: message,
+          message:
+            "The wallet deposit could not be submitted.",
+        });
+        return;
+      }
+
+      console.error(
+        "Create wallet deposit error:",
+        error,
+      );
+
+      res.status(500).json({
+        error:
+          "WALLET_DEPOSIT_FAILED",
+        message:
+          "The wallet deposit could not be submitted.",
+      });
+    }
+  },
+);
+
+/*
+ * POST /payments/wallet/purchase
+ *
+ * Pays for a reserved number using
+ * the authenticated user's wallet.
+ *
+ * The wallet service performs the database
+ * transaction atomically.
+ */
+router.post(
+  "/wallet/purchase",
+  requireTelegramAuth,
+  async (req, res) => {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          error:
+            "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
+        });
+        return;
+      }
+
+      const entryId =
+        typeof req.body?.entryId ===
+        "string"
+          ? req.body.entryId.trim()
+          : "";
+
+      if (!entryId) {
+        res.status(400).json({
+          error:
+            "INVALID_ENTRY_ID",
+          message:
+            "Entry ID is required.",
+        });
+        return;
+      }
+
+      const result =
+        await purchaseEntryWithWallet(
+          entryId,
+          req.user.id,
+        );
+
+      res.status(200).json({
+        result,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "WALLET_PURCHASE_FAILED";
+
+      const clientErrors =
+        new Set([
+          "INVALID_ENTRY_ID",
+          "INVALID_USER_ID",
+          "ENTRY_NOT_FOUND",
+          "ENTRY_NOT_OWNED",
+          "ENTRY_NOT_PAYABLE",
+          "DRAW_NOT_PAYABLE",
+          "RESERVATION_EXPIRED",
+          "INVALID_ENTRY_FEE",
+          "INSUFFICIENT_WALLET_BALANCE",
+        ]);
+
+      if (
+        clientErrors.has(message)
+      ) {
+        res.status(400).json({
+          error: message,
+          message:
+            "The number could not be purchased with the wallet.",
+        });
+        return;
+      }
+
+      console.error(
+        "Wallet purchase error:",
+        error,
+      );
+
+      res.status(500).json({
+        error:
+          "WALLET_PURCHASE_FAILED",
+        message:
+          "The number could not be purchased with the wallet.",
       });
     }
   },
