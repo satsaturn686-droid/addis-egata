@@ -250,10 +250,18 @@ export default function UserWalletButton() {
       <button
         type="button"
         className="profile-button"
-        aria-label="Wallet"
+        aria-label="ዋሌት"
         onClick={openWallet}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "6px",
+          whiteSpace: "nowrap",
+        }}
       >
-        💰
+        <span aria-hidden="true">💰</span>
+        <span>ዋሌት</span>
       </button>
 
       {open && (
