@@ -1,26 +1,22 @@
-import {
-  type ApiError,
-} from "./api";
+
+import { type ApiError } from "./api";
 
 const API_BASE_URL =
   (import.meta.env.VITE_API_URL as string | undefined)?.replace(
     /\/+$/,
     "",
-  ) ||
-  "https://addis-egata-api.onrender.com";
+  ) || "https://addis-egata-api.onrender.com";
 
 function getInitData(): string {
-  const webApp =
-    window.Telegram?.WebApp;
+  const webApp = window.Telegram?.WebApp;
 
   if (webApp?.initData) {
     return webApp.initData;
   }
 
-  const stored =
-    sessionStorage.getItem(
-      "addis-egata-telegram-init-data",
-    );
+  const stored = sessionStorage.getItem(
+    "addis-egata-telegram-init-data",
+  );
 
   if (stored) {
     return stored;
@@ -38,45 +34,26 @@ async function request<T>(
     body?: unknown;
   } = {},
 ): Promise<T> {
-  const response =
-    await fetch(
-      `${API_BASE_URL}${path}`,
-      {
-        method:
-          options.method ?? "GET",
-        headers: {
-          Accept:
-            "application/json",
-          ...(options.body !==
-          undefined
-            ? {
-                "Content-Type":
-                  "application/json",
-              }
-            : {}),
-          "X-Telegram-Init-Data":
-            getInitData(),
-        },
-        credentials: "include",
-        body:
-          options.body !==
-          undefined
-            ? JSON.stringify(
-                options.body,
-              )
-            : undefined,
-      },
-    );
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: options.method ?? "GET",
+    headers: {
+      Accept: "application/json",
+      ...(options.body !== undefined
+        ? { "Content-Type": "application/json" }
+        : {}),
+      "X-Telegram-Init-Data": getInitData(),
+    },
+    credentials: "include",
+    body:
+      options.body !== undefined
+        ? JSON.stringify(options.body)
+        : undefined,
+  });
 
-  const payload =
-    (await response.json()) as
-      | T
-      | ApiError;
+  const payload = (await response.json()) as T | ApiError;
 
   if (!response.ok) {
-    const error =
-      payload as ApiError;
-
+    const error = payload as ApiError;
     throw new Error(
       error.message ||
         error.error ||
@@ -102,10 +79,7 @@ export type WalletDeposit = {
   paymentMethod: "telebirr";
   transactionReference: string;
   senderName: string | null;
-  status:
-    | "pending"
-    | "approved"
-    | "rejected";
+  status: "pending" | "approved" | "rejected";
   verifiedBy: string | null;
   verifiedAt: string | null;
   rejectionReason: string | null;
@@ -118,16 +92,53 @@ export type WalletWithdrawal = {
   userId: string;
   amount: number;
   telebirrNumber: string;
-  status:
-    | "pending"
-    | "paid"
-    | "rejected";
+  status: "pending" | "paid" | "rejected";
   rejectionReason: string | null;
   processedBy: string | null;
   processedAt: string | null;
   paymentReference: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type WalletTransaction = {
+  id: string;
+  type: string;
+  amount: number;
+  balanceAfter: number;
+  reference: string | null;
+  description: string | null;
+  createdAt: string;
+};
+
+export type WalletHistoryDeposit = {
+  id: string;
+  amount: number;
+  transactionReference: string;
+  senderName: string | null;
+  status: "pending" | "approved" | "rejected";
+  rejectionReason: string | null;
+  verifiedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WalletHistoryWithdrawal = {
+  id: string;
+  amount: number;
+  telebirrNumber: string;
+  status: "pending" | "paid" | "rejected";
+  rejectionReason: string | null;
+  paymentReference: string | null;
+  processedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WalletHistory = {
+  transactions: WalletTransaction[];
+  deposits: WalletHistoryDeposit[];
+  withdrawals: WalletHistoryWithdrawal[];
 };
 
 export type WalletResponse = {
@@ -149,10 +160,12 @@ export type WalletPurchaseResponse = {
   };
 };
 
+export type WalletHistoryResponse = {
+  history: WalletHistory;
+};
+
 export async function getWallet(): Promise<WalletResponse> {
-  return request<WalletResponse>(
-    "/payments/wallet",
-  );
+  return request<WalletResponse>("/payments/wallet");
 }
 
 export async function createWalletDeposit(
@@ -189,12 +202,14 @@ export async function createWalletWithdrawal(
   );
 }
 
+export async function getWalletHistory(): Promise<WalletHistoryResponse> {
+  return request<WalletHistoryResponse>("/payments/wallet/history");
+}
+
 export async function getPendingWalletWithdrawals(): Promise<{
   withdrawals: WalletWithdrawal[];
 }> {
-  return request(
-    "/payments/wallet/withdrawals/pending",
-  );
+  return request("/payments/wallet/withdrawals/pending");
 }
 
 export async function purchaseEntryWithWallet(
