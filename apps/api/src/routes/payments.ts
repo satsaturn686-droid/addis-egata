@@ -22,7 +22,9 @@ import {
   createWalletWithdrawal,
   getMyPendingWalletWithdrawals,
 } from "../services/wallet-withdrawals.js";
-
+import {
+  getMyWalletHistory,
+} from "../services/wallet-history.js";
 const router = Router();
 
 router.get(
@@ -672,5 +674,45 @@ router.get(
     }
   },
 );
+router.get(
+  "/wallet/history",
+  requireTelegramAuth,
+  async (req, res) => {
+    if (!req.user) {
+      res.status(401).json({
+        error: "AUTHENTICATION_REQUIRED",
+        message: "Authentication is required.",
+      });
+      return;
+    }
 
+    try {
+      const history = await getMyWalletHistory(
+        req.user.id,
+      );
+
+      res.status(200).json({ history });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "WALLET_HISTORY_LOAD_FAILED";
+
+      if (message === "INVALID_USER_ID") {
+        res.status(400).json({
+          error: message,
+          message: "Wallet history could not be loaded.",
+        });
+        return;
+      }
+
+      console.error("Wallet history error:", error);
+
+      res.status(500).json({
+        error: "WALLET_HISTORY_LOAD_FAILED",
+        message: "Wallet history could not be loaded.",
+      });
+    }
+  },
+);
 export default router;
