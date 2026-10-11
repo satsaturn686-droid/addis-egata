@@ -12,6 +12,27 @@ const API_BASE_URL =
     "",
   ) || "";
 
+export type AdminPaymentSettings = {
+  telebirrNumber: string;
+  serviceEnabled: boolean;
+  serviceOpenTime: string;
+  serviceCloseTime: string;
+  timezone: string;
+  localTime: string;
+  isOpen: boolean;
+};
+
+export type AdminPaymentSettingsResponse = {
+  settings: AdminPaymentSettings;
+};
+
+export type UpdatePaymentSettingsInput = {
+  telebirrNumber: string;
+  serviceEnabled: boolean;
+  serviceOpenTime: string;
+  serviceCloseTime: string;
+};
+
 export type WinnerPayoutStatus =
   | "awaiting_claim"
   | "awaiting_screenshot"
@@ -224,10 +245,16 @@ export async function rejectPayment(
   );
 }
 
+/**
+ * ============================
+ * ADMIN PAYMENT SETTINGS
+ * ============================
+ */
+
 export async function getAdminPaymentSettings(
   signal?: AbortSignal,
-): Promise<PaymentSettingsResponse> {
-  return adminRequest<PaymentSettingsResponse>(
+): Promise<AdminPaymentSettingsResponse> {
+  return adminRequest<AdminPaymentSettingsResponse>(
     "/admin/payments/settings",
     {
       signal,
@@ -235,6 +262,10 @@ export async function getAdminPaymentSettings(
   );
 }
 
+/**
+ * Keep this function for existing screens
+ * that only update the Telebirr number.
+ */
 export async function updateTelebirrNumber(
   telebirrNumber: string,
   signal?: AbortSignal,
@@ -261,6 +292,67 @@ export async function updateTelebirrNumber(
       body: {
         telebirrNumber:
           normalizedNumber,
+      },
+      signal,
+    },
+  );
+}
+
+/**
+ * Update Telebirr and Deposit/Withdraw hours.
+ */
+export async function updatePaymentSettings(
+  input: UpdatePaymentSettingsInput,
+  signal?: AbortSignal,
+): Promise<AdminPaymentSettingsResponse> {
+  const telebirrNumber =
+    input.telebirrNumber.trim();
+
+  if (!telebirrNumber) {
+    throw new Error(
+      "የTelebirr ቁጥር ያስፈልጋል።",
+    );
+  }
+
+  if (telebirrNumber.length > 100) {
+    throw new Error(
+      "የTelebirr ቁጥር በጣም ረጅም ነው።",
+    );
+  }
+
+  const timePattern =
+    /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+
+  if (
+    !timePattern.test(input.serviceOpenTime) ||
+    !timePattern.test(input.serviceCloseTime)
+  ) {
+    throw new Error(
+      "ትክክለኛ የመክፈቻና የመዝጊያ ሰዓት ያስገቡ።",
+    );
+  }
+
+  if (
+    input.serviceOpenTime ===
+    input.serviceCloseTime
+  ) {
+    throw new Error(
+      "የመክፈቻና የመዝጊያ ሰዓት አንድ መሆን አይችልም።",
+    );
+  }
+
+  return adminRequest<AdminPaymentSettingsResponse>(
+    "/admin/payments/settings",
+    {
+      method: "POST",
+      body: {
+        telebirrNumber,
+        serviceEnabled:
+          input.serviceEnabled,
+        serviceOpenTime:
+          input.serviceOpenTime,
+        serviceCloseTime:
+          input.serviceCloseTime,
       },
       signal,
     },
