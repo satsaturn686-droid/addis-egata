@@ -13,6 +13,7 @@ import {
 
 import {
   getPaymentSettings,
+  updatePaymentSettings,
   updateTelebirrNumber,
 } from "../services/payment-settings.js";
 
@@ -103,11 +104,54 @@ router.post(
         return;
       }
 
-      const settings =
-        await updateTelebirrNumber(
-          telebirrNumber,
-          req.user.id,
+      const hasServiceSettings =
+        Object.prototype.hasOwnProperty.call(
+          req.body ?? {},
+          "serviceEnabled",
+        ) ||
+        Object.prototype.hasOwnProperty.call(
+          req.body ?? {},
+          "serviceOpenTime",
+        ) ||
+        Object.prototype.hasOwnProperty.call(
+          req.body ?? {},
+          "serviceCloseTime",
         );
+
+      let settings;
+
+      if (hasServiceSettings) {
+        const serviceEnabled =
+          req.body?.serviceEnabled;
+
+        const serviceOpenTime =
+          typeof req.body?.serviceOpenTime === "string"
+            ? req.body.serviceOpenTime.trim()
+            : "";
+
+        const serviceCloseTime =
+          typeof req.body?.serviceCloseTime === "string"
+            ? req.body.serviceCloseTime.trim()
+            : "";
+
+        settings =
+          await updatePaymentSettings(
+            {
+              telebirrNumber,
+              serviceEnabled,
+              serviceOpenTime,
+              serviceCloseTime,
+            },
+            req.user.id,
+          );
+      } else {
+        // የቀድሞው Telebirr-only የማስቀመጥ መንገድ እንዳይበላሽ ጠብቀናል።
+        settings =
+          await updateTelebirrNumber(
+            telebirrNumber,
+            req.user.id,
+          );
+      }
 
       res.status(200).json({
         settings,
@@ -123,6 +167,9 @@ router.post(
           "INVALID_ADMIN_USER_ID",
           "TELEBIRR_NUMBER_REQUIRED",
           "TELEBIRR_NUMBER_TOO_LONG",
+          "INVALID_PAYMENT_SERVICE_STATUS",
+          "INVALID_PAYMENT_SERVICE_TIME",
+          "PAYMENT_SERVICE_HOURS_CANNOT_MATCH",
         ]);
 
       if (
@@ -131,7 +178,7 @@ router.post(
         res.status(400).json({
           error: message,
           message:
-            "The Telebirr number could not be saved.",
+            "Payment settings could not be saved. Check the Telebirr number and service hours.",
         });
         return;
       }
@@ -145,7 +192,7 @@ router.post(
         error:
           "PAYMENT_SETTINGS_UPDATE_FAILED",
         message:
-          "The Telebirr number could not be saved.",
+          "Payment settings could not be saved.",
       });
     }
   },
