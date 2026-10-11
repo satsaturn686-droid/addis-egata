@@ -1,4 +1,3 @@
-
 import {
   useEffect,
   useState,
@@ -19,6 +18,35 @@ type HistoryTab =
   | "transactions"
   | "deposits"
   | "withdrawals";
+
+type WalletPaymentSettings = {
+  telebirrNumber: string;
+  serviceEnabled?: boolean;
+  serviceOpenTime?: string;
+  serviceCloseTime?: string;
+  timezone?: string;
+  localTime?: string;
+  isOpen?: boolean;
+};
+
+function formatEthiopianClock(value: string | undefined): string {
+  if (!value || !/^\d{2}:\d{2}$/.test(value)) return value ?? "—";
+
+  const [hour, minute] = value.split(":").map(Number);
+  const ethiopianHour = (hour + 18) % 24;
+  const shownHour = ethiopianHour % 12 || 12;
+
+  const period =
+    hour >= 6 && hour < 12
+      ? "ጠዋት"
+      : hour >= 12 && hour < 18
+        ? "ቀን"
+        : hour >= 18
+          ? "ምሽት"
+          : "ሌሊት";
+
+  return `${period} ${shownHour}:${String(minute).padStart(2, "0")}`;
+}
 
 function formatMoney(value: number): string {
   return `${value.toLocaleString("en-US", {
@@ -112,6 +140,9 @@ export default function UserWalletButton() {
   const [balance, setBalance] = useState<number | null>(null);
   const [telebirrNumber, setTelebirrNumber] = useState("");
 
+  const [paymentSettings, setPaymentSettings] =
+    useState<WalletPaymentSettings | null>(null);
+
   const [amount, setAmount] = useState("");
   const [reference, setReference] = useState("");
   const [senderName, setSenderName] = useState("");
@@ -129,6 +160,7 @@ export default function UserWalletButton() {
   const [history, setHistory] = useState<WalletHistory | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+
   const [historyTab, setHistoryTab] =
     useState<HistoryTab>("transactions");
 
@@ -143,7 +175,12 @@ export default function UserWalletButton() {
       ]);
 
       setBalance(walletResponse.wallet.balance);
-      setTelebirrNumber(settingsResponse.settings.telebirrNumber);
+
+      const settings =
+        settingsResponse.settings as WalletPaymentSettings;
+
+      setTelebirrNumber(settings.telebirrNumber);
+      setPaymentSettings(settings);
     } catch (loadError) {
       setError(
         loadError instanceof Error
@@ -155,6 +192,43 @@ export default function UserWalletButton() {
     }
 
     await loadHistory();
+  }
+
+  async function copyTelebirrNumber() {
+    if (!telebirrNumber) {
+      setError("የTelebirr ቁጥር አልተገኘም።");
+      return;
+    }
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(telebirrNumber);
+      } else {
+        const textArea = document.createElement("textarea");
+
+        textArea.value = telebirrNumber;
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+
+        document.body.appendChild(textArea);
+        textArea.select();
+
+        const copied = document.execCommand("copy");
+
+        textArea.remove();
+
+        if (!copied) {
+          throw new Error("copy failed");
+        }
+      }
+
+      setError(null);
+      setMessage("✓ Telebirr ቁጥሩ ተኮፒ ተደርጓል።");
+    } catch {
+      setError(
+        "ኮፒ ማድረግ አልተቻለም፤ ቁጥሩን በእጅ ይቅዱ።",
+      );
+    }
   }
 
   async function loadHistory() {
@@ -244,7 +318,9 @@ export default function UserWalletButton() {
     }
 
     if (balance !== null && numericAmount > balance) {
-      setError("በWallet ውስጥ ካለው ብር በላይ Withdraw ማድረግ አይችሉም።");
+      setError(
+        "በWallet ውስጥ ካለው ብር በላይ Withdraw ማድረግ አይችሉም።",
+      );
       return;
     }
 
@@ -295,6 +371,10 @@ export default function UserWalletButton() {
   const deposits = history?.deposits ?? [];
   const withdrawals = history?.withdrawals ?? [];
 
+  const serviceIsClosed =
+    paymentSettings?.serviceEnabled === false ||
+    paymentSettings?.isOpen === false;
+
   return (
     <>
       <button
@@ -327,7 +407,8 @@ export default function UserWalletButton() {
             alignItems: "flex-end",
             justifyContent: "center",
             background: "rgba(0,0,0,0.68)",
-            padding: "12px 12px calc(12px + env(safe-area-inset-bottom))",
+            padding:
+              "12px 12px calc(12px + env(safe-area-inset-bottom))",
           }}
           onClick={closeWallet}
         >
@@ -407,6 +488,50 @@ export default function UserWalletButton() {
               </button>
             </div>
 
+            {/* Deposit / Withdraw service hours */}
+            <div
+              role="status"
+              style={{
+                marginTop: "14px",
+                padding: "13px 14px",
+                borderRadius: "12px",
+                background: serviceIsClosed
+                  ? "rgba(248,113,113,0.10)"
+                  : "rgba(52,211,153,0.10)",
+                border: `1px solid ${
+                  serviceIsClosed
+                    ? "rgba(248,113,113,0.35)"
+                    : "rgba(52,211,153,0.28)"
+                }`,
+              }}
+            >
+              <strong style={{ display: "block", marginBottom: "5px" }}>
+                ⏰ የDeposit / Withdraw የአገልግሎት ሰዓት
+              </strong>
+
+              <div style={{ lineHeight: 1.6 }}>
+                በኢትዮጵያ ሰዓት{" "}
+                <strong>
+                  {formatEthiopianClock(
+                    paymentSettings?.serviceOpenTime ?? "09:00",
+                  )}
+                  {" – "}
+                  {formatEthiopianClock(
+                    paymentSettings?.serviceCloseTime ?? "18:00",
+                  )}
+                </strong>{" "}
+                ብቻ ይገኛሉ።
+              </div>
+
+              <div style={{ marginTop: "5px", fontWeight: 700 }}>
+                {paymentSettings === null
+                  ? "ሁኔታው በመጫን ላይ ነው..."
+                  : serviceIsClosed
+                    ? "🔴 አሁን ዝግ ነው"
+                    : "🟢 አሁን ክፍት ነው"}
+              </div>
+            </div>
+
             <form onSubmit={handleDeposit} style={panelStyle}>
               <strong>💳 Wallet ላይ ገንዘብ ጨምር</strong>
 
@@ -414,18 +539,38 @@ export default function UserWalletButton() {
                 በTelebirr ወደዚህ ቁጥር ገንዘብ ይላኩ፦
               </p>
 
+              {/* Telebirr number and copy button */}
               <div
                 style={{
-                  padding: "12px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  flexWrap: "wrap",
+                  padding: "10px",
                   borderRadius: "10px",
                   background: "rgba(16,185,129,0.10)",
                   border: "1px solid rgba(52,211,153,0.22)",
-                  fontSize: "17px",
-                  fontWeight: 700,
-                  overflowWrap: "anywhere",
                 }}
               >
-                {telebirrNumber || "Admin የTelebirr ቁጥር አላስገባም"}
+                <strong
+                  style={{
+                    flex: "1 1 150px",
+                    minWidth: 0,
+                    fontSize: "17px",
+                    overflowWrap: "anywhere",
+                  }}
+                >
+                  {telebirrNumber || "Admin የTelebirr ቁጥር አላስገባም"}
+                </strong>
+
+                <button
+                  type="button"
+                  style={{ ...secondaryButtonStyle, minHeight: "38px" }}
+                  disabled={!telebirrNumber}
+                  onClick={() => void copyTelebirrNumber()}
+                >
+                  📋 ኮፒ
+                </button>
               </div>
 
               <p className="hero-description" style={{ margin: 0 }}>
@@ -468,7 +613,9 @@ export default function UserWalletButton() {
                 type="submit"
                 disabled={depositing}
               >
-                {depositing ? "Deposit በመላክ ላይ..." : "Deposit ጥያቄ ላክ"}
+                {depositing
+                  ? "Deposit በመላክ ላይ..."
+                  : "Deposit ጥያቄ ላክ"}
               </button>
             </form>
 
@@ -496,7 +643,9 @@ export default function UserWalletButton() {
                 required
                 maxLength={100}
                 value={withdrawTelebirr}
-                onChange={(event) => setWithdrawTelebirr(event.target.value)}
+                onChange={(event) =>
+                  setWithdrawTelebirr(event.target.value)
+                }
                 placeholder="የሚቀበሉበት Telebirr ቁጥር"
                 style={fieldStyle}
               />
@@ -506,7 +655,9 @@ export default function UserWalletButton() {
                 type="submit"
                 disabled={withdrawing}
               >
-                {withdrawing ? "Withdraw በመላክ ላይ..." : "💸 Withdraw ጠይቅ"}
+                {withdrawing
+                  ? "Withdraw በመላክ ላይ..."
+                  : "💸 Withdraw ጠይቅ"}
               </button>
             </form>
 
@@ -569,7 +720,9 @@ export default function UserWalletButton() {
               </div>
 
               {historyLoading && !history && (
-                <p className="hero-description">የግብይት ታሪክ በመጫን ላይ...</p>
+                <p className="hero-description">
+                  የግብይት ታሪክ በመጫን ላይ...
+                </p>
               )}
 
               {historyError && (
@@ -589,9 +742,11 @@ export default function UserWalletButton() {
 
               {!historyLoading && !historyError && history && (
                 <>
-                  {historyTab === "transactions" && (
-                    transactions.length === 0 ? (
-                      <p className="hero-description">እስካሁን የግብይት ታሪክ የለም።</p>
+                  {historyTab === "transactions" &&
+                    (transactions.length === 0 ? (
+                      <p className="hero-description">
+                        እስካሁን የግብይት ታሪክ የለም።
+                      </p>
                     ) : (
                       transactions.map((item) => (
                         <article
@@ -612,8 +767,11 @@ export default function UserWalletButton() {
                             }}
                           >
                             <strong style={{ overflowWrap: "anywhere" }}>
-                              {item.description || item.type || "የWallet ግብይት"}
+                              {item.description ||
+                                item.type ||
+                                "የWallet ግብይት"}
                             </strong>
+
                             <strong style={{ whiteSpace: "nowrap" }}>
                               {formatMoney(item.amount)}
                             </strong>
@@ -646,13 +804,14 @@ export default function UserWalletButton() {
                             {formatDate(item.createdAt)}
                           </p>
                         </article>
-                      ))
-                    )
-                  )}
+                      )))
+                    )}
 
-                  {historyTab === "deposits" && (
-                    deposits.length === 0 ? (
-                      <p className="hero-description">የDeposit ታሪክ የለም።</p>
+                  {historyTab === "deposits" &&
+                    (deposits.length === 0 ? (
+                      <p className="hero-description">
+                        የDeposit ታሪክ የለም።
+                      </p>
                     ) : (
                       deposits.map((item) => (
                         <article
@@ -671,7 +830,10 @@ export default function UserWalletButton() {
                               alignItems: "center",
                             }}
                           >
-                            <strong>Deposit · {formatMoney(item.amount)}</strong>
+                            <strong>
+                              Deposit · {formatMoney(item.amount)}
+                            </strong>
+
                             <span
                               style={{
                                 color: statusColor(item.status),
@@ -713,13 +875,14 @@ export default function UserWalletButton() {
                             {formatDate(item.createdAt)}
                           </p>
                         </article>
-                      ))
-                    )
-                  )}
+                      )))
+                    )}
 
-                  {historyTab === "withdrawals" && (
-                    withdrawals.length === 0 ? (
-                      <p className="hero-description">የWithdraw ታሪክ የለም።</p>
+                  {historyTab === "withdrawals" &&
+                    (withdrawals.length === 0 ? (
+                      <p className="hero-description">
+                        የWithdraw ታሪክ የለም።
+                      </p>
                     ) : (
                       withdrawals.map((item) => (
                         <article
@@ -738,7 +901,10 @@ export default function UserWalletButton() {
                               alignItems: "center",
                             }}
                           >
-                            <strong>Withdraw · {formatMoney(item.amount)}</strong>
+                            <strong>
+                              Withdraw · {formatMoney(item.amount)}
+                            </strong>
+
                             <span
                               style={{
                                 color: statusColor(item.status),
@@ -793,9 +959,8 @@ export default function UserWalletButton() {
                             {formatDate(item.createdAt)}
                           </p>
                         </article>
-                      ))
-                    )
-                  )}
+                      )))
+                    )}
                 </>
               )}
             </section>
