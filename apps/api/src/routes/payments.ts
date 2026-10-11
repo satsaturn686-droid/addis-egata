@@ -9,6 +9,7 @@ import {
 } from "../services/payments.js";
 
 import {
+  assertPaymentServiceOpen,
   getPaymentSettings,
 } from "../services/payment-settings.js";
 
@@ -125,6 +126,9 @@ router.post(
         return;
       }
 
+      // Deposit የአገልግሎት ሰዓትና ክፍት/ዝግ ሁኔታ ይፈትሹ።
+      await assertPaymentServiceOpen();
+
       const amount =
         Number(req.body?.amount);
 
@@ -189,6 +193,8 @@ router.post(
           "TRANSACTION_REFERENCE_TOO_LONG",
           "SENDER_NAME_TOO_LONG",
           "DUPLICATE_TRANSACTION_REFERENCE",
+          "PAYMENT_SERVICE_DISABLED",
+          "PAYMENT_SERVICE_CLOSED",
         ]);
 
       if (
@@ -197,7 +203,11 @@ router.post(
         res.status(400).json({
           error: message,
           message:
-            "The wallet deposit could not be submitted.",
+            message === "PAYMENT_SERVICE_DISABLED"
+              ? "Wallet deposits are currently disabled."
+              : message === "PAYMENT_SERVICE_CLOSED"
+                ? "Wallet deposits are currently outside service hours."
+                : "The wallet deposit could not be submitted.",
         });
         return;
       }
@@ -288,6 +298,9 @@ router.post(
         return;
       }
 
+      // Withdraw የአገልግሎት ሰዓትና ክፍት/ዝግ ሁኔታ ይፈትሹ።
+      await assertPaymentServiceOpen();
+
       const amount =
         Number(req.body?.amount);
 
@@ -322,6 +335,8 @@ router.post(
           "TELEBIRR_NUMBER_TOO_LONG",
           "WALLET_NOT_FOUND",
           "INSUFFICIENT_WALLET_BALANCE",
+          "PAYMENT_SERVICE_DISABLED",
+          "PAYMENT_SERVICE_CLOSED",
         ]);
 
       if (
@@ -330,7 +345,11 @@ router.post(
         res.status(400).json({
           error: message,
           message:
-            "The wallet withdrawal could not be submitted.",
+            message === "PAYMENT_SERVICE_DISABLED"
+              ? "Wallet withdrawals are currently disabled."
+              : message === "PAYMENT_SERVICE_CLOSED"
+                ? "Wallet withdrawals are currently outside service hours."
+                : "The wallet withdrawal could not be submitted.",
         });
         return;
       }
@@ -674,6 +693,7 @@ router.get(
     }
   },
 );
+
 router.get(
   "/wallet/history",
   requireTelegramAuth,
@@ -715,4 +735,5 @@ router.get(
     }
   },
 );
+
 export default router;
