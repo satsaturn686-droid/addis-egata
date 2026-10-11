@@ -1,42 +1,37 @@
 import { Router } from "express";
 
-import {
-  requireAdmin,
-  requireTelegramAuth,
-} from "../middleware/auth.js";
+import { requireTelegramAuth } from "../middleware/auth.js";
 
 import {
-  approvePayment,
-  getPendingPayments,
-  rejectPayment,
-} from "../services/payment-verification.js";
+  createTelebirrPayment,
+  getPaymentById,
+  getUserPayments,
+} from "../services/payments.js";
 
 import {
   getPaymentSettings,
-  updateTelebirrNumber,
+  assertPaymentServiceOpen,
 } from "../services/payment-settings.js";
 
 import {
-  getPendingWalletDeposits,
-  approveWalletDeposit,
-  rejectWalletDeposit,
+  getWallet,
+  createWalletDeposit,
+  purchaseEntryWithWallet,
 } from "../services/wallet.js";
 
 import {
-  getPendingWalletWithdrawals,
-  approveWalletWithdrawal,
-  rejectWalletWithdrawal,
+  createWalletWithdrawal,
+  getMyPendingWalletWithdrawals,
 } from "../services/wallet-withdrawals.js";
+import {
+  getMyWalletHistory,
+} from "../services/wallet-history.js";
 
 const router = Router();
 
-router.use(
-  requireTelegramAuth,
-  requireAdmin,
-);
-
 router.get(
   "/settings",
+  requireTelegramAuth,
   async (_req, res) => {
     try {
       const settings =
@@ -47,7 +42,7 @@ router.get(
       });
     } catch (error) {
       console.error(
-        "Get payment settings error:",
+        "Get public payment settings error:",
         error,
       );
 
@@ -61,124 +56,9 @@ router.get(
   },
 );
 
-router.post(
-  "/settings",
-  async (req, res) => {
-    try {
-      if (!req.user) {
-        res.status(401).json({
-          error:
-            "AUTHENTICATION_REQUIRED",
-          message:
-            "Authentication is required.",
-        });
-        return;
-      }
-
-      const telebirrNumber =
-        typeof req.body?.telebirrNumber ===
-        "string"
-          ? req.body.telebirrNumber.trim()
-          : "";
-
-      if (!telebirrNumber) {
-        res.status(400).json({
-          error:
-            "TELEBIRR_NUMBER_REQUIRED",
-          message:
-            "Telebirr number is required.",
-        });
-        return;
-      }
-
-      if (
-        telebirrNumber.length > 100
-      ) {
-        res.status(400).json({
-          error:
-            "TELEBIRR_NUMBER_TOO_LONG",
-          message:
-            "Telebirr number is too long.",
-        });
-        return;
-      }
-
-      const settings =
-        await updateTelebirrNumber(
-          telebirrNumber,
-          req.user.id,
-        );
-
-      res.status(200).json({
-        settings,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "PAYMENT_SETTINGS_UPDATE_FAILED";
-
-      const clientErrors =
-        new Set([
-          "INVALID_ADMIN_USER_ID",
-          "TELEBIRR_NUMBER_REQUIRED",
-          "TELEBIRR_NUMBER_TOO_LONG",
-        ]);
-
-      if (
-        clientErrors.has(message)
-      ) {
-        res.status(400).json({
-          error: message,
-          message:
-            "The Telebirr number could not be saved.",
-        });
-        return;
-      }
-
-      console.error(
-        "Update payment settings error:",
-        error,
-      );
-
-      res.status(500).json({
-        error:
-          "PAYMENT_SETTINGS_UPDATE_FAILED",
-        message:
-          "The Telebirr number could not be saved.",
-      });
-    }
-  },
-);
-
 router.get(
-  "/wallet/deposits/pending",
-  async (_req, res) => {
-    try {
-      const deposits =
-        await getPendingWalletDeposits();
-
-      res.status(200).json({
-        deposits,
-      });
-    } catch (error) {
-      console.error(
-        "Get pending wallet deposits error:",
-        error,
-      );
-
-      res.status(500).json({
-        error:
-          "WALLET_DEPOSITS_LOAD_FAILED",
-        message:
-          "Pending wallet deposits could not be loaded.",
-      });
-    }
-  },
-);
-
-router.post(
-  "/wallet/deposits/:depositId/approve",
+  "/wallet",
+  requireTelegramAuth,
   async (req, res) => {
     try {
       if (!req.user) {
@@ -191,70 +71,50 @@ router.post(
         return;
       }
 
-      const depositId =
-        req.params.depositId?.trim();
-
-      if (!depositId) {
-        res.status(400).json({
-          error:
-            "INVALID_DEPOSIT_ID",
-          message:
-            "Deposit ID is required.",
-        });
-        return;
-      }
-
-      const deposit =
-        await approveWalletDeposit(
-          depositId,
+      const wallet =
+        await getWallet(
           req.user.id,
         );
 
       res.status(200).json({
-        deposit,
+        wallet,
       });
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
-          : "WALLET_DEPOSIT_APPROVAL_FAILED";
-
-      const clientErrors =
-        new Set([
-          "INVALID_DEPOSIT_ID",
-          "INVALID_ADMIN_USER_ID",
-          "DEPOSIT_NOT_FOUND",
-          "DEPOSIT_ALREADY_PROCESSED",
-        ]);
+          : "WALLET_LOAD_FAILED";
 
       if (
-        clientErrors.has(message)
+        message ===
+        "INVALID_USER_ID"
       ) {
         res.status(400).json({
           error: message,
           message:
-            "The wallet deposit could not be approved.",
+            "The wallet could not be loaded.",
         });
         return;
       }
 
       console.error(
-        "Approve wallet deposit error:",
+        "Get wallet error:",
         error,
       );
 
       res.status(500).json({
         error:
-          "WALLET_DEPOSIT_APPROVAL_FAILED",
+          "WALLET_LOAD_FAILED",
         message:
-          "The wallet deposit could not be approved.",
+          "The wallet could not be loaded.",
       });
     }
   },
 );
 
 router.post(
-  "/wallet/deposits/:depositId/reject",
+  "/wallet/deposit/telebirr",
+  requireTelegramAuth,
   async (req, res) => {
     try {
       if (!req.user) {
@@ -267,59 +127,74 @@ router.post(
         return;
       }
 
-      const depositId =
-        req.params.depositId?.trim();
+      const amount =
+        Number(req.body?.amount);
 
-      const rejectionReason =
-        typeof req.body?.rejectionReason ===
+      const transactionReference =
+        typeof req.body?.transactionReference ===
         "string"
-          ? req.body.rejectionReason.trim()
+          ? req.body.transactionReference.trim()
           : "";
 
-      if (!depositId) {
+      const senderName =
+        typeof req.body?.senderName ===
+        "string"
+          ? req.body.senderName.trim()
+          : undefined;
+
+      if (
+        !Number.isFinite(amount) ||
+        amount <= 0
+      ) {
         res.status(400).json({
           error:
-            "INVALID_DEPOSIT_ID",
+            "INVALID_DEPOSIT_AMOUNT",
           message:
-            "Deposit ID is required.",
+            "A valid deposit amount is required.",
         });
         return;
       }
 
-      if (!rejectionReason) {
+      if (!transactionReference) {
         res.status(400).json({
           error:
-            "REJECTION_REASON_REQUIRED",
+            "INVALID_TRANSACTION_REFERENCE",
           message:
-            "A rejection reason is required.",
+            "Telebirr transaction reference is required.",
         });
         return;
       }
+
+      await assertPaymentServiceOpen();
 
       const deposit =
-        await rejectWalletDeposit(
-          depositId,
+        await createWalletDeposit(
           req.user.id,
-          rejectionReason,
+          amount,
+          transactionReference,
+          senderName,
         );
 
-      res.status(200).json({
+      res.status(201).json({
         deposit,
       });
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
-          : "WALLET_DEPOSIT_REJECTION_FAILED";
+          : "WALLET_DEPOSIT_FAILED";
 
       const clientErrors =
         new Set([
-          "INVALID_DEPOSIT_ID",
-          "INVALID_ADMIN_USER_ID",
-          "REJECTION_REASON_REQUIRED",
-          "REJECTION_REASON_TOO_LONG",
-          "DEPOSIT_NOT_FOUND",
-          "DEPOSIT_ALREADY_PROCESSED",
+          "INVALID_USER_ID",
+          "INVALID_DEPOSIT_AMOUNT",
+          "DEPOSIT_AMOUNT_TOO_LARGE",
+          "INVALID_TRANSACTION_REFERENCE",
+          "TRANSACTION_REFERENCE_TOO_LONG",
+          "SENDER_NAME_TOO_LONG",
+          "DUPLICATE_TRANSACTION_REFERENCE",
+          "PAYMENT_SERVICE_DISABLED",
+          "PAYMENT_SERVICE_CLOSED",
         ]);
 
       if (
@@ -328,21 +203,21 @@ router.post(
         res.status(400).json({
           error: message,
           message:
-            "The wallet deposit could not be rejected.",
+            "The wallet deposit could not be submitted.",
         });
         return;
       }
 
       console.error(
-        "Reject wallet deposit error:",
+        "Create wallet deposit error:",
         error,
       );
 
       res.status(500).json({
         error:
-          "WALLET_DEPOSIT_REJECTION_FAILED",
+          "WALLET_DEPOSIT_FAILED",
         message:
-          "The wallet deposit could not be rejected.",
+          "The wallet deposit could not be submitted.",
       });
     }
   },
@@ -350,17 +225,47 @@ router.post(
 
 router.get(
   "/wallet/withdrawals/pending",
-  async (_req, res) => {
+  requireTelegramAuth,
+  async (req, res) => {
     try {
+      if (!req.user) {
+        res.status(401).json({
+          error:
+            "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
+        });
+        return;
+      }
+
       const withdrawals =
-        await getPendingWalletWithdrawals();
+        await getMyPendingWalletWithdrawals(
+          req.user.id,
+        );
 
       res.status(200).json({
         withdrawals,
       });
     } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "WALLET_WITHDRAWALS_LOAD_FAILED";
+
+      if (
+        message ===
+        "INVALID_USER_ID"
+      ) {
+        res.status(400).json({
+          error: message,
+          message:
+            "Pending withdrawals could not be loaded.",
+        });
+        return;
+      }
+
       console.error(
-        "Get pending wallet withdrawals error:",
+        "Get wallet withdrawals error:",
         error,
       );
 
@@ -368,14 +273,15 @@ router.get(
         error:
           "WALLET_WITHDRAWALS_LOAD_FAILED",
         message:
-          "Pending wallet withdrawals could not be loaded.",
+          "Pending withdrawals could not be loaded.",
       });
     }
   },
 );
 
 router.post(
-  "/wallet/withdrawals/:withdrawalId/approve",
+  "/wallet/withdraw",
+  requireTelegramAuth,
   async (req, res) => {
     try {
       if (!req.user) {
@@ -388,155 +294,44 @@ router.post(
         return;
       }
 
-      const withdrawalId =
-        req.params.withdrawalId?.trim();
+      const amount =
+        Number(req.body?.amount);
 
-      const paymentReference =
-        typeof req.body?.paymentReference ===
+      const telebirrNumber =
+        typeof req.body?.telebirrNumber ===
         "string"
-          ? req.body.paymentReference.trim()
+          ? req.body.telebirrNumber.trim()
           : "";
 
-      if (!withdrawalId) {
-        res.status(400).json({
-          error:
-            "INVALID_WITHDRAWAL_ID",
-          message:
-            "Withdrawal ID is required.",
-        });
-        return;
-      }
-
-      if (!paymentReference) {
-        res.status(400).json({
-          error:
-            "PAYMENT_REFERENCE_REQUIRED",
-          message:
-            "Payment reference is required.",
-        });
-        return;
-      }
+      await assertPaymentServiceOpen();
 
       const withdrawal =
-        await approveWalletWithdrawal(
-          withdrawalId,
+        await createWalletWithdrawal(
           req.user.id,
-          paymentReference,
+          amount,
+          telebirrNumber,
         );
 
-      res.status(200).json({
+      res.status(201).json({
         withdrawal,
       });
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
-          : "WALLET_WITHDRAWAL_APPROVAL_FAILED";
+          : "WALLET_WITHDRAWAL_FAILED";
 
       const clientErrors =
         new Set([
-          "INVALID_WITHDRAWAL_ID",
-          "INVALID_ADMIN_USER_ID",
-          "PAYMENT_REFERENCE_REQUIRED",
-          "PAYMENT_REFERENCE_TOO_LONG",
-          "WITHDRAWAL_NOT_FOUND",
-          "WITHDRAWAL_ALREADY_PROCESSED",
-        ]);
-
-      if (
-        clientErrors.has(message)
-      ) {
-        res.status(400).json({
-          error: message,
-          message:
-            "The wallet withdrawal could not be approved.",
-        });
-        return;
-      }
-
-      console.error(
-        "Approve wallet withdrawal error:",
-        error,
-      );
-
-      res.status(500).json({
-        error:
-          "WALLET_WITHDRAWAL_APPROVAL_FAILED",
-        message:
-          "The wallet withdrawal could not be approved.",
-      });
-    }
-  },
-);
-
-router.post(
-  "/wallet/withdrawals/:withdrawalId/reject",
-  async (req, res) => {
-    try {
-      if (!req.user) {
-        res.status(401).json({
-          error:
-            "AUTHENTICATION_REQUIRED",
-          message:
-            "Authentication is required.",
-        });
-        return;
-      }
-
-      const withdrawalId =
-        req.params.withdrawalId?.trim();
-
-      const rejectionReason =
-        typeof req.body?.rejectionReason ===
-        "string"
-          ? req.body.rejectionReason.trim()
-          : "";
-
-      if (!withdrawalId) {
-        res.status(400).json({
-          error:
-            "INVALID_WITHDRAWAL_ID",
-          message:
-            "Withdrawal ID is required.",
-        });
-        return;
-      }
-
-      if (!rejectionReason) {
-        res.status(400).json({
-          error:
-            "REJECTION_REASON_REQUIRED",
-          message:
-            "A rejection reason is required.",
-        });
-        return;
-      }
-
-      const withdrawal =
-        await rejectWalletWithdrawal(
-          withdrawalId,
-          req.user.id,
-          rejectionReason,
-        );
-
-      res.status(200).json({
-        withdrawal,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "WALLET_WITHDRAWAL_REJECTION_FAILED";
-
-      const clientErrors =
-        new Set([
-          "INVALID_WITHDRAWAL_ID",
-          "INVALID_ADMIN_USER_ID",
-          "REJECTION_REASON_REQUIRED",
-          "REJECTION_REASON_TOO_LONG",
-          "WITHDRAWAL_NOT_FOUND",
-          "WITHDRAWAL_ALREADY_PROCESSED",
+          "INVALID_USER_ID",
+          "INVALID_WITHDRAWAL_AMOUNT",
+          "WITHDRAWAL_AMOUNT_TOO_LARGE",
+          "TELEBIRR_NUMBER_REQUIRED",
+          "TELEBIRR_NUMBER_TOO_LONG",
           "WALLET_NOT_FOUND",
+          "INSUFFICIENT_WALLET_BALANCE",
+          "PAYMENT_SERVICE_DISABLED",
+          "PAYMENT_SERVICE_CLOSED",
         ]);
 
       if (
@@ -545,54 +340,151 @@ router.post(
         res.status(400).json({
           error: message,
           message:
-            "The wallet withdrawal could not be rejected.",
+            "The wallet withdrawal could not be submitted.",
         });
         return;
       }
 
       console.error(
-        "Reject wallet withdrawal error:",
+        "Create wallet withdrawal error:",
         error,
       );
 
       res.status(500).json({
         error:
-          "WALLET_WITHDRAWAL_REJECTION_FAILED",
+          "WALLET_WITHDRAWAL_FAILED",
         message:
-          "The wallet withdrawal could not be rejected.",
+          "The wallet withdrawal could not be submitted.",
+      });
+    }
+  },
+);
+
+router.post(
+  "/wallet/purchase",
+  requireTelegramAuth,
+  async (req, res) => {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          error:
+            "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
+        });
+        return;
+      }
+
+      const entryId =
+        typeof req.body?.entryId ===
+        "string"
+          ? req.body.entryId.trim()
+          : "";
+
+      if (!entryId) {
+        res.status(400).json({
+          error:
+            "INVALID_ENTRY_ID",
+          message:
+            "Entry ID is required.",
+        });
+        return;
+      }
+
+      const result =
+        await purchaseEntryWithWallet(
+          entryId,
+          req.user.id,
+        );
+
+      res.status(200).json({
+        result,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "WALLET_PURCHASE_FAILED";
+
+      const clientErrors =
+        new Set([
+          "INVALID_ENTRY_ID",
+          "INVALID_USER_ID",
+          "ENTRY_NOT_FOUND",
+          "ENTRY_NOT_OWNED",
+          "ENTRY_NOT_PAYABLE",
+          "DRAW_NOT_PAYABLE",
+          "RESERVATION_EXPIRED",
+          "INVALID_ENTRY_FEE",
+          "INSUFFICIENT_WALLET_BALANCE",
+        ]);
+
+      if (
+        clientErrors.has(message)
+      ) {
+        res.status(400).json({
+          error: message,
+          message:
+            "The number could not be purchased with the wallet.",
+        });
+        return;
+      }
+
+      console.error(
+        "Wallet purchase error:",
+        error,
+      );
+
+      res.status(500).json({
+        error:
+          "WALLET_PURCHASE_FAILED",
+        message:
+          "The number could not be purchased with the wallet.",
       });
     }
   },
 );
 
 router.get(
-  "/pending",
-  async (_req, res) => {
+  "/mine",
+  requireTelegramAuth,
+  async (req, res) => {
     try {
+      if (!req.user) {
+        res.status(401).json({
+          error: "AUTHENTICATION_REQUIRED",
+          message: "Authentication is required.",
+        });
+        return;
+      }
+
       const payments =
-        await getPendingPayments();
+        await getUserPayments(
+          req.user.id,
+        );
 
       res.status(200).json({
         payments,
       });
     } catch (error) {
       console.error(
-        "Get pending payments error:",
+        "Get user payments error:",
         error,
       );
 
       res.status(500).json({
         error:
-          "PENDING_PAYMENTS_LOAD_FAILED",
+          "PAYMENTS_LOAD_FAILED",
         message:
-          "Pending payments could not be loaded.",
+          "Your payments could not be loaded.",
       });
     }
   },
 );
 
 router.post(
-  "/:paymentId/approve",
+  "/telebirr",
+  requireTelegramAuth,
   async (req, res) => {
     try {
       if (!req.user) {
@@ -605,98 +497,137 @@ router.post(
         return;
       }
 
-      const paymentId =
-        req.params.paymentId?.trim();
-
-      if (!paymentId) {
-        res.status(400).json({
-          error:
-            "INVALID_PAYMENT_ID",
-          message:
-            "Payment ID is required.",
-        });
-        return;
-      }
-
-      const payment =
-        await approvePayment(
-          paymentId,
-          req.user.id,
-        );
-
-      res.status(200).json({
-        payment,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "PAYMENT_APPROVAL_FAILED";
-
-      const clientErrors =
-        new Set([
-          "INVALID_ADMIN_USER_ID",
-          "PAYMENT_NOT_FOUND",
-          "PAYMENT_ALREADY_PROCESSED",
-          "ENTRY_NOT_FOUND",
-          "PAYMENT_ENTRY_MISMATCH",
-          "PAYMENT_AMOUNT_MISMATCH",
-          "ENTRY_NOT_VERIFIABLE",
-          "DRAW_NOT_VERIFIABLE",
-          "DRAW_NOT_STARTED",
-          "DRAW_DEADLINE_PASSED",
-          "ENTRY_ALREADY_PAID",
-        ]);
-
-      if (
-        clientErrors.has(message)
-      ) {
-        res.status(400).json({
-          error: message,
-          message:
-            "The payment could not be approved.",
-        });
-        return;
-      }
-
-      console.error(
-        "Approve payment error:",
-        error,
-      );
-
-      res.status(500).json({
-        error:
-          "PAYMENT_APPROVAL_FAILED",
-        message:
-          "The payment could not be approved.",
-      });
-    }
-  },
-);
-
-router.post(
-  "/:paymentId/reject",
-  async (req, res) => {
-    try {
-      if (!req.user) {
-        res.status(401).json({
-          error:
-            "AUTHENTICATION_REQUIRED",
-          message:
-            "Authentication is required.",
-        });
-        return;
-      }
-
-      const paymentId =
-        req.params.paymentId?.trim();
-
-      const rejectionReason =
-        typeof req.body?.rejectionReason ===
+      const entryId =
+        typeof req.body?.entryId ===
         "string"
-          ? req.body.rejectionReason.trim()
+          ? req.body.entryId.trim()
           : "";
 
+      const transactionReference =
+        typeof req.body?.transactionReference ===
+        "string"
+          ? req.body.transactionReference.trim()
+          : "";
+
+      const senderName =
+        typeof req.body?.senderName ===
+        "string"
+          ? req.body.senderName.trim()
+          : undefined;
+
+      const receiptImageUrl =
+        typeof req.body?.receiptImageUrl ===
+        "string"
+          ? req.body.receiptImageUrl.trim()
+          : undefined;
+
+      if (!entryId) {
+        res.status(400).json({
+          error:
+            "INVALID_ENTRY_ID",
+          message:
+            "Entry ID is required.",
+        });
+        return;
+      }
+
+      if (!transactionReference) {
+        res.status(400).json({
+          error:
+            "INVALID_TRANSACTION_REFERENCE",
+          message:
+            "Telebirr transaction reference is required.",
+        });
+        return;
+      }
+
+      const payment =
+        await createTelebirrPayment(
+          entryId,
+          req.user.id,
+          transactionReference,
+          senderName,
+          receiptImageUrl,
+        );
+
+      res.status(201).json({
+        payment,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "PAYMENT_CREATION_FAILED";
+
+      const clientErrors =
+        new Set([
+          "INVALID_ENTRY_ID",
+          "INVALID_USER_ID",
+          "INVALID_TRANSACTION_REFERENCE",
+          "TRANSACTION_REFERENCE_TOO_LONG",
+          "SENDER_NAME_TOO_LONG",
+          "RECEIPT_IMAGE_URL_TOO_LONG",
+          "ENTRY_NOT_FOUND",
+          "ENTRY_NOT_OWNED",
+          "ENTRY_NOT_PAYABLE",
+          "PAYMENT_ALREADY_PENDING",
+          "DRAW_NOT_PAYABLE",
+          "DRAW_NOT_STARTED",
+          "DRAW_DEADLINE_PASSED",
+          "RESERVATION_EXPIRED",
+          "DUPLICATE_TRANSACTION_REFERENCE",
+          "INVALID_ENTRY_FEE",
+        ]);
+
+      if (
+        clientErrors.has(message)
+      ) {
+        res.status(400).json({
+          error: message,
+          message:
+            "The Telebirr payment could not be submitted.",
+        });
+        return;
+      }
+
+      console.error(
+        "Create Telebirr payment error:",
+        error,
+      );
+
+      res.status(500).json({
+        error:
+          "PAYMENT_CREATION_FAILED",
+        message:
+          "The Telebirr payment could not be submitted.",
+      });
+    }
+  },
+);
+
+router.get(
+  "/:paymentId",
+  requireTelegramAuth,
+  async (req, res) => {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          error:
+            "AUTHENTICATION_REQUIRED",
+          message:
+            "Authentication is required.",
+        });
+        return;
+      }
+
+      const rawPaymentId =
+        req.params.paymentId;
+
+      const paymentId =
+        Array.isArray(rawPaymentId)
+          ? rawPaymentId[0]?.trim() ?? ""
+          : rawPaymentId.trim();
+
       if (!paymentId) {
         res.status(400).json({
           error:
@@ -707,65 +638,90 @@ router.post(
         return;
       }
 
-      if (!rejectionReason) {
-        res.status(400).json({
+      const payment =
+        await getPaymentById(
+          paymentId,
+        );
+
+      if (!payment) {
+        res.status(404).json({
           error:
-            "REJECTION_REASON_REQUIRED",
+            "PAYMENT_NOT_FOUND",
           message:
-            "A rejection reason is required.",
+            "The requested payment does not exist.",
         });
         return;
       }
 
-      const payment =
-        await rejectPayment(
-          paymentId,
-          req.user.id,
-          rejectionReason,
-        );
+      if (
+        payment.userId !==
+        req.user.id
+      ) {
+        res.status(403).json({
+          error:
+            "PAYMENT_ACCESS_DENIED",
+          message:
+            "You cannot access this payment.",
+        });
+        return;
+      }
 
       res.status(200).json({
         payment,
       });
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "PAYMENT_REJECTION_FAILED";
-
-      const clientErrors =
-        new Set([
-          "INVALID_ADMIN_USER_ID",
-          "REJECTION_REASON_REQUIRED",
-          "REJECTION_REASON_TOO_LONG",
-          "PAYMENT_NOT_FOUND",
-          "PAYMENT_ALREADY_PROCESSED",
-          "ENTRY_NOT_FOUND",
-          "PAYMENT_ENTRY_MISMATCH",
-          "ENTRY_NOT_REJECTABLE",
-        ]);
-
-      if (
-        clientErrors.has(message)
-      ) {
-        res.status(400).json({
-          error: message,
-          message:
-            "The payment could not be rejected.",
-        });
-        return;
-      }
-
       console.error(
-        "Reject payment error:",
+        "Get payment error:",
         error,
       );
 
       res.status(500).json({
         error:
-          "PAYMENT_REJECTION_FAILED",
+          "PAYMENT_LOAD_FAILED",
         message:
-          "The payment could not be rejected.",
+          "The payment could not be loaded.",
+      });
+    }
+  },
+);
+
+router.get(
+  "/wallet/history",
+  requireTelegramAuth,
+  async (req, res) => {
+    if (!req.user) {
+      res.status(401).json({
+        error: "AUTHENTICATION_REQUIRED",
+        message: "Authentication is required.",
+      });
+      return;
+    }
+
+    try {
+      const history = await getMyWalletHistory(
+        req.user.id,
+      );
+
+      res.status(200).json({ history });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "WALLET_HISTORY_LOAD_FAILED";
+
+      if (message === "INVALID_USER_ID") {
+        res.status(400).json({
+          error: message,
+          message: "Wallet history could not be loaded.",
+        });
+        return;
+      }
+
+      console.error("Wallet history error:", error);
+
+      res.status(500).json({
+        error: "WALLET_HISTORY_LOAD_FAILED",
+        message: "Wallet history could not be loaded.",
       });
     }
   },
