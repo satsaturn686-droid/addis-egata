@@ -19,6 +19,35 @@ type PaymentSettingsForm = {
   isOpen: boolean;
 };
 
+function formatEthiopianTime(value: string): string {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+
+  if (!match) {
+    return value;
+  }
+
+  const civilHour = Number(match[1]);
+  const minute = match[2];
+
+  if (civilHour < 0 || civilHour > 23) {
+    return value;
+  }
+
+  // Convert the API's international clock to the Ethiopian clock.
+  const ethiopianHour = (civilHour + 18) % 24;
+  const displayHour = ethiopianHour % 12 || 12;
+  const period =
+    ethiopianHour < 6
+      ? "ጠዋት"
+      : ethiopianHour < 12
+        ? "ከቀኑ"
+        : ethiopianHour < 18
+          ? "ምሽት"
+          : "ሌሊት";
+
+  return period + " " + displayHour + ":" + minute;
+}
+
 export default function AdminPaymentSettings() {
   const [settings, setSettings] =
     useState<PaymentSettingsForm>({
@@ -531,8 +560,9 @@ export default function AdminPaymentSettings() {
               </div>
 
               <p className="admin-payment-settings-help">
-                ነባሪ ሰዓት፦ 09:00–18:00
-                (የኢትዮጵያ ሰዓት፤ ጠዋት 3:00–ምሽት 12:00)።
+                ነባሪ የኢትዮጵያ ሰዓት፦ ጠዋት 3:00 – ምሽት 12:00።
+                የመክፈቻና መዝጊያ ሰዓቶች ከታች በኢትዮጵያ አቆጣጠር
+                ይታያሉ፤ የአገልግሎቱ ስሌትና በሰርቨር የሚቀመጡ እሴቶች አይቀየሩም።
               </p>
             </div>
 
@@ -556,14 +586,14 @@ export default function AdminPaymentSettings() {
 
               <p className="admin-payment-settings-status-info">
                 የተቀመጠው ሰዓት፦{" "}
-                {settings.serviceOpenTime} –{" "}
-                {settings.serviceCloseTime}
+                {formatEthiopianTime(settings.serviceOpenTime)} –{" "}
+                {formatEthiopianTime(settings.serviceCloseTime)}
               </p>
 
               {settings.localTime ? (
                 <p className="admin-payment-settings-status-info">
                   አሁን በኢትዮጵያ ሰዓት፦{" "}
-                  {settings.localTime}
+                  {formatEthiopianTime(settings.localTime)}
                 </p>
               ) : null}
             </div>
