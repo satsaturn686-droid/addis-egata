@@ -19,6 +19,8 @@ type HistoryTab =
   | "deposits"
   | "withdrawals";
 
+type WalletActionTab = "deposit" | "withdraw";
+
 type WalletPaymentSettings = {
   telebirrNumber: string;
   serviceEnabled?: boolean;
@@ -139,7 +141,7 @@ export default function UserWalletButton() {
 
   const [balance, setBalance] = useState<number | null>(null);
   const [telebirrNumber, setTelebirrNumber] = useState("");
-const [telebirrCopied, setTelebirrCopied] = useState(false);
+  const [telebirrCopied, setTelebirrCopied] = useState(false);
   const [paymentSettings, setPaymentSettings] =
     useState<WalletPaymentSettings | null>(null);
 
@@ -163,6 +165,8 @@ const [telebirrCopied, setTelebirrCopied] = useState(false);
 
   const [historyTab, setHistoryTab] =
     useState<HistoryTab>("transactions");
+  const [walletActionTab, setWalletActionTab] =
+    useState<WalletActionTab>("deposit");
 
   async function loadWallet() {
     setLoading(true);
@@ -224,7 +228,7 @@ const [telebirrCopied, setTelebirrCopied] = useState(false);
 
       setError(null);
       setTelebirrCopied(true);
-window.setTimeout(() => setTelebirrCopied(false), 1800);
+      window.setTimeout(() => setTelebirrCopied(false), 1800);
       setMessage("✓ Telebirr ቁጥሩ ተኮፒ ተደርጓል።");
     } catch {
       setError(
@@ -534,134 +538,201 @@ window.setTimeout(() => setTelebirrCopied(false), 1800);
               </div>
             </div>
 
-            <form onSubmit={handleDeposit} style={panelStyle}>
-              <strong>💳 Wallet ላይ ገንዘብ ጨምር</strong>
-
-              <p className="hero-description" style={{ margin: 0 }}>
-                በTelebirr ወደዚህ ቁጥር ገንዘብ ይላኩ፦
-              </p>
-
-              {/* Telebirr number and copy button */}
-              <div
+            <div
+              role="tablist"
+              aria-label="Deposit እና Withdraw"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                gap: "8px",
+                marginTop: "14px",
+              }}
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={walletActionTab === "deposit"}
+                onClick={() => {
+                  setWalletActionTab("deposit");
+                  setError(null);
+                  setMessage(null);
+                }}
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  flexWrap: "wrap",
-                  padding: "10px",
-                  borderRadius: "10px",
-                  background: "rgba(16,185,129,0.10)",
-                  border: "1px solid rgba(52,211,153,0.22)",
+                  ...secondaryButtonStyle,
+                  minHeight: "46px",
+                  background:
+                    walletActionTab === "deposit"
+                      ? "rgba(16,185,129,0.18)"
+                      : "rgba(255,255,255,0.04)",
+                  borderColor:
+                    walletActionTab === "deposit"
+                      ? "rgba(52,211,153,0.55)"
+                      : "rgba(255,255,255,0.12)",
+                  fontWeight: 700,
                 }}
               >
-                <strong
+                💳 Deposit
+              </button>
+
+              <button
+                type="button"
+                role="tab"
+                aria-selected={walletActionTab === "withdraw"}
+                onClick={() => {
+                  setWalletActionTab("withdraw");
+                  setError(null);
+                  setMessage(null);
+                }}
+                style={{
+                  ...secondaryButtonStyle,
+                  minHeight: "46px",
+                  background:
+                    walletActionTab === "withdraw"
+                      ? "rgba(16,185,129,0.18)"
+                      : "rgba(255,255,255,0.04)",
+                  borderColor:
+                    walletActionTab === "withdraw"
+                      ? "rgba(52,211,153,0.55)"
+                      : "rgba(255,255,255,0.12)",
+                  fontWeight: 700,
+                }}
+              >
+                💸 Withdraw
+              </button>
+            </div>
+
+            {walletActionTab === "deposit" && (
+              <form onSubmit={handleDeposit} style={panelStyle}>
+                <strong>💳 Wallet ላይ ገንዘብ ጨምር</strong>
+
+                <p className="hero-description" style={{ margin: 0 }}>
+                  በTelebirr ወደዚህ ቁጥር ገንዘብ ይላኩ፦
+                </p>
+
+                {/* Telebirr number and copy button */}
+                <div
                   style={{
-                    flex: "1 1 150px",
-                    minWidth: 0,
-                    fontSize: "17px",
-                    overflowWrap: "anywhere",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    flexWrap: "wrap",
+                    padding: "10px",
+                    borderRadius: "10px",
+                    background: "rgba(16,185,129,0.10)",
+                    border: "1px solid rgba(52,211,153,0.22)",
                   }}
                 >
-                  {telebirrNumber || "Admin የTelebirr ቁጥር አላስገባም"}
-                </strong>
+                  <strong
+                    style={{
+                      flex: "1 1 150px",
+                      minWidth: 0,
+                      fontSize: "17px",
+                      overflowWrap: "anywhere",
+                    }}
+                  >
+                    {telebirrNumber || "Admin የTelebirr ቁጥር አላስገባም"}
+                  </strong>
+
+                  <button
+                    type="button"
+                    style={{ ...secondaryButtonStyle, minHeight: "38px" }}
+                    disabled={!telebirrNumber}
+                    onClick={() => void copyTelebirrNumber()}
+                  >
+                    {telebirrCopied ? "✅ ተቀድቷል" : "📋 ኮፒ"}
+                  </button>
+                </div>
+
+                <p className="hero-description" style={{ margin: 0 }}>
+                  ክፍያውን ከፈጸሙ በኋላ Transaction Reference ያስገቡ።
+                  Admin ካረጋገጠ በኋላ ቀሪ ሂሳብዎ ይጨምራል።
+                </p>
+
+                <input
+                  type="number"
+                  min="1"
+                  step="0.01"
+                  required
+                  value={amount}
+                  onChange={(event) => setAmount(event.target.value)}
+                  placeholder="የDeposit መጠን (ብር)"
+                  style={fieldStyle}
+                />
+
+                <input
+                  type="text"
+                  required
+                  maxLength={200}
+                  value={reference}
+                  onChange={(event) => setReference(event.target.value)}
+                  placeholder="Telebirr Transaction Reference"
+                  style={fieldStyle}
+                />
+
+                <input
+                  type="text"
+                  maxLength={200}
+                  value={senderName}
+                  onChange={(event) => setSenderName(event.target.value)}
+                  placeholder="የላኪው ስም (አማራጭ)"
+                  style={fieldStyle}
+                />
 
                 <button
-                  type="button"
-                  style={{ ...secondaryButtonStyle, minHeight: "38px" }}
-                  disabled={!telebirrNumber}
-                  onClick={() => void copyTelebirrNumber()}
+                  className="primary-button"
+                  type="submit"
+                  disabled={depositing}
                 >
-                  {telebirrCopied ? "✅ ተቀድቷል" : "📋 ኮፒ"}
+                  {depositing
+                    ? "Deposit በመላክ ላይ..."
+                    : "Deposit ጥያቄ ላክ"}
                 </button>
-              </div>
+              </form>
+            )}
 
-              <p className="hero-description" style={{ margin: 0 }}>
-                ክፍያውን ከፈጸሙ በኋላ Transaction Reference ያስገቡ።
-                Admin ካረጋገጠ በኋላ ቀሪ ሂሳብዎ ይጨምራል።
-              </p>
+            {walletActionTab === "withdraw" && (
+              <form onSubmit={handleWithdraw} style={panelStyle}>
+                <strong>💸 ከWallet ገንዘብ አውጣ</strong>
 
-              <input
-                type="number"
-                min="1"
-                step="0.01"
-                required
-                value={amount}
-                onChange={(event) => setAmount(event.target.value)}
-                placeholder="የDeposit መጠን (ብር)"
-                style={fieldStyle}
-              />
+                <p className="hero-description" style={{ margin: 0 }}>
+                  የሚቀበሉበትን Telebirr ቁጥር ያስገቡ።
+                  ጥያቄው Admin ዘንድ ይሄዳል፤ ክፍያው በእጅ ይፈጸማል።
+                </p>
 
-              <input
-                type="text"
-                required
-                maxLength={200}
-                value={reference}
-                onChange={(event) => setReference(event.target.value)}
-                placeholder="Telebirr Transaction Reference"
-                style={fieldStyle}
-              />
+                <input
+                  type="number"
+                  min="1"
+                  step="0.01"
+                  required
+                  value={withdrawAmount}
+                  onChange={(event) => setWithdrawAmount(event.target.value)}
+                  placeholder="የWithdraw መጠን (ብር)"
+                  style={fieldStyle}
+                />
 
-              <input
-                type="text"
-                maxLength={200}
-                value={senderName}
-                onChange={(event) => setSenderName(event.target.value)}
-                placeholder="የላኪው ስም (አማራጭ)"
-                style={fieldStyle}
-              />
+                <input
+                  type="text"
+                  required
+                  maxLength={100}
+                  value={withdrawTelebirr}
+                  onChange={(event) =>
+                    setWithdrawTelebirr(event.target.value)
+                  }
+                  placeholder="የሚቀበሉበት Telebirr ቁጥር"
+                  style={fieldStyle}
+                />
 
-              <button
-                className="primary-button"
-                type="submit"
-                disabled={depositing}
-              >
-                {depositing
-                  ? "Deposit በመላክ ላይ..."
-                  : "Deposit ጥያቄ ላክ"}
-              </button>
-            </form>
-
-            <form onSubmit={handleWithdraw} style={panelStyle}>
-              <strong>💸 ከWallet ገንዘብ አውጣ</strong>
-
-              <p className="hero-description" style={{ margin: 0 }}>
-                የሚቀበሉበትን Telebirr ቁጥር ያስገቡ።
-                ጥያቄው Admin ዘንድ ይሄዳል፤ ክፍያው በእጅ ይፈጸማል።
-              </p>
-
-              <input
-                type="number"
-                min="1"
-                step="0.01"
-                required
-                value={withdrawAmount}
-                onChange={(event) => setWithdrawAmount(event.target.value)}
-                placeholder="የWithdraw መጠን (ብር)"
-                style={fieldStyle}
-              />
-
-              <input
-                type="text"
-                required
-                maxLength={100}
-                value={withdrawTelebirr}
-                onChange={(event) =>
-                  setWithdrawTelebirr(event.target.value)
-                }
-                placeholder="የሚቀበሉበት Telebirr ቁጥር"
-                style={fieldStyle}
-              />
-
-              <button
-                className="primary-button"
-                type="submit"
-                disabled={withdrawing}
-              >
-                {withdrawing
-                  ? "Withdraw በመላክ ላይ..."
-                  : "💸 Withdraw ጠይቅ"}
-              </button>
-            </form>
+                <button
+                  className="primary-button"
+                  type="submit"
+                  disabled={withdrawing}
+                >
+                  {withdrawing
+                    ? "Withdraw በመላክ ላይ..."
+                    : "💸 Withdraw ጠይቅ"}
+                </button>
+              </form>
+            )}
 
             <section style={{ ...panelStyle, gap: "12px" }}>
               <div
