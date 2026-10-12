@@ -139,7 +139,7 @@ export default function UserWalletButton() {
 
   const [balance, setBalance] = useState<number | null>(null);
   const [telebirrNumber, setTelebirrNumber] = useState("");
-
+const [telebirrCopied, setTelebirrCopied] = useState(false);
   const [paymentSettings, setPaymentSettings] =
     useState<WalletPaymentSettings | null>(null);
 
@@ -223,6 +223,8 @@ export default function UserWalletButton() {
       }
 
       setError(null);
+      setTelebirrCopied(true);
+window.setTimeout(() => setTelebirrCopied(false), 1800);
       setMessage("✓ Telebirr ቁጥሩ ተኮፒ ተደርጓል።");
     } catch {
       setError(
@@ -569,7 +571,7 @@ export default function UserWalletButton() {
                   disabled={!telebirrNumber}
                   onClick={() => void copyTelebirrNumber()}
                 >
-                  📋 ኮፒ
+                  {telebirrCopied ? "✅ ተቀድቷል" : "📋 ኮፒ"}
                 </button>
               </div>
 
