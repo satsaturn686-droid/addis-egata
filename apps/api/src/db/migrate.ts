@@ -1,4 +1,3 @@
-
 import "dotenv/config";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -21,7 +20,6 @@ const pool = new Pool({
 
 const currentFile = fileURLToPath(import.meta.url);
 const currentDirectory = path.dirname(currentFile);
-
 const schemaPath = path.join(currentDirectory, "schema.sql");
 
 async function migrate() {
@@ -31,13 +29,10 @@ async function migrate() {
     const schema = await readFile(schemaPath, "utf8");
 
     await client.query("BEGIN");
-
     await client.query(schema);
-
     await ensureWalletTransactionTypes(client);
-
     await ensureWinnerCountMinimum(client);
-
+    await ensurePhysicalWinnerRecipient(client);
     await removeLegacyEntryNumberConstraint(client);
 
     await client.query(`
@@ -47,7 +42,6 @@ async function migrate() {
     `);
 
     await removeDestructiveCascades(client);
-
     await client.query("COMMIT");
 
     console.log("Database migration completed successfully.");
@@ -156,6 +150,20 @@ async function ensureWinnerCountMinimum(
   console.log(
     "Updated draws_winner_count_check to allow one or more winners.",
   );
+}
+
+async function ensurePhysicalWinnerRecipient(
+  client: import("pg").PoolClient,
+): Promise<void> {
+  await client.query(`
+    ALTER TABLE winner_payouts
+    ADD COLUMN IF NOT EXISTS recipient_full_name TEXT
+  `);
+
+  await client.query(`
+    ALTER TABLE winner_payouts
+    ADD COLUMN IF NOT EXISTS recipient_phone TEXT
+  `);
 }
 
 async function removeLegacyEntryNumberConstraint(
