@@ -410,11 +410,11 @@ export async function createDraw(
     Math.round(input.entryFee * 100) /
     100;
 
-  if (
+    if (
     !Number.isInteger(
       input.winnerCount,
     ) ||
-    input.winnerCount < 5 ||
+    input.winnerCount < 1 ||
     input.winnerCount >
       input.totalNumbers
   ) {
@@ -422,7 +422,6 @@ export async function createDraw(
       "INVALID_WINNER_COUNT",
     );
   }
-
   const startsAt = validateDate(
     input.startsAt,
     "STARTS_AT",
