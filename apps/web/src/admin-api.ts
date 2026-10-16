@@ -37,16 +37,23 @@ export type WinnerPayoutStatus =
   | "awaiting_claim"
   | "awaiting_screenshot"
   | "awaiting_telebirr"
+  | "awaiting_recipient"
   | "submitted"
   | "approved"
   | "paid"
   | "rejected";
+
+export type WinnerPrizeType =
+  | "cash"
+  | "physical"
+  | "other";
 
 export type WinnerPayout = {
   id: string;
   winnerId: string;
   drawId: string;
   drawName: string;
+  prizeType: WinnerPrizeType;
   entryId: string;
   number: number;
   userId: string;
@@ -59,6 +66,8 @@ export type WinnerPayout = {
   status: WinnerPayoutStatus;
   telebirrNumber: string | null;
   telebirrAccountName: string | null;
+  recipientFullName: string | null;
+  recipientPhone: string | null;
   screenshotFileId: string | null;
   screenshotFileUniqueId: string | null;
   claimStartedAt: string | null;
@@ -162,9 +171,7 @@ async function adminRequest<T>(
 }
 
 /**
- * ============================
  * ENTRY PAYMENTS
- * ============================
  */
 
 export async function getPendingPayments(
@@ -246,9 +253,7 @@ export async function rejectPayment(
 }
 
 /**
- * ============================
  * ADMIN PAYMENT SETTINGS
- * ============================
  */
 
 export async function getAdminPaymentSettings(
@@ -262,10 +267,6 @@ export async function getAdminPaymentSettings(
   );
 }
 
-/**
- * Keep this function for existing screens
- * that only update the Telebirr number.
- */
 export async function updateTelebirrNumber(
   telebirrNumber: string,
   signal?: AbortSignal,
@@ -298,9 +299,6 @@ export async function updateTelebirrNumber(
   );
 }
 
-/**
- * Update Telebirr and Deposit/Withdraw hours.
- */
 export async function updatePaymentSettings(
   input: UpdatePaymentSettingsInput,
   signal?: AbortSignal,
@@ -360,9 +358,7 @@ export async function updatePaymentSettings(
 }
 
 /**
- * ============================
  * WINNER PAYOUTS
- * ============================
  */
 
 export async function getPendingWinnerPayouts(
