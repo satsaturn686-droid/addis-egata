@@ -153,7 +153,7 @@ async function validateDrawReady(
   }
 
   if (
-    draw.winner_count < 5 ||
+    draw.winner_count < 1
     draw.winner_count >
       draw.total_numbers
   ) {
