@@ -33,122 +33,69 @@ function buildInitialPrizes(
 export default function AdminDrawCreate({
   onCreated,
 }: AdminDrawCreateProps) {
-  const [name, setName] =
-    useState("");
-
-  const [description, setDescription] =
-    useState("");
-
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [prizeType, setPrizeType] =
-    useState<"cash" | "physical">(
-      "cash",
-    );
-
-  const [prizeName, setPrizeName] =
-    useState("");
-
-  const [prizeImageUrl, setPrizeImageUrl] =
-    useState("");
-
-  const [prizeDescription, setPrizeDescription] =
-    useState("");
-
-  const [displayedPrizeValue, setDisplayedPrizeValue] =
-    useState("");
-
-  const [actualPrizeCost, setActualPrizeCost] =
-    useState("");
-
-  const [totalNumbers, setTotalNumbers] =
-    useState("100");
-
-  const [entryFee, setEntryFee] =
-    useState("100");
-
-  const [winnerCount, setWinnerCount] =
-    useState("5");
-
-  const [uniqueWinners, setUniqueWinners] =
-    useState(true);
-
-  const [startsAt, setStartsAt] =
-    useState("");
-
-  const [drawAt, setDrawAt] =
-    useState("");
-
-  const [prizes, setPrizes] =
-    useState<AdminPrizeInput[]>(
-      buildInitialPrizes(5),
-    );
-
-  const [saving, setSaving] =
-    useState(false);
-
-  const [error, setError] =
-    useState<string | null>(null);
-
-  const [success, setSuccess] =
-    useState<string | null>(null);
+    useState<"cash" | "physical">("cash");
+  const [prizeName, setPrizeName] = useState("");
+  const [prizeImageUrl, setPrizeImageUrl] = useState("");
+  const [prizeDescription, setPrizeDescription] = useState("");
+  const [displayedPrizeValue, setDisplayedPrizeValue] = useState("");
+  const [actualPrizeCost, setActualPrizeCost] = useState("");
+  const [totalNumbers, setTotalNumbers] = useState("100");
+  const [entryFee, setEntryFee] = useState("100");
+  const [winnerCount, setWinnerCount] = useState("5");
+  const [uniqueWinners, setUniqueWinners] = useState(true);
+  const [startsAt, setStartsAt] = useState("");
+  const [drawAt, setDrawAt] = useState("");
+  const [prizes, setPrizes] = useState<AdminPrizeInput[]>(
+    buildInitialPrizes(5),
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const totalPrize = useMemo(
     () =>
       prizes.reduce(
         (sum, prize) =>
           sum +
-          (Number.isFinite(prize.amount)
-            ? prize.amount
-            : 0),
+          (Number.isFinite(prize.amount) ? prize.amount : 0),
         0,
       ),
     [prizes],
   );
 
   const estimatedCollection =
-    (Number(totalNumbers) || 0) *
-    (Number(entryFee) || 0);
+    (Number(totalNumbers) || 0) * (Number(entryFee) || 0);
 
   const estimatedDifference =
     estimatedCollection -
-    (Number(actualPrizeCost) ||
-      totalPrize ||
-      0);
+    (Number(actualPrizeCost) || totalPrize || 0);
 
-  function updateWinnerCount(
-    value: string,
-  ) {
+  function updateWinnerCount(value: string) {
     setWinnerCount(value);
 
-    const count =
-      Number.parseInt(value, 10);
+    const count = Number.parseInt(value, 10);
 
     if (
       Number.isInteger(count) &&
-      count >= 5 &&
+      count >= 1 &&
       count <= 1000
     ) {
-      setPrizes(
-        buildInitialPrizes(count),
-      );
+      setPrizes(buildInitialPrizes(count));
     }
   }
 
-  function updatePrizeAmount(
-    rank: number,
-    value: string,
-  ) {
-    const amount =
-      Number.parseFloat(value);
+  function updatePrizeAmount(rank: number, value: string) {
+    const amount = Number.parseFloat(value);
 
     setPrizes((current) =>
       current.map((prize) =>
         prize.rank === rank
           ? {
               ...prize,
-              amount:
-                Number.isFinite(amount)
-                  ? amount
-                  : 0,
+              amount: Number.isFinite(amount) ? amount : 0,
             }
           : prize,
       ),
@@ -158,19 +105,15 @@ export default function AdminDrawCreate({
   function toOptionalNumber(
     value: string,
   ): number | undefined {
-    const normalized =
-      value.trim();
+    const normalized = value.trim();
 
     if (!normalized) {
       return undefined;
     }
 
-    const parsed =
-      Number.parseFloat(normalized);
+    const parsed = Number.parseFloat(normalized);
 
-    return Number.isFinite(parsed)
-      ? parsed
-      : undefined;
+    return Number.isFinite(parsed) ? parsed : undefined;
   }
 
   async function handleSubmit(
@@ -183,34 +126,17 @@ export default function AdminDrawCreate({
     setSuccess(null);
 
     try {
-      const numbers =
-        Number.parseInt(
-          totalNumbers,
-          10,
-        );
+      const numbers = Number.parseInt(totalNumbers, 10);
+      const fee = Number.parseFloat(entryFee);
+      const winners = Number.parseInt(winnerCount, 10);
 
-      const fee =
-        Number.parseFloat(entryFee);
-
-      const winners =
-        Number.parseInt(
-          winnerCount,
-          10,
-        );
-
-      if (
-        !Number.isInteger(numbers) ||
-        numbers < 5
-      ) {
+      if (!Number.isInteger(numbers) || numbers < 5) {
         throw new Error(
           "የቁጥሮች ብዛት ቢያንስ 5 መሆን አለበት።",
         );
       }
 
-      if (
-        !Number.isFinite(fee) ||
-        fee <= 0
-      ) {
+      if (!Number.isFinite(fee) || fee <= 0) {
         throw new Error(
           "የመግቢያ ክፍያ ከ0 በላይ መሆን አለበት።",
         );
@@ -218,48 +144,39 @@ export default function AdminDrawCreate({
 
       if (
         !Number.isInteger(winners) ||
-        winners < 5 ||
+        winners < 1 ||
         winners > numbers
       ) {
         throw new Error(
-          "የአሸናፊዎች ብዛት ቢያንስ 5 እና ከቁጥሮች ብዛት መብለጥ የለበትም።",
+          "የአሸናፊዎች ብዛት ቢያንስ 1 እና ከቁጥሮች ብዛት መብለጥ የለበትም።",
         );
       }
 
-      if (
-        prizes.length !== winners
-      ) {
+      if (prizes.length !== winners) {
         throw new Error(
           "የPrize ቁጥር ከWinner ቁጥር ጋር መመሳሰል አለበት።",
         );
       }
 
-      const response =
-        await createAdminDraw({
-          name,
-          description,
-          prizeType,
-          prizeName,
-          prizeImageUrl,
-          prizeDescription,
-          displayedPrizeValue:
-            toOptionalNumber(
-              displayedPrizeValue,
-            ),
-          actualPrizeCost:
-            toOptionalNumber(
-              actualPrizeCost,
-            ),
-          totalNumbers: numbers,
-          entryFee: fee,
-          winnerCount: winners,
-          uniqueWinners,
-          startsAt:
-            startsAt || undefined,
-          drawAt:
-            drawAt || undefined,
-          prizes,
-        });
+      const response = await createAdminDraw({
+        name,
+        description,
+        prizeType,
+        prizeName,
+        prizeImageUrl,
+        prizeDescription,
+        displayedPrizeValue: toOptionalNumber(
+          displayedPrizeValue,
+        ),
+        actualPrizeCost: toOptionalNumber(actualPrizeCost),
+        totalNumbers: numbers,
+        entryFee: fee,
+        winnerCount: winners,
+        uniqueWinners,
+        startsAt: startsAt || undefined,
+        drawAt: drawAt || undefined,
+        prizes,
+      });
 
       setSuccess(
         `ዕጣው "${response.draw.name}" በDraft ሁኔታ ተፈጥሯል።`,
@@ -326,8 +243,7 @@ export default function AdminDrawCreate({
 
           .admin-create-grid {
             display: grid;
-            grid-template-columns:
-              repeat(2, minmax(0, 1fr));
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 12px;
           }
 
@@ -399,8 +315,7 @@ export default function AdminDrawCreate({
 
           .admin-prize-row {
             display: grid;
-            grid-template-columns:
-              72px minmax(0, 1fr);
+            grid-template-columns: 72px minmax(0, 1fr);
             gap: 10px;
             align-items: center;
           }
@@ -423,8 +338,7 @@ export default function AdminDrawCreate({
 
           .admin-create-summary {
             display: grid;
-            grid-template-columns:
-              repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 10px;
             margin-top: 14px;
           }
@@ -528,72 +442,46 @@ export default function AdminDrawCreate({
 
           <div className="admin-create-grid">
             <div className="admin-create-field full">
-              <label htmlFor="draw-name">
-                የዕጣ ስም
-              </label>
-
+              <label htmlFor="draw-name">የዕጣ ስም</label>
               <input
                 id="draw-name"
                 value={name}
-                onChange={(event) =>
-                  setName(event.target.value)
-                }
+                onChange={(event) => setName(event.target.value)}
                 placeholder="ለምሳሌ Addis ዕጣ — የሳምንቱ ዕጣ"
                 required
               />
             </div>
 
             <div className="admin-create-field full">
-              <label htmlFor="draw-description">
-                መግለጫ
-              </label>
-
+              <label htmlFor="draw-description">መግለጫ</label>
               <textarea
                 id="draw-description"
                 value={description}
-                onChange={(event) =>
-                  setDescription(
-                    event.target.value,
-                  )
-                }
+                onChange={(event) => setDescription(event.target.value)}
                 placeholder="ስለ ዕጣው አጭር መረጃ"
               />
             </div>
 
             <div className="admin-create-field">
-              <label htmlFor="total-numbers">
-                ጠቅላላ ቁጥሮች
-              </label>
-
+              <label htmlFor="total-numbers">ጠቅላላ ቁጥሮች</label>
               <input
                 id="total-numbers"
                 type="number"
                 min="5"
                 value={totalNumbers}
-                onChange={(event) =>
-                  setTotalNumbers(
-                    event.target.value,
-                  )
-                }
+                onChange={(event) => setTotalNumbers(event.target.value)}
               />
             </div>
 
             <div className="admin-create-field">
-              <label htmlFor="entry-fee">
-                የመግቢያ ክፍያ (ETB)
-              </label>
-
+              <label htmlFor="entry-fee">የመግቢያ ክፍያ (ETB)</label>
               <input
                 id="entry-fee"
                 type="number"
                 min="0.01"
                 step="0.01"
                 value={entryFee}
-                onChange={(event) =>
-                  setEntryFee(
-                    event.target.value,
-                  )
-                }
+                onChange={(event) => setEntryFee(event.target.value)}
               />
             </div>
           </div>
@@ -604,170 +492,104 @@ export default function AdminDrawCreate({
 
           <div className="admin-create-grid">
             <div className="admin-create-field">
-              <label htmlFor="prize-type">
-                የሽልማት አይነት
-              </label>
-
+              <label htmlFor="prize-type">የሽልማት አይነት</label>
               <select
                 id="prize-type"
                 value={prizeType}
                 onChange={(event) =>
                   setPrizeType(
-                    event.target.value as
-                      | "cash"
-                      | "physical",
+                    event.target.value as "cash" | "physical",
                   )
                 }
               >
-                <option value="cash">
-                  ገንዘብ
-                </option>
-
-                <option value="physical">
-                  እቃ / ንብረት
-                </option>
+                <option value="cash">ገንዘብ</option>
+                <option value="physical">እቃ / ንብረት</option>
               </select>
             </div>
 
             <div className="admin-create-field">
-              <label htmlFor="prize-name">
-                የሽልማት ስም
-              </label>
-
+              <label htmlFor="prize-name">የሽልማት ስም</label>
               <input
                 id="prize-name"
                 value={prizeName}
-                onChange={(event) =>
-                  setPrizeName(
-                    event.target.value,
-                  )
-                }
+                onChange={(event) => setPrizeName(event.target.value)}
                 placeholder="ለምሳሌ የገንዘብ ሽልማት"
                 required
               />
             </div>
 
             <div className="admin-create-field full">
-              <label htmlFor="prize-image">
-                የሽልማት ምስል URL
-              </label>
-
+              <label htmlFor="prize-image">የሽልማት ምስል URL</label>
               <input
                 id="prize-image"
                 type="url"
                 value={prizeImageUrl}
-                onChange={(event) =>
-                  setPrizeImageUrl(
-                    event.target.value,
-                  )
-                }
+                onChange={(event) => setPrizeImageUrl(event.target.value)}
                 placeholder="https://..."
               />
             </div>
 
             <div className="admin-create-field full">
-              <label htmlFor="prize-description">
-                የሽልማት መግለጫ
-              </label>
-
+              <label htmlFor="prize-description">የሽልማት መግለጫ</label>
               <textarea
                 id="prize-description"
                 value={prizeDescription}
-                onChange={(event) =>
-                  setPrizeDescription(
-                    event.target.value,
-                  )
-                }
+                onChange={(event) => setPrizeDescription(event.target.value)}
                 placeholder="ሽልማቱ ምን እንደሆነ ዝርዝር መረጃ"
               />
             </div>
 
             <div className="admin-create-field">
-              <label htmlFor="displayed-value">
-                የሚታይ ዋጋ (ETB)
-              </label>
-
+              <label htmlFor="displayed-value">የሚታይ ዋጋ (ETB)</label>
               <input
                 id="displayed-value"
                 type="number"
                 min="0"
                 step="0.01"
                 value={displayedPrizeValue}
-                onChange={(event) =>
-                  setDisplayedPrizeValue(
-                    event.target.value,
-                  )
-                }
+                onChange={(event) => setDisplayedPrizeValue(event.target.value)}
               />
             </div>
 
             <div className="admin-create-field">
-              <label htmlFor="actual-cost">
-                ትክክለኛ የግዢ ዋጋ (ETB)
-              </label>
-
+              <label htmlFor="actual-cost">ትክክለኛ የግዢ ዋጋ (ETB)</label>
               <input
                 id="actual-cost"
                 type="number"
                 min="0"
                 step="0.01"
                 value={actualPrizeCost}
-                onChange={(event) =>
-                  setActualPrizeCost(
-                    event.target.value,
-                  )
-                }
+                onChange={(event) => setActualPrizeCost(event.target.value)}
               />
             </div>
           </div>
         </section>
 
         <section className="admin-create-section">
-          <h2>
-            አሸናፊዎች እና Prize Distribution
-          </h2>
+          <h2>አሸናፊዎች እና Prize Distribution</h2>
 
           <div className="admin-create-grid">
             <div className="admin-create-field">
-              <label htmlFor="winner-count">
-                የአሸናፊዎች ብዛት
-              </label>
-
+              <label htmlFor="winner-count">የአሸናፊዎች ብዛት</label>
               <input
                 id="winner-count"
                 type="number"
-                min="5"
-                max={
-                  totalNumbers ||
-                  "1000000"
-                }
+                min="1"
+                max={totalNumbers || "1000000"}
                 value={winnerCount}
-                onChange={(event) =>
-                  updateWinnerCount(
-                    event.target.value,
-                  )
-                }
+                onChange={(event) => updateWinnerCount(event.target.value)}
               />
             </div>
 
             <div className="admin-create-field">
-              <label>
-                ልዩ አሸናፊዎች
-              </label>
-
+              <label>ልዩ አሸናፊዎች</label>
               <label className="admin-create-switch">
                 <input
                   type="checkbox"
                   checked={uniqueWinners}
-                  onChange={(event) =>
-                    setUniqueWinners(
-                      event.target.checked,
-                    )
-                  }
+                  onChange={(event) => setUniqueWinners(event.target.checked)}
                 />
-
-                አንድ ተጠቃሚ ከአንድ በላይ
-                አሸናፊ እንዳይሆን
+                አንድ ተጠቃሚ ከአንድ በላይ አሸናፊ እንዳይሆን
               </label>
             </div>
           </div>
@@ -781,17 +603,13 @@ export default function AdminDrawCreate({
                 <div className="admin-prize-rank">
                   #{prize.rank} አሸናፊ
                 </div>
-
                 <input
                   type="number"
                   min="0"
                   step="0.01"
                   value={prize.amount}
                   onChange={(event) =>
-                    updatePrizeAmount(
-                      prize.rank,
-                      event.target.value,
-                    )
+                    updatePrizeAmount(prize.rank, event.target.value)
                   }
                   aria-label={`Prize ${prize.rank}`}
                 />
@@ -801,85 +619,50 @@ export default function AdminDrawCreate({
 
           <div className="admin-create-summary">
             <div className="admin-create-stat">
-              <span>
-                Prize Pool
-              </span>
-
+              <span>Prize Pool</span>
               <strong>
-                {formatAmount(
-                  totalPrize,
-                )}{" "}
-                ETB
+                {formatAmount(totalPrize)} ETB
               </strong>
             </div>
 
             <div className="admin-create-stat">
-              <span>
-                100% ቢሞላ Collection
-              </span>
-
+              <span>100% ቢሞላ Collection</span>
               <strong>
-                {formatAmount(
-                  estimatedCollection,
-                )}{" "}
-                ETB
+                {formatAmount(estimatedCollection)} ETB
               </strong>
             </div>
 
             <div className="admin-create-stat">
-              <span>
-                ግምታዊ ልዩነት
-              </span>
-
+              <span>ግምታዊ ልዩነት</span>
               <strong>
-                {formatAmount(
-                  estimatedDifference,
-                )}{" "}
-                ETB
+                {formatAmount(estimatedDifference)} ETB
               </strong>
             </div>
           </div>
         </section>
 
         <section className="admin-create-section">
-          <h2>
-            የዕጣ ጊዜ ማስተካከያ
-          </h2>
+          <h2>የዕጣ ጊዜ ማስተካከያ</h2>
 
           <div className="admin-create-grid">
             <div className="admin-create-field">
-              <label htmlFor="starts-at">
-                መጀመሪያ (አማራጭ)
-              </label>
-
+              <label htmlFor="starts-at">መጀመሪያ (አማራጭ)</label>
               <input
                 id="starts-at"
                 type="datetime-local"
                 value={startsAt}
-                onChange={(event) =>
-                  setStartsAt(
-                    event.target.value,
-                  )
-                }
+                onChange={(event) => setStartsAt(event.target.value)}
               />
             </div>
 
             <div className="admin-create-field full">
-              <label htmlFor="draw-at">
-                ዕጣ የሚወጣበት ጊዜ (አማራጭ)
-              </label>
-
+              <label htmlFor="draw-at">ዕጣ የሚወጣበት ጊዜ (አማራጭ)</label>
               <input
                 id="draw-at"
                 type="datetime-local"
                 value={drawAt}
-                onChange={(event) =>
-                  setDrawAt(
-                    event.target.value,
-                  )
-                }
+                onChange={(event) => setDrawAt(event.target.value)}
               />
-
               <div className="admin-create-help">
                 ዕጣው ቁጥሮቹ ሲሞሉ
                 በራስ-ሰር ይዘጋል።
@@ -894,9 +677,7 @@ export default function AdminDrawCreate({
           type="submit"
           disabled={saving}
         >
-          {saving
-            ? "በመፍጠር ላይ..."
-            : "ዕጣውን Draft ፍጠር"}
+          {saving ? "በመፍጠር ላይ..." : "ዕጣውን Draft ፍጠር"}
         </button>
       </form>
     </main>
