@@ -1,0 +1,299 @@
+import "dotenv/config";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import { Pool } from "pg";
+
+const databaseUrl = process.env.DATABASE_URL;
+
+if (!databaseUrl) {
+  throw new Error("DATABASE_URL is required to run migrations.");
+}
+
+const pool = new Pool({
+  connectionString: databaseUrl,
+  ssl:
+    process.env.NODE_ENV === "production"
+      ? { rejectUnauthorized: false }
+      : undefined,
+});
+
+const currentFile = fileURLToPath(import.meta.url);
+const currentDirectory = path.dirname(currentFile);
+const schemaPath = path.join(currentDirectory, "schema.sql");
+
+async function migrate() {
+  const client = await pool.connect();
+
+  try {
+    const schema = await readFile(schemaPath, "utf8");
+
+    await client.query("BEGIN");
+    await client.query(schema);
+    await ensureWalletTransactionTypes(client);
+    await ensureWinnerCountMinimum(client);
+    await ensurePhysicalWinnerRecipient(client);
+    await removeLegacyEntryNumberConstraint(client);
+
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_entries_active_number
+      ON entries(draw_id, number)
+      WHERE status IN ('reserved', 'pending_payment', 'paid')
+    `);
+
+    await removeDestructiveCascades(client);
+    await client.query("COMMIT");
+
+    console.log("Database migration completed successfully.");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Database migration failed:", error);
+    process.exitCode = 1;
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+async function ensureWalletTransactionTypes(
+  client: import("pg").PoolClient,
+): Promise<void> {
+  const result = await client.query<{
+    constraint_name: string;
+    definition: string;
+  }>(`
+    SELECT
+      con.conname AS constraint_name,
+      pg_get_constraintdef(con.oid) AS definition
+    FROM pg_constraint con
+    INNER JOIN pg_class rel
+      ON rel.oid = con.conrelid
+    INNER JOIN pg_namespace nsp
+      ON nsp.oid = rel.relnamespace
+    WHERE con.contype = 'c'
+      AND nsp.nspname = 'public'
+      AND rel.relname = 'wallet_transactions'
+  `);
+
+  for (const row of result.rows) {
+    const definition = row.definition.toLowerCase();
+
+    if (
+      definition.includes("type") &&
+      definition.includes("deposit") &&
+      definition.includes("purchase")
+    ) {
+      await client.query(
+        `
+          ALTER TABLE wallet_transactions
+          DROP CONSTRAINT ${quoteIdentifier(row.constraint_name)}
+        `,
+      );
+    }
+  }
+
+  await client.query(`
+    ALTER TABLE wallet_transactions
+    ADD CONSTRAINT wallet_transactions_type_check
+    CHECK (
+      type IN (
+        'deposit',
+        'purchase',
+        'refund',
+        'payout_credit',
+        'withdrawal'
+      )
+    )
+  `).catch(async (error) => {
+    if (
+      error instanceof Error &&
+      /already exists/i.test(error.message)
+    ) {
+      return;
+    }
+
+    throw error;
+  });
+}
+
+async function ensureWinnerCountMinimum(
+  client: import("pg").PoolClient,
+): Promise<void> {
+  const result = await client.query<{
+    constraint_name: string;
+  }>(`
+    SELECT con.conname AS constraint_name
+    FROM pg_constraint con
+    INNER JOIN pg_class rel
+      ON rel.oid = con.conrelid
+    INNER JOIN pg_namespace nsp
+      ON nsp.oid = rel.relnamespace
+    WHERE con.contype = 'c'
+      AND nsp.nspname = 'public'
+      AND rel.relname = 'draws'
+      AND con.conname = 'draws_winner_count_check'
+  `);
+
+  if (result.rows.length > 0) {
+    await client.query(`
+      ALTER TABLE draws
+      DROP CONSTRAINT ${quoteIdentifier(result.rows[0].constraint_name)}
+    `);
+  }
+
+  await client.query(`
+    ALTER TABLE draws
+    ADD CONSTRAINT draws_winner_count_check
+    CHECK (winner_count >= 1)
+  `);
+
+  console.log(
+    "Updated draws_winner_count_check to allow one or more winners.",
+  );
+}
+
+async function ensurePhysicalWinnerRecipient(
+  client: import("pg").PoolClient,
+): Promise<void> {
+  await client.query(`
+    ALTER TABLE winner_payouts
+    ADD COLUMN IF NOT EXISTS recipient_full_name TEXT
+  `);
+
+  await client.query(`
+    ALTER TABLE winner_payouts
+    ADD COLUMN IF NOT EXISTS recipient_phone TEXT
+  `);
+}
+
+async function removeLegacyEntryNumberConstraint(
+  client: import("pg").PoolClient,
+): Promise<void> {
+  const result = await client.query<{
+    constraint_name: string;
+  }>(`
+    SELECT
+      tc.constraint_name
+    FROM information_schema.table_constraints tc
+    WHERE tc.constraint_type = 'UNIQUE'
+      AND tc.table_schema = 'public'
+      AND tc.table_name = 'entries'
+  `);
+
+  for (const row of result.rows) {
+    const constraintName = row.constraint_name;
+
+    const columnsResult = await client.query<{
+      column_name: string;
+    }>(
+      `
+        SELECT
+          kcu.column_name
+        FROM information_schema.key_column_usage kcu
+        WHERE kcu.constraint_schema = 'public'
+          AND kcu.constraint_name = $1
+          AND kcu.table_name = 'entries'
+        ORDER BY kcu.ordinal_position
+      `,
+      [constraintName],
+    );
+
+    const columns = columnsResult.rows.map(
+      (column) => column.column_name,
+    );
+
+    if (
+      columns.length === 2 &&
+      columns[0] === "draw_id" &&
+      columns[1] === "number"
+    ) {
+      await client.query(
+        `
+          ALTER TABLE entries
+          DROP CONSTRAINT ${quoteIdentifier(constraintName)}
+        `,
+      );
+
+      console.log(
+        `Removed legacy entries constraint: ${constraintName}`,
+      );
+    }
+  }
+}
+
+async function removeDestructiveCascades(
+  client: import("pg").PoolClient,
+): Promise<void> {
+  const constraintResult = await client.query<{
+    constraint_name: string;
+    table_name: string;
+  }>(`
+    SELECT
+      tc.constraint_name,
+      tc.table_name
+    FROM information_schema.table_constraints tc
+    WHERE tc.constraint_type = 'FOREIGN KEY'
+      AND tc.table_schema = 'public'
+      AND tc.table_name IN (
+        'payments',
+        'winners',
+        'draw_results'
+      )
+  `);
+
+  for (const constraint of constraintResult.rows) {
+    const constraintName = constraint.constraint_name;
+    const tableName = constraint.table_name;
+
+    const definitionResult = await client.query<{
+      definition: string;
+    }>(
+      `
+        SELECT pg_get_constraintdef(oid) AS definition
+        FROM pg_constraint
+        WHERE conname = $1
+          AND conrelid = $2::regclass
+      `,
+      [constraintName, `public.${tableName}`],
+    );
+
+    if (definitionResult.rows.length === 0) {
+      continue;
+    }
+
+    const definition = definitionResult.rows[0].definition;
+
+    if (!/ON DELETE CASCADE/i.test(definition)) {
+      continue;
+    }
+
+    await client.query(
+      `
+        ALTER TABLE ${quoteIdentifier(tableName)}
+        DROP CONSTRAINT ${quoteIdentifier(constraintName)}
+      `,
+    );
+
+    const safeDefinition = definition.replace(
+      /\s+ON DELETE CASCADE/gi,
+      "",
+    );
+
+    await client.query(
+      `
+        ALTER TABLE ${quoteIdentifier(tableName)}
+        ADD CONSTRAINT ${quoteIdentifier(constraintName)}
+        ${safeDefinition}
+      `,
+    );
+  }
+}
+
+function quoteIdentifier(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+migrate().catch((error) => {
+  console.error("Migration runner failed:", error);
+  process.exitCode = 1;
+});
