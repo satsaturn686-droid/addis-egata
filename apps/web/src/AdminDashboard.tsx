@@ -66,27 +66,29 @@ function getPaymentStatusLabel(
 }
 
 function getPayoutStatusLabel(
-  status: WinnerPayout["status"],
-): string {
-  switch (status) {
-    case "awaiting_claim":
-      return "Claim ይጠብቃል";
-    case "awaiting_screenshot":
-      return "Screenshot ይጠብቃል";
-    case "awaiting_telebirr":
-      return "Telebirr ይጠብቃል";
-    case "submitted":
-      return "ለማረጋገጥ ዝግጁ";
-    case "approved":
-      return "ተፈቅዷል";
-    case "paid":
-      return "ተከፍሏል";
-    case "rejected":
-      return "ተReject ተደርጓል";
-    default:
-      return status;
-  }
-}
+‎  status: WinnerPayout["status"],
+‎): string {
+‎  switch (status) {
+‎    case "awaiting_claim":
+‎      return "Claim ይጠብቃል";
+‎    case "awaiting_screenshot":
+‎      return "Screenshot ይጠብቃል";
+‎    case "awaiting_telebirr":
+‎      return "Telebirr ይጠብቃል";
+‎    case "awaiting_recipient":
+‎      return "የተቀባይ መረጃ ይጠብቃል";
+‎    case "submitted":
+‎      return "ለማረጋገጥ ዝግጁ";
+‎    case "approved":
+‎      return "ተፈቅዷል";
+‎    case "paid":
+‎      return "ተከፍሏል";
+‎    case "rejected":
+‎      return "ተReject ተደርጓል";
+‎    default:
+‎      return status;
+‎  }
+‎}
 
 function getWinnerName(
   payout: WinnerPayout,
@@ -1710,6 +1712,43 @@ export default function AdminDashboard({
                                   "—"}
                               </div>
                             </div>
+                            <div className="admin-detail">
+‎                              <div className="admin-detail-label">
+‎                                Prize Type
+‎                              </div>
+‎
+‎                              <div className="admin-detail-value">
+‎                                {payout.prizeType === "physical"
+‎                                  ? "🎁 በአካል የሚሰጥ ሽልማት"
+‎                                  : payout.prizeType === "other"
+‎                                    ? "ሌላ"
+‎                                    : "💰 የገንዘብ ሽልማት"}
+‎                              </div>
+‎                            </div>
+‎
+‎                            {payout.prizeType === "physical" && (
+‎                              <>
+‎                                <div className="admin-detail">
+‎                                  <div className="admin-detail-label">
+‎                                    Recipient Full Name
+‎                                  </div>
+‎
+‎                                  <div className="admin-detail-value">
+‎                                    {payout.recipientFullName || "—"}
+‎                                  </div>
+‎                                </div>
+‎
+‎                                <div className="admin-detail">
+‎                                  <div className="admin-detail-label">
+‎                                    Recipient Phone
+‎                                  </div>
+‎
+‎                                  <div className="admin-detail-value admin-reference">
+‎                                    {payout.recipientPhone || "—"}
+‎                                  </div>
+‎                                </div>
+‎                              </>
+‎                            )}
 
                             <div className="admin-detail">
                               <div className="admin-detail-label">
@@ -1786,12 +1825,10 @@ export default function AdminDashboard({
                           </div>
 
                           <div className="admin-note">
-                            ⚠️ Screenshot ብቻን እንደ ክፍያ
-                            ማረጋገጫ አትቆጥሩ።
-                            አሸናፊውን፣ ዕጣውን፣ ቁጥሩን
-                            እና Telebirr መረጃውን
-                            ከስርዓቱ ጋር ያረጋግጡ።
-                          </div>
+‎                            {payout.prizeType === "physical"
+‎                              ? "⚠️ የአሸናናፊውን Screenshot፣ ሙሉ ስም እና ስልክ ቁጥር አረጋግጠው ሽልማቱን በአካል ለማስረከብ ይጠቀሙ።"
+‎                              : "⚠️ Screenshot ብቻን እንደ ክፍያ ማረጋገጫ አትቆጥሩ። አሸናናፊውን፣ ዕጣውን፣ ቁጥሩን እና Telebirr መረጃውን ከስርዓቱ ጋር ያረጋግጡ።"}
+‎                          </div>
 
                           {!isRejecting &&
                             !isPaying &&
