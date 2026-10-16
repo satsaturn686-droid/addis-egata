@@ -153,10 +153,10 @@ async function validateDrawReady(
   }
 
   if (
-    draw.winner_count < 1
-    draw.winner_count >
-      draw.total_numbers
-  ) {
+  draw.winner_count < 1 ||
+  draw.winner_count >
+    draw.total_numbers
+) {
     throw new Error(
       "INVALID_WINNER_COUNT",
     );
