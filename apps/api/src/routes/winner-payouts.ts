@@ -734,7 +734,7 @@ router.post("/:payoutId/recipient", async (req, res) => {
       "INVALID_PAYOUT_ID",
       "INVALID_TELEGRAM_USER_ID",
       "RECIPIENT_DETAILS_REQUIRED",
-      "RECIPIENT_NAME_TOO_LONG",
+      "RECIPIENT_FULL_NAME_TOO_LONG",
       "RECIPIENT_PHONE_TOO_LONG",
       "RECIPIENT_SUBMISSION_NOT_ALLOWED",
       "PAYOUT_NOT_FOUND",
