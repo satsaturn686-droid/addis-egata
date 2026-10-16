@@ -28,6 +28,7 @@ import {
   saveWinnerScreenshot,
   startWinnerClaim,
   submitWinnerTelebirr,
+  submitPhysicalWinnerRecipient,
 } from "./services/winner-payouts.js";
 
 const app = express();
@@ -71,7 +72,6 @@ async function telegramApi(
     console.warn(
       "Telegram bot is not configured: TELEGRAM_BOT_TOKEN is missing.",
     );
-
     return false;
   }
 
@@ -93,16 +93,11 @@ async function telegramApi(
         description?: string;
       };
 
-    if (
-      !response.ok ||
-      !data.ok
-    ) {
+    if (!response.ok || !data.ok) {
       console.error(
         `Telegram API ${method} failed:`,
-        data.description ??
-          response.statusText,
+        data.description ?? response.statusText,
       );
-
       return false;
     }
 
@@ -112,7 +107,6 @@ async function telegramApi(
       `Telegram API ${method} request failed:`,
       error,
     );
-
     return false;
   }
 }
@@ -120,28 +114,18 @@ async function telegramApi(
 async function sendTelegramMessage(
   chatId: number | string,
   text: string,
-  replyMarkup?: Record<
-    string,
-    unknown
-  >,
+  replyMarkup?: Record<string, unknown>,
 ): Promise<void> {
-  const body: Record<
-    string,
-    unknown
-  > = {
+  const body: Record<string, unknown> = {
     chat_id: chatId,
     text,
   };
 
   if (replyMarkup) {
-    body.reply_markup =
-      replyMarkup;
+    body.reply_markup = replyMarkup;
   }
 
-  await telegramApi(
-    "sendMessage",
-    body,
-  );
+  await telegramApi("sendMessage", body);
 }
 
 async function sendTelegramWelcome(
@@ -208,7 +192,7 @@ async function sendWinnerClaimStarted(
     "🎉 እንኳን ደስ አለዎት!\n\n" +
       `🏆 ዕጣ፦ ${payout.drawName}\n` +
       `🎟️ የእርስዎ ቁጥር፦ ${payout.number}\n` +
-      `💰 የሚያገኙት፦ ${payout.prizeAmount.toLocaleString()} ETB\n\n` +
+      `🎁 ሽልማት፦ ${payout.prizeAmount.toLocaleString()} ETB\n\n` +
       "📸 እባክዎ የአሸናናፊነትዎን ማረጋገጫ screenshot እዚህ ይላኩ።\n\n" +
       "⚠️ Screenshot በዚህ private chat ብቻ ይላኩ።",
   );
@@ -216,7 +200,22 @@ async function sendWinnerClaimStarted(
 
 async function sendScreenshotReceived(
   chatId: number,
+  prizeType: string,
 ): Promise<void> {
+  if (prizeType === "physical") {
+    await sendTelegramMessage(
+      chatId,
+      "✅ Screenshot ተቀብለናል።\n\n" +
+        "🎁 ሽልማትዎ በአካል የሚሰጥ ስለሆነ፣ የሽልማቱን ተቀባይ መረጃ ያስገቡ።\n\n" +
+        "በዚህ ቅርጽ ይላኩ፦\n" +
+        "ሙሉ ስም | ስልክ ቁጥር\n\n" +
+        "ለምሳሌ፦\n" +
+        "Pink Getahun | 0912345678\n\n" +
+        "⚠️ ስምዎንና ስልክ ቁጥርዎን በዚህ private chat ብቻ ይላኩ።",
+    );
+    return;
+  }
+
   await sendTelegramMessage(
     chatId,
     "✅ Screenshot ተቀብለናል።\n\n" +
@@ -246,6 +245,22 @@ async function sendPayoutSubmitted(
   );
 }
 
+async function sendPhysicalRecipientSubmitted(
+  chatId: number,
+  payout: {
+    drawName: string;
+    recipientFullName: string | null;
+  },
+): Promise<void> {
+  await sendTelegramMessage(
+    chatId,
+    "✅ የሽልማት ተቀባይ መረጃዎ ተመዝግቧል።\n\n" +
+      `🏆 ዕጣ፦ ${payout.drawName}\n` +
+      `👤 ተቀባይ፦ ${payout.recipientFullName ?? ""}\n\n` +
+      "👨‍💼 አስተዳደሩ መረጃውን ካረጋገጠ በኋላ ሽልማትዎን ለማስረከብ ያነጋግርዎታል።",
+  );
+}
+
 async function sendWinnerGroupNotification(
   payout: {
     drawName: string;
@@ -259,11 +274,11 @@ async function sendWinnerGroupNotification(
 
   await sendTelegramMessage(
     WINNER_GROUP_CHAT_ID,
-    "🏆 ADDIS ዕጣ — አዲስ የአሸናናፊ ክፍያ ጥያቄ\n\n" +
+    "🏆 ADDIS ዕጣ — አዲስ የአሸናናፊ ጥያቄ\n\n" +
       `🎟️ ዕጣ፦ ${payout.drawName}\n` +
       `🔢 ቁጥር፦ ${payout.number}\n` +
-      `💰 ሽልማት፦ ${payout.prizeAmount.toLocaleString()} ETB\n\n` +
-      "🔐 የWinner የግል Telebirr መረጃ በዚህ group አይጋራም።\n" +
+      `🎁 ሽልማት፦ ${payout.prizeAmount.toLocaleString()} ETB\n\n` +
+      "🔐 የአሸናናፊው የግል መረጃ በዚህ group አይጋራም።\n" +
       "👨‍💼 እባክዎ Admin Panel ላይ ያረጋግጡ።",
   );
 }
@@ -271,10 +286,9 @@ async function sendWinnerGroupNotification(
 function parseWinnerStartPayload(
   text: string,
 ): string | null {
-  const match =
-    text.match(
-      /^\/start(?:@\w+)?\s+claim[_:]([A-Za-z0-9-]+)$/i,
-    );
+  const match = text.match(
+    /^\/start(?:@\w+)?\s+claim[_:]([A-Za-z0-9-]+)$/i,
+  );
 
   return match?.[1] ?? null;
 }
@@ -285,27 +299,21 @@ function parseTelebirrMessage(
   number: string;
   accountName: string;
 } | null {
-  const separatorIndex =
-    text.indexOf("|");
+  const separatorIndex = text.indexOf("|");
 
   if (separatorIndex < 0) {
     return null;
   }
 
-  const number =
-    text
-      .slice(0, separatorIndex)
-      .trim();
+  const number = text
+    .slice(0, separatorIndex)
+    .trim();
 
-  const accountName =
-    text
-      .slice(separatorIndex + 1)
-      .trim();
+  const accountName = text
+    .slice(separatorIndex + 1)
+    .trim();
 
-  if (
-    !number ||
-    !accountName
-  ) {
+  if (!number || !accountName) {
     return null;
   }
 
@@ -315,16 +323,45 @@ function parseTelebirrMessage(
   };
 }
 
+function parsePhysicalRecipientMessage(
+  text: string,
+): {
+  fullName: string;
+  phone: string;
+} | null {
+  const separatorIndex = text.indexOf("|");
+
+  if (separatorIndex < 0) {
+    return null;
+  }
+
+  const fullName = text
+    .slice(0, separatorIndex)
+    .trim();
+
+  const phone = text
+    .slice(separatorIndex + 1)
+    .trim();
+
+  if (!fullName || !phone) {
+    return null;
+  }
+
+  return {
+    fullName,
+    phone,
+  };
+}
+
 async function handleWinnerStartClaim(
   chatId: number,
   winnerId: string,
 ): Promise<void> {
   try {
-    const payout =
-      await startWinnerClaim(
-        winnerId,
-        chatId,
-      );
+    const payout = await startWinnerClaim(
+      winnerId,
+      chatId,
+    );
 
     await sendWinnerClaimStarted(
       chatId,
@@ -336,10 +373,7 @@ async function handleWinnerStartClaim(
         ? error.message
         : "";
 
-    if (
-      message ===
-      "WINNER_NOT_AUTHORIZED"
-    ) {
+    if (message === "WINNER_NOT_AUTHORIZED") {
       await sendTelegramMessage(
         chatId,
         "⚠️ ይህ የአሸናናፊ ጥያቄ ከእርስዎ Telegram መለያ ጋር አልተመዘገበም።\n\n" +
@@ -375,41 +409,39 @@ async function handleWinnerPhoto(
   }
 
   const payout =
-    await getPayoutByTelegramUser(
-      chatId,
-    );
+    await getPayoutByTelegramUser(chatId);
 
   if (!payout) {
     return;
   }
 
-  if (
-    payout.status !==
-    "awaiting_screenshot"
-  ) {
-    if (
-      payout.status ===
-      "awaiting_telebirr"
-    ) {
+  if (payout.status !== "awaiting_screenshot") {
+    if (payout.status === "awaiting_telebirr") {
       await sendTelegramMessage(
         chatId,
         "ℹ️ Screenshot ቀድሞ ተቀብሏል።\n\n" +
           "አሁን Telebirr number + account name ይላኩ።\n" +
           "ምሳሌ፦ 0912345678 | Pink Getahun",
       );
+    } else if (
+      payout.status === "awaiting_recipient"
+    ) {
+      await sendTelegramMessage(
+        chatId,
+        "ℹ️ Screenshot ቀድሞ ተቀብሏል።\n\n" +
+          "አሁን ሙሉ ስምዎንና ስልክ ቁጥርዎን ይላኩ።\n" +
+          "ምሳሌ፦ Pink Getahun | 0912345678",
+      );
     }
 
     return;
   }
 
-  const bestPhoto =
-    [...photo].sort(
-      (a, b) =>
-        (b.width ?? 0) *
-          (b.height ?? 0) -
-        (a.width ?? 0) *
-          (a.height ?? 0),
-    )[0];
+  const bestPhoto = [...photo].sort(
+    (a, b) =>
+      (b.width ?? 0) * (b.height ?? 0) -
+      (a.width ?? 0) * (a.height ?? 0),
+  )[0];
 
   if (!bestPhoto?.file_id) {
     await sendTelegramMessage(
@@ -421,15 +453,17 @@ async function handleWinnerPhoto(
   }
 
   try {
-    await saveWinnerScreenshot(
-      payout.id,
-      chatId,
-      bestPhoto.file_id,
-      bestPhoto.file_unique_id,
-    );
+    const savedPayout =
+      await saveWinnerScreenshot(
+        payout.id,
+        chatId,
+        bestPhoto.file_id,
+        bestPhoto.file_unique_id,
+      );
 
     await sendScreenshotReceived(
       chatId,
+      savedPayout.prizeType,
     );
   } catch (error) {
     console.error(
@@ -450,23 +484,17 @@ async function handleWinnerTelebirrText(
   text: string,
 ): Promise<boolean> {
   const payout =
-    await getPayoutByTelegramUser(
-      chatId,
-    );
+    await getPayoutByTelegramUser(chatId);
 
   if (!payout) {
     return false;
   }
 
-  if (
-    payout.status !==
-    "awaiting_telebirr"
-  ) {
+  if (payout.status !== "awaiting_telebirr") {
     return false;
   }
 
-  const parsed =
-    parseTelebirrMessage(text);
+  const parsed = parseTelebirrMessage(text);
 
   if (!parsed) {
     await sendTelegramMessage(
@@ -515,12 +543,76 @@ async function handleWinnerTelebirrText(
   }
 }
 
+async function handleWinnerPhysicalRecipientText(
+  chatId: number,
+  text: string,
+): Promise<boolean> {
+  const payout =
+    await getPayoutByTelegramUser(chatId);
+
+  if (!payout) {
+    return false;
+  }
+
+  if (payout.status !== "awaiting_recipient") {
+    return false;
+  }
+
+  const parsed =
+    parsePhysicalRecipientMessage(text);
+
+  if (!parsed) {
+    await sendTelegramMessage(
+      chatId,
+      "⚠️ የተቀባይ መረጃው ትክክል አይደለም።\n\n" +
+        "እባክዎ በዚህ ቅርጽ ይላኩ፦\n" +
+        "ሙሉ ስም | ስልክ ቁጥር\n\n" +
+        "ምሳሌ፦\n" +
+        "Pink Getahun | 0912345678",
+    );
+    return true;
+  }
+
+  try {
+    const submitted =
+      await submitPhysicalWinnerRecipient(
+        payout.id,
+        chatId,
+        parsed.fullName,
+        parsed.phone,
+      );
+
+    await sendPhysicalRecipientSubmitted(
+      chatId,
+      submitted,
+    );
+
+    await sendWinnerGroupNotification(
+      submitted,
+    );
+
+    return true;
+  } catch (error) {
+    console.error(
+      "Physical winner recipient submission error:",
+      error,
+    );
+
+    await sendTelegramMessage(
+      chatId,
+      "⚠️ የተቀባይ መረጃውን ማስገባት አልተቻለም።\n\n" +
+        "እባክዎ ሙሉ ስምዎንና ስልክ ቁጥርዎን እንደገና ይላኩ።",
+    );
+
+    return true;
+  }
+}
+
 async function configureTelegramBot(): Promise<void> {
   if (!TELEGRAM_BOT_TOKEN) {
     console.warn(
       "Telegram bot setup skipped because TELEGRAM_BOT_TOKEN is missing.",
     );
-
     return;
   }
 
@@ -532,44 +624,32 @@ async function configureTelegramBot(): Promise<void> {
   const webhookUrl =
     `${webhookBaseUrl.replace(/\/+$/, "")}/telegram/webhook`;
 
-  await telegramApi(
-    "setMyCommands",
-    {
-      commands: [
-        {
-          command: "start",
-          description:
-            "ADDIS ዕጣን ጀምር",
-        },
-        {
-          command: "help",
-          description: "እገዛ",
-        },
-      ],
-    },
-  );
+  await telegramApi("setMyCommands", {
+    commands: [
+      {
+        command: "start",
+        description: "ADDIS ዕጣን ጀምር",
+      },
+      {
+        command: "help",
+        description: "እገዛ",
+      },
+    ],
+  });
 
-  await telegramApi(
-    "setChatMenuButton",
-    {
-      menu_button: {
-        type: "web_app",
-        text: "🎟️ ADDIS ዕጣ",
-        web_app: {
-          url: MINI_APP_URL,
-        },
+  await telegramApi("setChatMenuButton", {
+    menu_button: {
+      type: "web_app",
+      text: "🎟️ ADDIS ዕጣ",
+      web_app: {
+        url: MINI_APP_URL,
       },
     },
-  );
+  });
 
-  const webhookBody: Record<
-    string,
-    unknown
-  > = {
+  const webhookBody: Record<string, unknown> = {
     url: webhookUrl,
-    allowed_updates: [
-      "message",
-    ],
+    allowed_updates: ["message"],
   };
 
   if (TELEGRAM_WEBHOOK_SECRET) {
@@ -578,10 +658,7 @@ async function configureTelegramBot(): Promise<void> {
   }
 
   const webhookConfigured =
-    await telegramApi(
-      "setWebhook",
-      webhookBody,
-    );
+    await telegramApi("setWebhook", webhookBody);
 
   if (webhookConfigured) {
     console.log(
@@ -630,7 +707,6 @@ app.post(
         res.status(401).json({
           error: "UNAUTHORIZED",
         });
-
         return;
       }
     }
@@ -639,79 +715,65 @@ app.post(
       ok: true,
     });
 
-    const update =
-      req.body as {
-        message?: {
-          chat?: {
-            id?: number;
-            type?:
-              | "private"
-              | "group"
-              | "supergroup"
-              | "channel";
-          };
-          from?: {
-            id?: number;
-          };
-          text?: string;
-          photo?: Array<{
-            file_id?: string;
-            file_unique_id?: string;
-            width?: number;
-            height?: number;
-          }>;
+    const update = req.body as {
+      message?: {
+        chat?: {
+          id?: number;
+          type?:
+            | "private"
+            | "group"
+            | "supergroup"
+            | "channel";
         };
+        from?: {
+          id?: number;
+        };
+        text?: string;
+        photo?: Array<{
+          file_id?: string;
+          file_unique_id?: string;
+          width?: number;
+          height?: number;
+        }>;
       };
+    };
 
-    const message =
-      update.message;
+    const message = update.message;
 
     if (
       !message?.chat ||
-      typeof message.chat.id !==
-        "number"
+      typeof message.chat.id !== "number"
     ) {
       return;
     }
 
-    const chatId =
-      message.chat.id;
+    const chatId = message.chat.id;
 
     const telegramUserId =
-      typeof message.from?.id ===
-      "number"
+      typeof message.from?.id === "number"
         ? message.from.id
         : chatId;
 
     const isPrivateChat =
-      message.chat.type ===
-      "private";
+      message.chat.type === "private";
 
     const text =
-      typeof message.text ===
-      "string"
+      typeof message.text === "string"
         ? message.text.trim()
         : "";
 
     /*
      * Winner screenshot
-     *
-     * Winner payout screenshots are
-     * accepted only from a private
-     * Telegram chat.
      */
     if (
       isPrivateChat &&
-      Array.isArray(
-        message.photo,
-      ) &&
+      Array.isArray(message.photo) &&
       message.photo.length > 0
     ) {
       await handleWinnerPhoto(
         telegramUserId,
         message.photo,
       );
-
       return;
     }
 
@@ -719,24 +781,15 @@ app.post(
      * Winner deep-link claim
      *
      * /start claim_<winnerId>
-     *
-     * Claims are accepted only from
-     * a private Telegram chat.
      */
     const winnerId =
-      parseWinnerStartPayload(
-        text,
-      );
+      parseWinnerStartPayload(text);
 
-    if (
-      isPrivateChat &&
-      winnerId
-    ) {
+    if (isPrivateChat && winnerId) {
       await handleWinnerStartClaim(
         telegramUserId,
         winnerId,
       );
-
       return;
     }
 
@@ -747,9 +800,7 @@ app.post(
       text === "/start" ||
       text.startsWith("/start ")
     ) {
-      await sendTelegramWelcome(
-        chatId,
-      );
+      await sendTelegramWelcome(chatId);
       return;
     }
 
@@ -760,36 +811,35 @@ app.post(
       text === "/help" ||
       text.startsWith("/help ")
     ) {
-      await sendTelegramHelp(
-        chatId,
-      );
+      await sendTelegramHelp(chatId);
       return;
     }
 
     /*
-     * Winner Telebirr submission
-     *
-     * Sensitive payout information
-     * is accepted only from a private
-     * Telegram chat.
+     * Winner private-chat text submissions
      */
-    if (
-      isPrivateChat &&
-      text
-    ) {
-      const handled =
+    if (isPrivateChat && text) {
+      const physicalHandled =
+        await handleWinnerPhysicalRecipientText(
+          telegramUserId,
+          text,
+        );
+
+      if (physicalHandled) {
+        return;
+      }
+
+      const telebirrHandled =
         await handleWinnerTelebirrText(
           telegramUserId,
           text,
         );
 
-      if (handled) {
+      if (telebirrHandled) {
         return;
       }
 
-      await sendTelegramWelcome(
-        chatId,
-      );
+      await sendTelegramWelcome(chatId);
     }
   },
 );
@@ -802,24 +852,17 @@ app.post(
 app.get(
   "/health",
   async (_req, res) => {
-    const databaseOk =
-      await checkDatabase();
+    const databaseOk = await checkDatabase();
 
     res
-      .status(
-        databaseOk
-          ? 200
-          : 503,
-      )
+      .status(databaseOk ? 200 : 503)
       .json({
         ok: databaseOk,
-        service:
-          "addis-egata-api",
+        service: "addis-egata-api",
         database: databaseOk
           ? "connected"
           : "unavailable",
-        timestamp:
-          new Date().toISOString(),
+        timestamp: new Date().toISOString(),
       });
   },
 );
@@ -832,173 +875,78 @@ app.get(
   (_req, res) => {
     res.status(200).json({
       name: "Addis ዕጣ",
-      message:
-        "API is running",
+      message: "API is running",
     });
   },
 );
 
 /*
  * Telegram authentication
- *
- * GET /auth/me
  */
-app.use(
-  "/auth",
-  authRouter,
-);
+app.use("/auth", authRouter);
 
 /*
  * Public draws
- *
- * GET /draws
- * GET /draws/:drawId
  */
-app.use(
-  "/draws",
-  drawsRouter,
-);
+app.use("/draws", drawsRouter);
 
 /*
  * Public published results
- *
- * GET /results
- * GET /results/:drawId
  */
-app.use(
-  "/",
-  resultsRouter,
-);
+app.use("/", resultsRouter);
 
 /*
  * Entries and number reservations
- *
- * GET /entries/mine
- * POST /entries/reserve
- * GET /entries/:entryId
  */
-app.use(
-  "/entries",
-  entriesRouter,
-);
+app.use("/entries", entriesRouter);
 
 /*
  * Manual Telebirr payments
- *
- * GET /payments/mine
- * POST /payments/telebirr
- * GET /payments/:paymentId
  */
-app.use(
-  "/payments",
-  paymentsRouter,
-);
+app.use("/payments", paymentsRouter);
 
 /*
  * Admin payment verification
- *
- * GET /admin/payments/pending
- * POST /admin/payments/:paymentId/approve
- * POST /admin/payments/:paymentId/reject
  */
-app.use(
-  "/admin/payments",
-  adminPaymentsRouter,
-);
+app.use("/admin/payments", adminPaymentsRouter);
 
 /*
  * Winner payout and claim flow
- *
- * GET  /winner-payouts/mine
- * GET  /winner-payouts/:payoutId
- * GET  /winner-payouts/claim-link/:winnerId
- * POST /winner-payouts/claim/:winnerId
- * POST /winner-payouts/:payoutId/screenshot
- * POST /winner-payouts/:payoutId/telebirr
- *
- * Admin:
- * GET  /winner-payouts/admin/pending
- * POST /winner-payouts/admin/:payoutId/approve
- * POST /winner-payouts/admin/:payoutId/reject
- * POST /winner-payouts/admin/:payoutId/paid
  */
-app.use(
-  "/winner-payouts",
-  winnerPayoutsRouter,
-);
+app.use("/winner-payouts", winnerPayoutsRouter);
 
 /*
  * Admin draw management
- *
- * POST /admin/draws
- * POST /admin/draws/:drawId/open
- * POST /admin/draws/:drawId/close
  */
-app.use(
-  "/admin/draws",
-  adminDrawsRouter,
-);
+app.use("/admin/draws", adminDrawsRouter);
 
 /*
  * Admin draw list
- *
- * GET /admin/draw-list
  */
-app.use(
-  "/admin/draw-list",
-  adminDrawListRouter,
-);
+app.use("/admin/draw-list", adminDrawListRouter);
 
 /*
  * Admin draw number list
- *
- * GET /admin/draw-numbers/:drawId/numbers
  */
-app.use(
-  "/admin/draw-numbers",
-  adminDrawNumbersRouter,
-);
+app.use("/admin/draw-numbers", adminDrawNumbersRouter);
 
 /*
  * Admin draw execution
- *
- * POST /admin/draw-execution/:drawId/execute
  */
-app.use(
-  "/admin/draw-execution",
-  adminDrawExecutionRouter,
-);
+app.use("/admin/draw-execution", adminDrawExecutionRouter);
 
 /*
  * Admin draw deletion
- *
- * DELETE /admin/draw-delete/:drawId
  */
-app.use(
-  "/admin/draw-delete",
-  adminDrawDeleteRouter,
-);
+app.use("/admin/draw-delete", adminDrawDeleteRouter);
 
 /*
  * Admin test draw reset
- *
- * POST /admin/draw-test-reset/:drawId
  */
-app.use(
-  "/admin/draw-test-reset",
-  adminDrawTestResetRouter,
-);
+app.use("/admin/draw-test-reset", adminDrawTestResetRouter);
 
 /*
  * Internal scheduled-draw worker
- *
- * POST /internal/scheduled-draws
- *
- * Called by the Render/GitHub scheduler.
- * The scheduler does not receive the
- * database or Telegram secrets; it
- * authenticates here with a dedicated
- * bearer token.
  */
 app.post(
   "/internal/scheduled-draws",
@@ -1008,7 +956,6 @@ app.post(
         error:
           "SCHEDULED_DRAWS_CRON_TOKEN_NOT_CONFIGURED",
       });
-
       return;
     }
 
@@ -1018,26 +965,20 @@ app.post(
     const expected =
       `Bearer ${SCHEDULED_DRAWS_CRON_TOKEN}`;
 
-    if (
-      authorization !==
-      expected
-    ) {
+    if (authorization !== expected) {
       res.status(401).json({
         error: "UNAUTHORIZED",
       });
-
       return;
     }
 
     try {
-      const result =
-        await processScheduledDraws();
+      const result = await processScheduledDraws();
 
       res.status(200).json({
         ok: true,
         ...result,
-        processedAt:
-          new Date().toISOString(),
+        processedAt: new Date().toISOString(),
       });
     } catch (error) {
       console.error(
@@ -1056,19 +997,10 @@ app.post(
 
 /*
  * In-process scheduled draw worker
- *
- * Runs inside the API process every minute.
- * GitHub Actions remains a backup trigger.
- *
- * The guard prevents overlapping runs if
- * one processing cycle takes longer than
- * one minute.
  */
-const SCHEDULED_DRAWS_INTERVAL_MS =
-  60_000;
+const SCHEDULED_DRAWS_INTERVAL_MS = 60_000;
 
-let scheduledDrawsRunning =
-  false;
+let scheduledDrawsRunning = false;
 
 async function runScheduledDrawsLoop(): Promise<void> {
   if (scheduledDrawsRunning) {
@@ -1078,8 +1010,7 @@ async function runScheduledDrawsLoop(): Promise<void> {
   scheduledDrawsRunning = true;
 
   try {
-    const result =
-      await processScheduledDraws();
+    const result = await processScheduledDraws();
 
     console.log(
       "Scheduled draws worker tick:",
@@ -1135,8 +1066,7 @@ app.use(
     );
 
     res.status(500).json({
-      error:
-        "INTERNAL_SERVER_ERROR",
+      error: "INTERNAL_SERVER_ERROR",
       message:
         "An unexpected server error occurred.",
     });
