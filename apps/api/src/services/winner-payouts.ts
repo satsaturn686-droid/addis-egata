@@ -4,16 +4,23 @@ export type WinnerPayoutStatus =
   | "awaiting_claim"
   | "awaiting_screenshot"
   | "awaiting_telebirr"
+  | "awaiting_recipient"
   | "submitted"
   | "approved"
   | "paid"
   | "rejected";
+
+export type WinnerPrizeType =
+  | "cash"
+  | "physical"
+  | "other";
 
 export type WinnerPayout = {
   id: string;
   winnerId: string;
   drawId: string;
   drawName: string;
+  prizeType: WinnerPrizeType;
   entryId: string;
   number: number;
   userId: string;
@@ -26,6 +33,8 @@ export type WinnerPayout = {
   status: WinnerPayoutStatus;
   telebirrNumber: string | null;
   telebirrAccountName: string | null;
+  recipientFullName: string | null;
+  recipientPhone: string | null;
   screenshotFileId: string | null;
   screenshotFileUniqueId: string | null;
   claimStartedAt: string | null;
@@ -48,6 +57,7 @@ type PayoutRow = {
   winner_id: string;
   draw_id: string;
   draw_name: string;
+  prize_type: string | null;
   entry_id: string;
   number: number;
   user_id: string;
@@ -60,6 +70,8 @@ type PayoutRow = {
   status: WinnerPayoutStatus;
   telebirr_number: string | null;
   telebirr_account_name: string | null;
+  recipient_full_name: string | null;
+  recipient_phone: string | null;
   screenshot_file_id: string | null;
   screenshot_file_unique_id: string | null;
   claim_started_at: string | null;
@@ -77,12 +89,31 @@ type PayoutRow = {
   updated_at: string;
 };
 
-function mapPayout(row: PayoutRow): WinnerPayout {
+function normalizePrizeType(
+  value: string | null,
+): WinnerPrizeType {
+  if (value === "physical") {
+    return "physical";
+  }
+
+  if (value === "other") {
+    return "other";
+  }
+
+  return "cash";
+}
+
+function mapPayout(
+  row: PayoutRow,
+): WinnerPayout {
   return {
     id: row.id,
     winnerId: row.winner_id,
     drawId: row.draw_id,
     drawName: row.draw_name,
+    prizeType: normalizePrizeType(
+      row.prize_type,
+    ),
     entryId: row.entry_id,
     number: row.number,
     userId: row.user_id,
@@ -94,11 +125,18 @@ function mapPayout(row: PayoutRow): WinnerPayout {
     prizeAmount: Number(row.prize_amount),
     status: row.status,
     telebirrNumber: row.telebirr_number,
-    telebirrAccountName: row.telebirr_account_name,
-    screenshotFileId: row.screenshot_file_id,
+    telebirrAccountName:
+      row.telebirr_account_name,
+    recipientFullName:
+      row.recipient_full_name,
+    recipientPhone:
+      row.recipient_phone,
+    screenshotFileId:
+      row.screenshot_file_id,
     screenshotFileUniqueId:
       row.screenshot_file_unique_id,
-    claimStartedAt: row.claim_started_at,
+    claimStartedAt:
+      row.claim_started_at,
     screenshotReceivedAt:
       row.screenshot_received_at,
     submittedAt: row.submitted_at,
@@ -132,6 +170,53 @@ function validateId(
   return normalized;
 }
 
+const PAYOUT_SELECT = `
+  SELECT
+    wp.id,
+    wp.winner_id,
+    wp.draw_id,
+    d.name AS draw_name,
+    d.prize_type,
+    w.entry_id,
+    e.number,
+    wp.user_id,
+    u.telegram_id,
+    u.first_name,
+    u.last_name,
+    u.username,
+    w.rank,
+    wp.prize_amount,
+    wp.status,
+    wp.telebirr_number,
+    wp.telebirr_account_name,
+    wp.recipient_full_name,
+    wp.recipient_phone,
+    wp.screenshot_file_id,
+    wp.screenshot_file_unique_id,
+    wp.claim_started_at,
+    wp.screenshot_received_at,
+    wp.submitted_at,
+    wp.reviewed_by,
+    wp.reviewed_at,
+    wp.paid_by,
+    wp.paid_at,
+    wp.payment_reference,
+    wp.rejection_reason,
+    wp.telegram_claim_message_id,
+    wp.telegram_admin_message_id,
+    wp.created_at,
+    wp.updated_at
+  FROM winner_payouts wp
+  INNER JOIN winners w
+    ON w.id = wp.winner_id
+  INNER JOIN draws d
+    ON d.id = wp.draw_id
+  INNER JOIN entries e
+    ON e.id = w.entry_id
+  INNER JOIN users u
+    ON u.id = wp.user_id
+`;
+
 async function getPayoutByWhere(
   where: string,
   values: unknown[],
@@ -145,47 +230,7 @@ async function getPayoutByWhere(
   const result =
     await pool.query<PayoutRow>(
       `
-        SELECT
-          wp.id,
-          wp.winner_id,
-          wp.draw_id,
-          d.name AS draw_name,
-          w.entry_id,
-          e.number,
-          wp.user_id,
-          u.telegram_id,
-          u.first_name,
-          u.last_name,
-          u.username,
-          w.rank,
-          wp.prize_amount,
-          wp.status,
-          wp.telebirr_number,
-          wp.telebirr_account_name,
-          wp.screenshot_file_id,
-          wp.screenshot_file_unique_id,
-          wp.claim_started_at,
-          wp.screenshot_received_at,
-          wp.submitted_at,
-          wp.reviewed_by,
-          wp.reviewed_at,
-          wp.paid_by,
-          wp.paid_at,
-          wp.payment_reference,
-          wp.rejection_reason,
-          wp.telegram_claim_message_id,
-          wp.telegram_admin_message_id,
-          wp.created_at,
-          wp.updated_at
-        FROM winner_payouts wp
-        INNER JOIN winners w
-          ON w.id = wp.winner_id
-        INNER JOIN draws d
-          ON d.id = wp.draw_id
-        INNER JOIN entries e
-          ON e.id = w.entry_id
-        INNER JOIN users u
-          ON u.id = wp.user_id
+        ${PAYOUT_SELECT}
         WHERE ${where}
         LIMIT 1
       `,
@@ -197,12 +242,6 @@ async function getPayoutByWhere(
     : null;
 }
 
-/**
- * Creates the payout records for a draw.
- *
- * This operation is idempotent because winner_id
- * is UNIQUE in the database.
- */
 export async function ensureWinnerPayoutsForDraw(
   drawId: string,
 ): Promise<number> {
@@ -311,6 +350,7 @@ export async function getPayoutByTelegramUser(
         'awaiting_claim',
         'awaiting_screenshot',
         'awaiting_telebirr',
+        'awaiting_recipient',
         'submitted'
       )
     `,
@@ -318,10 +358,6 @@ export async function getPayoutByTelegramUser(
   );
 }
 
-/**
- * Ensures a payout exists and moves it into
- * the first claimant state.
- */
 export async function startWinnerClaim(
   winnerId: string,
   telegramId: number,
@@ -407,23 +443,19 @@ export async function startWinnerClaim(
     );
   }
 
-  const update = await pool.query(
+  await pool.query(
     `
       UPDATE winner_payouts
       SET
-        status =
-          CASE
-            WHEN status = 'rejected'
-              THEN 'awaiting_screenshot'
-            WHEN status = 'awaiting_claim'
-              THEN 'awaiting_screenshot'
-            ELSE status
-          END,
+        status = CASE
+          WHEN status = 'rejected'
+            THEN 'awaiting_screenshot'
+          WHEN status = 'awaiting_claim'
+            THEN 'awaiting_screenshot'
+          ELSE status
+        END,
         claim_started_at =
-          COALESCE(
-            claim_started_at,
-            NOW()
-          ),
+          COALESCE(claim_started_at, NOW()),
         updated_at = NOW()
       WHERE id = $1
         AND status NOT IN (
@@ -435,12 +467,8 @@ export async function startWinnerClaim(
     [payoutId],
   );
 
-  void update;
-
   const payout =
-    await getPayoutById(
-      payoutId,
-    );
+    await getPayoutById(payoutId);
 
   if (!payout) {
     throw new Error(
@@ -485,16 +513,23 @@ export async function saveWinnerScreenshot(
   }
 
   const result =
-    await pool.query<{
-      id: string;
-    }>(
+    await pool.query<{ id: string }>(
       `
         UPDATE winner_payouts wp
         SET
           screenshot_file_id = $1,
           screenshot_file_unique_id = $2,
           screenshot_received_at = NOW(),
-          status = 'awaiting_telebirr',
+          status = CASE
+            WHEN EXISTS (
+              SELECT 1
+              FROM draws d
+              WHERE d.id = wp.draw_id
+                AND d.prize_type = 'physical'
+            )
+              THEN 'awaiting_recipient'
+            ELSE 'awaiting_telebirr'
+          END,
           updated_at = NOW()
         FROM users u
         WHERE wp.id = $3
@@ -517,6 +552,113 @@ export async function saveWinnerScreenshot(
   if (result.rows.length === 0) {
     throw new Error(
       "SCREENSHOT_NOT_ACCEPTED",
+    );
+  }
+
+  const payout =
+    await getPayoutById(
+      normalizedPayoutId,
+    );
+
+  if (!payout) {
+    throw new Error(
+      "PAYOUT_NOT_FOUND",
+    );
+  }
+
+  return payout;
+}
+
+export async function submitPhysicalWinnerRecipient(
+  payoutId: string,
+  telegramId: number,
+  fullName: string,
+  phone: string,
+): Promise<WinnerPayout> {
+  const normalizedPayoutId =
+    validateId(
+      payoutId,
+      "INVALID_PAYOUT_ID",
+    );
+
+  const normalizedName = fullName.trim();
+  const normalizedPhone = phone.trim();
+
+  if (
+    !Number.isSafeInteger(telegramId) ||
+    telegramId <= 0
+  ) {
+    throw new Error(
+      "INVALID_TELEGRAM_USER_ID",
+    );
+  }
+
+  if (!normalizedName) {
+    throw new Error(
+      "RECIPIENT_FULL_NAME_REQUIRED",
+    );
+  }
+
+  if (!normalizedPhone) {
+    throw new Error(
+      "RECIPIENT_PHONE_REQUIRED",
+    );
+  }
+
+  if (normalizedName.length > 200) {
+    throw new Error(
+      "RECIPIENT_FULL_NAME_TOO_LONG",
+    );
+  }
+
+  if (normalizedPhone.length > 50) {
+    throw new Error(
+      "RECIPIENT_PHONE_TOO_LONG",
+    );
+  }
+
+  if (!pool) {
+    throw new Error(
+      "DATABASE_URL is not configured",
+    );
+  }
+
+  const result =
+    await pool.query<{ id: string }>(
+      `
+        UPDATE winner_payouts wp
+        SET
+          recipient_full_name = $1,
+          recipient_phone = $2,
+          submitted_at = NOW(),
+          status = 'submitted',
+          updated_at = NOW()
+        FROM users u
+        INNER JOIN draws d
+          ON d.id = (
+            SELECT draw_id
+            FROM winner_payouts
+            WHERE id = $3
+          )
+        WHERE wp.id = $3
+          AND wp.user_id = u.id
+          AND u.telegram_id = $4
+          AND d.prize_type = 'physical'
+          AND wp.screenshot_file_id IS NOT NULL
+          AND wp.status = 'awaiting_recipient'
+        RETURNING wp.id
+      `,
+      [
+        normalizedName,
+        normalizedPhone,
+        normalizedPayoutId,
+        telegramId,
+      ],
+    );
+
+  if (result.rows.length === 0) {
+    throw new Error(
+      "RECIPIENT_SUBMISSION_NOT_ALLOWED",
     );
   }
 
@@ -592,9 +734,7 @@ export async function submitWinnerTelebirr(
   }
 
   const result =
-    await pool.query<{
-      id: string;
-    }>(
+    await pool.query<{ id: string }>(
       `
         UPDATE winner_payouts wp
         SET
@@ -604,9 +744,16 @@ export async function submitWinnerTelebirr(
           status = 'submitted',
           updated_at = NOW()
         FROM users u
+        INNER JOIN draws d
+          ON d.id = (
+            SELECT draw_id
+            FROM winner_payouts
+            WHERE id = $3
+          )
         WHERE wp.id = $3
           AND wp.user_id = u.id
           AND u.telegram_id = $4
+          AND d.prize_type <> 'physical'
           AND wp.screenshot_file_id IS NOT NULL
           AND wp.status = 'awaiting_telebirr'
         RETURNING wp.id
@@ -651,47 +798,7 @@ export async function getPendingWinnerPayouts(): Promise<
   const result =
     await pool.query<PayoutRow>(
       `
-        SELECT
-          wp.id,
-          wp.winner_id,
-          wp.draw_id,
-          d.name AS draw_name,
-          w.entry_id,
-          e.number,
-          wp.user_id,
-          u.telegram_id,
-          u.first_name,
-          u.last_name,
-          u.username,
-          w.rank,
-          wp.prize_amount,
-          wp.status,
-          wp.telebirr_number,
-          wp.telebirr_account_name,
-          wp.screenshot_file_id,
-          wp.screenshot_file_unique_id,
-          wp.claim_started_at,
-          wp.screenshot_received_at,
-          wp.submitted_at,
-          wp.reviewed_by,
-          wp.reviewed_at,
-          wp.paid_by,
-          wp.paid_at,
-          wp.payment_reference,
-          wp.rejection_reason,
-          wp.telegram_claim_message_id,
-          wp.telegram_admin_message_id,
-          wp.created_at,
-          wp.updated_at
-        FROM winner_payouts wp
-        INNER JOIN winners w
-          ON w.id = wp.winner_id
-        INNER JOIN draws d
-          ON d.id = wp.draw_id
-        INNER JOIN entries e
-          ON e.id = w.entry_id
-        INNER JOIN users u
-          ON u.id = wp.user_id
+        ${PAYOUT_SELECT}
         WHERE wp.status IN (
           'submitted',
           'approved'
@@ -728,21 +835,40 @@ export async function approveWinnerPayout(
   }
 
   const result =
-    await pool.query<{
-      id: string;
-    }>(
+    await pool.query<{ id: string }>(
       `
-        UPDATE winner_payouts
+        UPDATE winner_payouts wp
         SET
           status = 'approved',
           reviewed_by = $1,
           reviewed_at = NOW(),
           updated_at = NOW()
-        WHERE id = $2
-          AND status = 'submitted'
-          AND telebirr_number IS NOT NULL
-          AND length(trim(telebirr_number)) > 0
-        RETURNING id
+        FROM draws d
+        WHERE wp.id = $2
+          AND d.id = wp.draw_id
+          AND wp.status = 'submitted'
+          AND (
+            (
+              d.prize_type = 'physical'
+              AND NULLIF(
+                trim(wp.recipient_full_name),
+                ''
+              ) IS NOT NULL
+              AND NULLIF(
+                trim(wp.recipient_phone),
+                ''
+              ) IS NOT NULL
+            )
+            OR
+            (
+              d.prize_type <> 'physical'
+              AND NULLIF(
+                trim(wp.telebirr_number),
+                ''
+              ) IS NOT NULL
+            )
+          )
+        RETURNING wp.id
       `,
       [
         normalizedAdminId,
@@ -788,12 +914,14 @@ export async function approveWinnerPayout(
       normalizedAdminId,
       normalizedPayoutId,
       JSON.stringify({
-        winnerId:
-          payout.winnerId,
-        drawId:
-          payout.drawId,
-        prizeAmount:
-          payout.prizeAmount,
+        winnerId: payout.winnerId,
+        drawId: payout.drawId,
+        prizeAmount: payout.prizeAmount,
+        prizeType: payout.prizeType,
+        recipientFullName:
+          payout.recipientFullName,
+        recipientPhone:
+          payout.recipientPhone,
       }),
     ],
   );
@@ -818,8 +946,7 @@ export async function rejectWinnerPayout(
       "INVALID_ADMIN_USER_ID",
     );
 
-  const normalizedReason =
-    reason.trim();
+  const normalizedReason = reason.trim();
 
   if (!normalizedReason) {
     throw new Error(
@@ -840,9 +967,7 @@ export async function rejectWinnerPayout(
   }
 
   const result =
-    await pool.query<{
-      id: string;
-    }>(
+    await pool.query<{ id: string }>(
       `
         UPDATE winner_payouts
         SET
@@ -903,8 +1028,7 @@ export async function rejectWinnerPayout(
       normalizedAdminId,
       normalizedPayoutId,
       JSON.stringify({
-        reason:
-          normalizedReason,
+        reason: normalizedReason,
       }),
     ],
   );
@@ -950,31 +1074,47 @@ export async function markWinnerPayoutPaid(
     );
   }
 
-  const client =
-    await pool.connect();
+  const client = await pool.connect();
 
   try {
-    await client.query(
-      "BEGIN",
-    );
+    await client.query("BEGIN");
 
     const result =
-      await client.query<{
-        id: string;
-      }>(
+      await client.query<{ id: string }>(
         `
-          UPDATE winner_payouts
+          UPDATE winner_payouts wp
           SET
             status = 'paid',
             paid_by = $1,
             paid_at = NOW(),
             payment_reference = $2,
             updated_at = NOW()
-          WHERE id = $3
-            AND status = 'approved'
-            AND telebirr_number IS NOT NULL
-            AND length(trim(telebirr_number)) > 0
-          RETURNING id
+          FROM draws d
+          WHERE wp.id = $3
+            AND d.id = wp.draw_id
+            AND wp.status = 'approved'
+            AND (
+              (
+                d.prize_type = 'physical'
+                AND NULLIF(
+                  trim(wp.recipient_full_name),
+                  ''
+                ) IS NOT NULL
+                AND NULLIF(
+                  trim(wp.recipient_phone),
+                  ''
+                ) IS NOT NULL
+              )
+              OR
+              (
+                d.prize_type <> 'physical'
+                AND NULLIF(
+                  trim(wp.telebirr_number),
+                  ''
+                ) IS NOT NULL
+              )
+            )
+          RETURNING wp.id
         `,
         [
           normalizedAdminId,
@@ -992,55 +1132,14 @@ export async function markWinnerPayoutPaid(
     const payoutResult =
       await client.query<PayoutRow>(
         `
-          SELECT
-            wp.id,
-            wp.winner_id,
-            wp.draw_id,
-            d.name AS draw_name,
-            w.entry_id,
-            e.number,
-            wp.user_id,
-            u.telegram_id,
-            u.first_name,
-            u.last_name,
-            u.username,
-            w.rank,
-            wp.prize_amount,
-            wp.status,
-            wp.telebirr_number,
-            wp.telebirr_account_name,
-            wp.screenshot_file_id,
-            wp.screenshot_file_unique_id,
-            wp.claim_started_at,
-            wp.screenshot_received_at,
-            wp.submitted_at,
-            wp.reviewed_by,
-            wp.reviewed_at,
-            wp.paid_by,
-            wp.paid_at,
-            wp.payment_reference,
-            wp.rejection_reason,
-            wp.telegram_claim_message_id,
-            wp.telegram_admin_message_id,
-            wp.created_at,
-            wp.updated_at
-          FROM winner_payouts wp
-          INNER JOIN winners w
-            ON w.id = wp.winner_id
-          INNER JOIN draws d
-            ON d.id = wp.draw_id
-          INNER JOIN entries e
-            ON e.id = w.entry_id
-          INNER JOIN users u
-            ON u.id = wp.user_id
+          ${PAYOUT_SELECT}
           WHERE wp.id = $1
           LIMIT 1
         `,
         [normalizedPayoutId],
       );
 
-    const row =
-      payoutResult.rows[0];
+    const row = payoutResult.rows[0];
 
     if (!row) {
       throw new Error(
@@ -1072,22 +1171,24 @@ export async function markWinnerPayoutPaid(
           paymentReference:
             normalizedReference,
           prizeAmount:
-            Number(
-              row.prize_amount,
+            Number(row.prize_amount),
+          prizeType:
+            normalizePrizeType(
+              row.prize_type,
             ),
+          recipientFullName:
+            row.recipient_full_name,
+          recipientPhone:
+            row.recipient_phone,
         }),
       ],
     );
 
-    await client.query(
-      "COMMIT",
-    );
+    await client.query("COMMIT");
 
     return mapPayout(row);
   } catch (error) {
-    await client.query(
-      "ROLLBACK",
-    );
+    await client.query("ROLLBACK");
     throw error;
   } finally {
     client.release();
