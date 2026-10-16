@@ -1,3 +1,4 @@
+
 import "dotenv/config";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -34,6 +35,8 @@ async function migrate() {
     await client.query(schema);
 
     await ensureWalletTransactionTypes(client);
+
+    await ensureWinnerCountMinimum(client);
 
     await removeLegacyEntryNumberConstraint(client);
 
@@ -79,8 +82,7 @@ async function ensureWalletTransactionTypes(
   `);
 
   for (const row of result.rows) {
-    const definition =
-      row.definition.toLowerCase();
+    const definition = row.definition.toLowerCase();
 
     if (
       definition.includes("type") &&
@@ -90,9 +92,7 @@ async function ensureWalletTransactionTypes(
       await client.query(
         `
           ALTER TABLE wallet_transactions
-          DROP CONSTRAINT ${quoteIdentifier(
-            row.constraint_name,
-          )}
+          DROP CONSTRAINT ${quoteIdentifier(row.constraint_name)}
         `,
       );
     }
@@ -120,6 +120,42 @@ async function ensureWalletTransactionTypes(
 
     throw error;
   });
+}
+
+async function ensureWinnerCountMinimum(
+  client: import("pg").PoolClient,
+): Promise<void> {
+  const result = await client.query<{
+    constraint_name: string;
+  }>(`
+    SELECT con.conname AS constraint_name
+    FROM pg_constraint con
+    INNER JOIN pg_class rel
+      ON rel.oid = con.conrelid
+    INNER JOIN pg_namespace nsp
+      ON nsp.oid = rel.relnamespace
+    WHERE con.contype = 'c'
+      AND nsp.nspname = 'public'
+      AND rel.relname = 'draws'
+      AND con.conname = 'draws_winner_count_check'
+  `);
+
+  if (result.rows.length > 0) {
+    await client.query(`
+      ALTER TABLE draws
+      DROP CONSTRAINT ${quoteIdentifier(result.rows[0].constraint_name)}
+    `);
+  }
+
+  await client.query(`
+    ALTER TABLE draws
+    ADD CONSTRAINT draws_winner_count_check
+    CHECK (winner_count >= 1)
+  `);
+
+  console.log(
+    "Updated draws_winner_count_check to allow one or more winners.",
+  );
 }
 
 async function removeLegacyEntryNumberConstraint(
@@ -166,9 +202,7 @@ async function removeLegacyEntryNumberConstraint(
       await client.query(
         `
           ALTER TABLE entries
-          DROP CONSTRAINT ${quoteIdentifier(
-            constraintName,
-          )}
+          DROP CONSTRAINT ${quoteIdentifier(constraintName)}
         `,
       );
 
@@ -219,8 +253,7 @@ async function removeDestructiveCascades(
       continue;
     }
 
-    const definition =
-      definitionResult.rows[0].definition;
+    const definition = definitionResult.rows[0].definition;
 
     if (!/ON DELETE CASCADE/i.test(definition)) {
       continue;
@@ -229,41 +262,30 @@ async function removeDestructiveCascades(
     await client.query(
       `
         ALTER TABLE ${quoteIdentifier(tableName)}
-        DROP CONSTRAINT ${quoteIdentifier(
-          constraintName,
-        )}
+        DROP CONSTRAINT ${quoteIdentifier(constraintName)}
       `,
     );
 
-    const safeDefinition =
-      definition.replace(
-        /\s+ON DELETE CASCADE/gi,
-        "",
-      );
+    const safeDefinition = definition.replace(
+      /\s+ON DELETE CASCADE/gi,
+      "",
+    );
 
     await client.query(
       `
         ALTER TABLE ${quoteIdentifier(tableName)}
-        ADD CONSTRAINT ${quoteIdentifier(
-          constraintName,
-        )}
+        ADD CONSTRAINT ${quoteIdentifier(constraintName)}
         ${safeDefinition}
       `,
     );
   }
 }
 
-function quoteIdentifier(
-  value: string,
-): string {
+function quoteIdentifier(value: string): string {
   return `"${value.replace(/"/g, '""')}"`;
 }
 
 migrate().catch((error) => {
-  console.error(
-    "Migration runner failed:",
-    error,
-  );
-
+  console.error("Migration runner failed:", error);
   process.exitCode = 1;
 });
