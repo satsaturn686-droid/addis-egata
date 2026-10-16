@@ -151,11 +151,11 @@ export async function createAdminDraw(
 
   if (
     !Number.isInteger(input.winnerCount) ||
-    input.winnerCount < 5 ||
+    input.winnerCount < 1 ||
     input.winnerCount > input.totalNumbers
   ) {
     throw new Error(
-      "Winner count must be at least 5 and cannot exceed total numbers.",
+      "Winner count must be at least 1 and cannot exceed total numbers.",
     );
   }
 
