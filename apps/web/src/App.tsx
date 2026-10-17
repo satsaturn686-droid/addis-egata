@@ -833,7 +833,14 @@ const numberBoardSummary = useMemo(() => {
               {activeDraw.prizeDescription}
             </p>
           )}
-
+{activeDraw.displayedPrizeValue != null && (
+  <div className="prize-value">
+    <span>የሽልማት ዋጋ</span>
+    <strong>
+      {formatMoney(activeDraw.displayedPrizeValue)}
+    </strong>
+  </div>
+)}
           <div className="stats">
             <div>
               <span>የመግቢያ ክፍያ</span>
