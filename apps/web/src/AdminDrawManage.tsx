@@ -2511,6 +2511,31 @@ export default function AdminDrawManage() {
                     ሽልማት፦{" "}
                     {getPrizeText(draw)}
                   </p>
+                  {draw.prizeDescription && (
+  <p className="hero-description">
+    ዝርዝር፦ {draw.prizeDescription}
+  </p>
+)}
+
+{draw.displayedPrizeValue != null && (
+  <p>
+    የሽልማት የማሳያ ዋጋ፦{" "}
+    {formatMoney(draw.displayedPrizeValue)}
+  </p>
+)}
+
+{draw.prizeImageUrl && (
+  <img
+    src={draw.prizeImageUrl}
+    alt={draw.prizeName}
+    style={{
+      width: "160px",
+      maxWidth: "100%",
+      objectFit: "contain",
+      borderRadius: "8px",
+    }}
+  />
+)}
                 </div>
 
                 <span
