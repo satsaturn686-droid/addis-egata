@@ -8,6 +8,7 @@ import cors from "cors";
 
 import { checkDatabase } from "./db.js";
 import authRouter from "./routes/auth.js";
+import appAuthRouter from "./routes/app-auth.js";
 import drawsRouter from "./routes/draws.js";
 import entriesRouter from "./routes/entries.js";
 import paymentsRouter from "./routes/payments.js";
@@ -884,7 +885,7 @@ app.get(
  * Telegram authentication
  */
 app.use("/auth", authRouter);
-
+app.use("/app-auth", appAuthRouter);
 /*
  * Public draws
  */
