@@ -270,10 +270,9 @@ const [needsLogin, setNeedsLogin] = useState(false);
 ‎
 ‎  return () => controller.abort();
 ‎}, []);
-}
       
   useEffect(() => {
-    if (!telegramReady) {
+    if (!telegramReady && !getAppSessionToken()) {
       return;
     }
 
