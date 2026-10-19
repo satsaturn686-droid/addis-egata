@@ -210,10 +210,11 @@ const [needsLogin, setNeedsLogin] = useState(false);
 ‎      setError(null);
 ‎
 ‎      const [userResponse, drawsResponse] = await Promise.all([
-‎                appToken && !hasTelegramAuth
-          ? getAppCurrentUser()
-          : getCurrentUser(controller.signal),
-‎      ]);
+  appToken && !hasTelegramAuth
+    ? getAppCurrentUser()
+    : getCurrentUser(controller.signal),
+  getDraws(controller.signal),
+]);
 ‎
 ‎      setUser(userResponse.user);
 ‎      setDraws(drawsResponse.draws);
