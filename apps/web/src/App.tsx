@@ -167,79 +167,103 @@ const [drawPrizes, setDrawPrizes] = useState<DrawPrize[]>([]);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
-    const webApp = window.Telegram?.WebApp;
-
-    if (!webApp) {
-      setError(
-        "ይህ App በTelegram Mini App ውስጥ መከፈት አለበት።",
-      );
-      setLoading(false);
-      return;
-    }
-
-        const storedInitData = sessionStorage.getItem(
-      "addis-egata-telegram-init-data",
-    );
-
-    if (webApp.initData) {
-      sessionStorage.setItem(
-        "addis-egata-telegram-init-data",
-        webApp.initData,
-      );
-    } else if (storedInitData) {
-      sessionStorage.setItem(
-        "addis-egata-telegram-init-data",
-        storedInitData,
-      );
-    } else {
-      setError(
-        "የTelegram ማረጋገጫ መረጃ አልተገኘም። App ውስጥ እንደገና ይክፈቱ።",
-      );
-      setLoading(false);
-      return;
-    }
-
-    webApp.ready();
-    webApp.expand();
-    setTelegramReady(true);
-
-    const controller = new AbortController();
-
-    async function loadApp() {
-      try {
-        setLoading(true);
-        setError(null);
-
-        const [userResponse, drawsResponse] =
-          await Promise.all([
-            getCurrentUser(controller.signal),
-            getDraws(controller.signal),
-          ]);
-
-        setUser(userResponse.user);
-        setDraws(drawsResponse.draws);
-                try {
-          const paymentSettingsResponse =
-            await getPaymentSettings(
-              controller.signal,
-            );
-
-          setTelebirrNumber(
-            paymentSettingsResponse.settings
-              .telebirrNumber,
-          );
-        } catch {
-          setTelebirrNumber("");
-        }
-        
-        try {
-          const entriesResponse =
-            await getMyEntries(controller.signal);
-
-          setEntries(entriesResponse.entries);
-        } catch {
-          setEntries([]);
-        }
+‎  const webApp = window.Telegram?.WebApp;
+‎  const appToken = getAppSessionToken();
+‎
+‎  if (webApp) {
+‎    const storedInitData = sessionStorage.getItem(
+‎      "addis-egata-telegram-init-data",
+‎    );
+‎
+‎    if (webApp.initData) {
+‎      sessionStorage.setItem(
+‎        "addis-egata-telegram-init-data",
+‎        webApp.initData,
+‎      );
+‎    } else if (!storedInitData) {
+‎      setError(
+‎        "የTelegram ማረጋገጫ መረጃ አልተገኘም። App ውስጥ እንደገና ይክፈቱ።",
+‎      );
+‎      setLoading(false);
+‎      return;
+‎    }
+‎
+‎    webApp.ready();
+‎    webApp.expand();
+‎    setTelegramReady(true);
+‎  } else if (!appToken) {
+‎    setNeedsLogin(true);
+‎    setLoading(false);
+‎    return;
+‎  }
+‎
+‎  const controller = new AbortController();
+‎
+‎  async function loadApp() {
+‎    try {
+‎      setLoading(true);
+‎      setError(null);
+‎
+‎      const [userResponse, drawsResponse] = await Promise.all([
+‎        appToken && !webApp
+‎          ? getAppCurrentUser()
+‎          : getCurrentUser(controller.signal),
+‎        getDraws(controller.signal),
+‎      ]);
+‎
+‎      setUser(userResponse.user);
+‎      setDraws(drawsResponse.draws);
+‎
+‎      try {
+‎        const paymentSettingsResponse = await getPaymentSettings(
+‎          controller.signal,
+‎        );
+‎        setTelebirrNumber(
+‎          paymentSettingsResponse.settings.telebirrNumber,
+‎        );
+‎      } catch {
+‎        setTelebirrNumber("");
+‎      }
+‎
+‎      try {
+‎        const entriesResponse = await getMyEntries(controller.signal);
+‎        setEntries(entriesResponse.entries);
+‎      } catch {
+‎        setEntries([]);
+‎      }
+‎    } catch (loadError) {
+‎      if (
+‎        loadError instanceof DOMException &&
+‎        loadError.name === "AbortError"
+‎      ) {
+‎        return;
+‎      }
+‎
+‎      if (!webApp) {
+‎        clearAppSessionToken();
+‎        setNeedsLogin(true);
+‎        setAuthError(
+‎          loadError instanceof Error
+‎            ? loadError.message
+‎            : "መግባት አልተቻለም። እንደገና ይሞክሩ።",
+‎        );
+‎      } else {
+‎        setError(
+‎          loadError instanceof Error
+‎            ? loadError.message
+‎            : "መረጃውን መጫን አልተቻለም።",
+‎        );
+‎      }
+‎    } finally {
+‎      setLoading(false);
+‎    }
+‎  }
+‎
+‎  void loadApp();
+‎
+‎  return () => controller.abort();
+‎}, []);
+}
       } catch (loadError) {
         if (
           loadError instanceof DOMException &&
