@@ -13,8 +13,8 @@ router.get("/", async (_req, res) => {
     const draws = await getOpenDraws();
 
     res.status(200).json({
-      draws,
-    });
+  draws: draws.map(({ actualPrizeCost, ...draw }) => draw),
+});
   } catch (error) {
     console.error("Get open draws error:", error);
 
@@ -49,10 +49,12 @@ router.get("/:drawId", async (req, res) => {
 
     const prizes = await getDrawPrizes(drawId);
 
-    res.status(200).json({
-      draw,
-      prizes,
-    });
+    const { actualPrizeCost, ...publicDraw } = draw;
+
+res.status(200).json({
+  draw: publicDraw,
+  prizes,
+});
   } catch (error) {
     console.error("Get draw error:", error);
 
