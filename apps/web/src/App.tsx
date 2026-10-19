@@ -5,18 +5,18 @@ import {
   type FormEvent,
 } from "react";
 import {
-‎  createTelebirrPayment,
-‎  getCurrentUser,
-‎  getDraw,
-‎  getDraws,
-‎  getMyEntries,
-‎  getPaymentSettings,
-‎  reserveNumber,
-‎  type Draw,
-‎  type DrawPrize,
-‎  type Entry,
-‎  type TelegramAuthResponse,
-‎} from "./api";
+  createTelebirrPayment,
+  getCurrentUser,
+  getDraw,
+  getDraws,
+  getMyEntries,
+  getPaymentSettings,
+  reserveNumber,
+  type Draw,
+  type DrawPrize,
+  type Entry,
+  type TelegramAuthResponse,
+} from "./api";
 import PublicResults from "./PublicResults";
 import UserWalletButton from "./UserWalletButton";
   import WalletPanel from "./WalletPanel";
@@ -330,31 +330,32 @@ const [drawPrizes, setDrawPrizes] = useState<DrawPrize[]>([]);
     );
   }, [draws]);
 
-  ‎useEffect(() => {
-‎  if (!activeDraw) {
-‎    setDrawPrizes([]);
-‎    return;
-‎  }
-‎  const controller = new AbortController();
-‎
-‎  getDraw(activeDraw.id, controller.signal)
-‎    .then((response) => {
-‎      setDrawPrizes(
-‎        [...response.prizes].sort(
-‎          (a, b) => a.rank - b.rank,
-‎        ),
-‎      );
-‎    })
-‎    .catch(() => {
-‎      if (!controller.signal.aborted) {
-‎        setDrawPrizes([]);
-‎      }
-‎    });
-‎
-‎  return () => {
-‎    controller.abort();
-‎  };
-‎}, [activeDraw?.id]);
+    useEffect(() => {
+    if (!activeDraw) {
+      setDrawPrizes([]);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    getDraw(activeDraw.id, controller.signal)
+      .then((response) => {
+        setDrawPrizes(
+          [...response.prizes].sort(
+            (a, b) => a.rank - b.rank,
+          ),
+        );
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setDrawPrizes([]);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [activeDraw?.id]);
   const myActiveEntries = useMemo(() => {
     if (!activeDraw) {
       return [];
