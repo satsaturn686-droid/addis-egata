@@ -7,7 +7,93 @@ export type ApiError = {
   error?: string;
   message?: string;
 };
+export type AppUser = {
+  id: string;
+  telegramId: string | null;
+  username: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  isAdmin: boolean;
+};
 
+export type AppAuthResponse = {
+  user: AppUser;
+  token: string;
+  expiresAt: string;
+};
+
+const APP_SESSION_TOKEN_KEY = "addis-egata-app-session-token";
+
+export function getAppSessionToken(): string | null {
+  try {
+    return localStorage.getItem(APP_SESSION_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function clearAppSessionToken(): void {
+  try {
+    localStorage.removeItem(APP_SESSION_TOKEN_KEY);
+  } catch {
+    // Storage unavailable.
+  }
+}
+
+export async function registerAppUser(input: {
+  loginIdentifier: string;
+  password: string;
+  firstName?: string;
+  lastName?: string;
+}): Promise<{ user: AppUser; message: string }> {
+  return publicRequest("/app-auth/register", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export async function loginAppUser(
+  loginIdentifier: string,
+  password: string,
+): Promise<AppAuthResponse> {
+  const result = await publicRequest<AppAuthResponse>(
+    "/app-auth/login",
+    {
+      method: "POST",
+      body: { loginIdentifier, password },
+    },
+  );
+
+  localStorage.setItem(APP_SESSION_TOKEN_KEY, result.token);
+  return result;
+}
+
+export async function getAppCurrentUser(): Promise<{ user: AppUser }> {
+  const token = getAppSessionToken();
+
+  if (!token) {
+    throw new Error("እባክዎ በመጀመሪያ ይግቡ።");
+  }
+
+  const response = await fetch(`${API_BASE_URL}/app-auth/me`, {
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    credentials: "include",
+  });
+
+  const payload = await response.json();
+
+  if (!response.ok) {
+    clearAppSessionToken();
+    throw new Error(
+      payload.message || "እንደገና ይግቡ።",
+    );
+  }
+
+  return payload as { user: AppUser };
+}
 export type TelegramAuthResponse = {
   user: {
     id: string;
