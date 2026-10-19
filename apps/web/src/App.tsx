@@ -631,6 +631,37 @@ const numberBoardSummary = useMemo(() => {
       setLoadingEntries(false);
     }
   }
+‎async function handleAppAuth(
+‎  event: FormEvent<HTMLFormElement>,
+‎) {
+‎  event.preventDefault();
+‎  setAuthSubmitting(true);
+‎  setAuthError(null);
+‎
+‎  const identifier = loginIdentifier.trim();
+‎
+‎  try {
+‎    if (authMode === "register") {
+‎      await registerAppUser({
+‎        loginIdentifier: identifier,
+‎        password: authPassword,
+‎        firstName: authFirstName.trim() || undefined,
+‎        lastName: authLastName.trim() || undefined,
+‎      });
+‎    }
+‎
+‎    await loginAppUser(identifier, authPassword);
+‎    window.location.reload();
+‎  } catch (authSubmitError) {
+‎    setAuthError(
+‎      authSubmitError instanceof Error
+‎        ? authSubmitError.message
+‎        : "መግባት አልተቻለም። እንደገና ይሞክሩ።",
+‎    );
+‎  } finally {
+‎    setAuthSubmitting(false);
+‎  }
+‎}
 ‎
   if (loading) {
     return (
