@@ -7,6 +7,9 @@ const API_BASE_URL =
     "",
   ) || "https://addis-egata-api.onrender.com";
 
+const APP_SESSION_TOKEN_KEY =
+  "addis-egata-app-session-token";
+
 function getInitData(): string {
   const webApp = window.Telegram?.WebApp;
 
@@ -27,6 +30,14 @@ function getInitData(): string {
   );
 }
 
+function getAppSessionToken(): string | null {
+  try {
+    return localStorage.getItem(APP_SESSION_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
 async function request<T>(
   path: string,
   options: {
@@ -34,6 +45,9 @@ async function request<T>(
     body?: unknown;
   } = {},
 ): Promise<T> {
+  const token = getAppSessionToken();
+  const initData = token ? null : getInitData();
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: options.method ?? "GET",
     headers: {
@@ -41,7 +55,9 @@ async function request<T>(
       ...(options.body !== undefined
         ? { "Content-Type": "application/json" }
         : {}),
-      "X-Telegram-Init-Data": getInitData(),
+      ...(token
+        ? { Authorization: `Bearer ${token}` }
+        : { "X-Telegram-Init-Data": initData! }),
     },
     credentials: "include",
     body:
@@ -203,7 +219,9 @@ export async function createWalletWithdrawal(
 }
 
 export async function getWalletHistory(): Promise<WalletHistoryResponse> {
-  return request<WalletHistoryResponse>("/payments/wallet/history");
+  return request<WalletHistoryResponse>(
+    "/payments/wallet/history",
+  );
 }
 
 export async function getPendingWalletWithdrawals(): Promise<{
