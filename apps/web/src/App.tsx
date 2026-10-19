@@ -246,7 +246,7 @@ const [needsLogin, setNeedsLogin] = useState(false);
 ‎        return;
 ‎      }
 ‎
-‎      if (!webApp) {
+‎      if (!hasTelegramAuth) {
 ‎        clearAppSessionToken();
 ‎        setNeedsLogin(true);
 ‎        setAuthError(
