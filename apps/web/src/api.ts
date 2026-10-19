@@ -1,12 +1,15 @@
+
 const API_BASE_URL =
   (import.meta.env.VITE_API_URL as string | undefined)?.replace(
     /\/+$/,
     "",
   ) || "https://addis-egata-api.onrender.com";
+
 export type ApiError = {
   error?: string;
   message?: string;
 };
+
 export type AppUser = {
   id: string;
   telegramId: string | null;
@@ -83,17 +86,22 @@ export async function getAppCurrentUser(): Promise<{ user: AppUser }> {
     credentials: "include",
   });
 
-  const payload = await response.json();
+  const payload = (await response.json()) as
+    | { user: AppUser; message?: string }
+    | ApiError;
 
   if (!response.ok) {
     clearAppSessionToken();
     throw new Error(
-      payload.message || "እንደገና ይግቡ።",
+      ("message" in payload && payload.message) ||
+        ("error" in payload && payload.error) ||
+        "እንደገና ይግቡ።",
     );
   }
 
   return payload as { user: AppUser };
 }
+
 export type TelegramAuthResponse = {
   user: {
     id: string;
@@ -145,7 +153,6 @@ export type DrawPrize = {
   amount: number;
   createdAt: string;
 };
-
 
 export type DrawResponse = {
   draw: Draw;
@@ -323,10 +330,9 @@ function getTelegramInitData(): string {
     return webApp.initData;
   }
 
-  const storedInitData =
-    sessionStorage.getItem(
-      "addis-egata-telegram-init-data",
-    );
+  const storedInitData = sessionStorage.getItem(
+    "addis-egata-telegram-init-data",
+  );
 
   if (storedInitData) {
     return storedInitData;
@@ -341,43 +347,43 @@ async function request<T>(
   path: string,
   options: ApiRequestOptions = {},
 ): Promise<T> {
-  const initData = getTelegramInitData();
+  const token = getAppSessionToken();
 
   const headers: Record<string, string> = {
     Accept: "application/json",
-    "X-Telegram-Init-Data": initData,
   };
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  } else {
+    headers["X-Telegram-Init-Data"] = getTelegramInitData();
+  }
 
   if (options.body !== undefined) {
     headers["Content-Type"] = "application/json";
   }
 
-  const response = await fetch(
-    `${API_BASE_URL}${path}`,
-    {
-      method: options.method ?? "GET",
-      headers,
-      credentials: "include",
-      body:
-        options.body !== undefined
-          ? JSON.stringify(options.body)
-          : undefined,
-      signal: options.signal,
-    },
-  );
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: options.method ?? "GET",
+    headers,
+    credentials: "include",
+    body:
+      options.body !== undefined
+        ? JSON.stringify(options.body)
+        : undefined,
+    signal: options.signal,
+  });
 
   let payload: unknown = null;
 
-  const contentType =
-    response.headers.get("content-type") ?? "";
+  const contentType = response.headers.get("content-type") ?? "";
 
   if (contentType.includes("application/json")) {
     payload = await response.json();
   }
 
   if (!response.ok) {
-    const errorPayload =
-      payload as ApiError | null;
+    const errorPayload = payload as ApiError | null;
 
     throw new Error(
       errorPayload?.message ||
@@ -401,33 +407,28 @@ async function publicRequest<T>(
     headers["Content-Type"] = "application/json";
   }
 
-  const response = await fetch(
-    `${API_BASE_URL}${path}`,
-    {
-      method: options.method ?? "GET",
-      headers,
-      credentials: "include",
-      cache: "no-store",
-      body:
-        options.body !== undefined
-          ? JSON.stringify(options.body)
-          : undefined,
-      signal: options.signal,
-    },
-  );
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: options.method ?? "GET",
+    headers,
+    credentials: "include",
+    cache: "no-store",
+    body:
+      options.body !== undefined
+        ? JSON.stringify(options.body)
+        : undefined,
+    signal: options.signal,
+  });
 
   let payload: unknown = null;
 
-  const contentType =
-    response.headers.get("content-type") ?? "";
+  const contentType = response.headers.get("content-type") ?? "";
 
   if (contentType.includes("application/json")) {
     payload = await response.json();
   }
 
   if (!response.ok) {
-    const errorPayload =
-      payload as ApiError | null;
+    const errorPayload = payload as ApiError | null;
 
     throw new Error(
       errorPayload?.message ||
@@ -442,23 +443,17 @@ async function publicRequest<T>(
 export async function getCurrentUser(
   signal?: AbortSignal,
 ): Promise<TelegramAuthResponse> {
-  return request<TelegramAuthResponse>(
-    "/auth/me",
-    {
-      signal,
-    },
-  );
+  return request<TelegramAuthResponse>("/auth/me", {
+    signal,
+  });
 }
 
 export async function getDraws(
   signal?: AbortSignal,
 ): Promise<DrawListResponse> {
-  return request<DrawListResponse>(
-    "/draws",
-    {
-      signal,
-    },
-  );
+  return request<DrawListResponse>("/draws", {
+    signal,
+  });
 }
 
 export async function getDraw(
@@ -471,21 +466,16 @@ export async function getDraw(
 
   return request<DrawResponse>(
     `/draws/${encodeURIComponent(drawId)}`,
-    {
-      signal,
-    },
+    { signal },
   );
 }
 
 export async function getMyEntries(
   signal?: AbortSignal,
 ): Promise<EntriesResponse> {
-  return request<EntriesResponse>(
-    "/entries/mine",
-    {
-      signal,
-    },
-  );
+  return request<EntriesResponse>("/entries/mine", {
+    signal,
+  });
 }
 
 export async function reserveNumber(
@@ -497,24 +487,15 @@ export async function reserveNumber(
     throw new Error("Draw ID is required.");
   }
 
-  if (
-    !Number.isInteger(number) ||
-    number < 1
-  ) {
+  if (!Number.isInteger(number) || number < 1) {
     throw new Error("A valid number is required.");
   }
 
-  return request<ReserveNumberResponse>(
-    "/entries/reserve",
-    {
-      method: "POST",
-      body: {
-        drawId,
-        number,
-      },
-      signal,
-    },
-  );
+  return request<ReserveNumberResponse>("/entries/reserve", {
+    method: "POST",
+    body: { drawId, number },
+    signal,
+  });
 }
 
 export async function getEntry(
@@ -527,9 +508,7 @@ export async function getEntry(
 
   return request<EntryResponse>(
     `/entries/${encodeURIComponent(entryId)}`,
-    {
-      signal,
-    },
+    { signal },
   );
 }
 
@@ -538,89 +517,56 @@ export async function createTelebirrPayment(
   signal?: AbortSignal,
 ): Promise<PaymentResponse> {
   const entryId = input.entryId.trim();
-
-  const transactionReference =
-    input.transactionReference.trim();
-
-  const senderName =
-    input.senderName?.trim() || undefined;
-
-  const receiptImageUrl =
-    input.receiptImageUrl?.trim() || undefined;
+  const transactionReference = input.transactionReference.trim();
+  const senderName = input.senderName?.trim() || undefined;
+  const receiptImageUrl = input.receiptImageUrl?.trim() || undefined;
 
   if (!entryId) {
     throw new Error("Entry ID is required.");
   }
 
   if (!transactionReference) {
-    throw new Error(
-      "Telebirr transaction reference is required.",
-    );
+    throw new Error("Telebirr transaction reference is required.");
   }
 
   if (transactionReference.length > 200) {
-    throw new Error(
-      "Transaction reference is too long.",
-    );
+    throw new Error("Transaction reference is too long.");
   }
 
-  if (
-    senderName &&
-    senderName.length > 200
-  ) {
-    throw new Error(
-      "Sender name is too long.",
-    );
+  if (senderName && senderName.length > 200) {
+    throw new Error("Sender name is too long.");
   }
 
-  if (
-    receiptImageUrl &&
-    receiptImageUrl.length > 2000
-  ) {
-    throw new Error(
-      "Receipt image URL is too long.",
-    );
+  if (receiptImageUrl && receiptImageUrl.length > 2000) {
+    throw new Error("Receipt image URL is too long.");
   }
 
-  return request<PaymentResponse>(
-    "/payments/telebirr",
-    {
-      method: "POST",
-      body: {
-        entryId,
-        transactionReference,
-        ...(senderName
-          ? { senderName }
-          : {}),
-        ...(receiptImageUrl
-          ? { receiptImageUrl }
-          : {}),
-      },
-      signal,
+  return request<PaymentResponse>("/payments/telebirr", {
+    method: "POST",
+    body: {
+      entryId,
+      transactionReference,
+      ...(senderName ? { senderName } : {}),
+      ...(receiptImageUrl ? { receiptImageUrl } : {}),
     },
-  );
+    signal,
+  });
 }
 
 export async function getMyPayments(
   signal?: AbortSignal,
 ): Promise<PaymentsResponse> {
-  return request<PaymentsResponse>(
-    "/payments/mine",
-    {
-      signal,
-    },
-  );
+  return request<PaymentsResponse>("/payments/mine", {
+    signal,
+  });
 }
 
 export async function getPaymentSettings(
   signal?: AbortSignal,
 ): Promise<PaymentSettingsResponse> {
-  return request<PaymentSettingsResponse>(
-    "/payments/settings",
-    {
-      signal,
-    },
-  );
+  return request<PaymentSettingsResponse>("/payments/settings", {
+    signal,
+  });
 }
 
 export async function getPayment(
@@ -633,33 +579,25 @@ export async function getPayment(
 
   return request<PaymentResponse>(
     `/payments/${encodeURIComponent(paymentId)}`,
-    {
-      signal,
-    },
+    { signal },
   );
 }
 
 export async function getPublishedResults(
   signal?: AbortSignal,
 ): Promise<PublishedResultsResponse> {
-  return publicRequest<PublishedResultsResponse>(
-    "/results",
-    {
-      signal,
-    },
-  );
+  return publicRequest<PublishedResultsResponse>("/results", {
+    signal,
+  });
 }
 
 export async function getCurrentLiveDrawState(
   signal?: AbortSignal,
 ): Promise<LiveDrawState | null> {
-  const payload =
-    await publicRequest<CurrentLiveDrawResponse>(
-      "/results/live",
-      {
-        signal,
-      },
-    );
+  const payload = await publicRequest<CurrentLiveDrawResponse>(
+    "/results/live",
+    { signal },
+  );
 
   return payload.live;
 }
@@ -674,9 +612,7 @@ export async function getPublicDrawResult(
 
   return publicRequest<PublicDrawResultResponse>(
     `/results/${encodeURIComponent(drawId)}`,
-    {
-      signal,
-    },
+    { signal },
   );
 }
 
@@ -690,9 +626,7 @@ export async function getLiveDrawState(
 
   return publicRequest<LiveDrawResponse>(
     `/results/live/${encodeURIComponent(drawId)}`,
-    {
-      signal,
-    },
+    { signal },
   );
 }
 
@@ -706,8 +640,6 @@ export async function getWinnerClaimLink(
 
   return request<WinnerClaimLinkResponse>(
     `/winner-payouts/claim-link/${encodeURIComponent(winnerId)}`,
-    {
-      signal,
-    },
+    { signal },
   );
 }
