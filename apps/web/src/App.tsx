@@ -17,8 +17,6 @@ import {
 ‎  type Entry,
 ‎  type TelegramAuthResponse,
 ‎} from "./api";
-‎
-‎
 import PublicResults from "./PublicResults";
 import UserWalletButton from "./UserWalletButton";
   import WalletPanel from "./WalletPanel";
@@ -337,7 +335,6 @@ const [drawPrizes, setDrawPrizes] = useState<DrawPrize[]>([]);
 ‎    setDrawPrizes([]);
 ‎    return;
 ‎  }
-‎
 ‎  const controller = new AbortController();
 ‎
 ‎  getDraw(activeDraw.id, controller.signal)
@@ -358,12 +355,10 @@ const [drawPrizes, setDrawPrizes] = useState<DrawPrize[]>([]);
 ‎    controller.abort();
 ‎  };
 ‎}, [activeDraw?.id]);
-‎
   const myActiveEntries = useMemo(() => {
     if (!activeDraw) {
       return [];
     }
-
     const currentTime = Date.now();
 
     return entries.filter((entry) => {
