@@ -53,8 +53,6 @@ export type Draw = {
 };
 
 export type DrawPrize = {
-
-export type DrawPrize = {
   id: string;
   drawId: string;
   rank: number;
