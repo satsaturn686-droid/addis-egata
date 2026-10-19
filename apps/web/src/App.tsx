@@ -271,30 +271,7 @@ const [needsLogin, setNeedsLogin] = useState(false);
 ‎  return () => controller.abort();
 ‎}, []);
 }
-      } catch (loadError) {
-        if (
-          loadError instanceof DOMException &&
-          loadError.name === "AbortError"
-        ) {
-          return;
-        }
-
-        setError(
-          loadError instanceof Error
-            ? loadError.message
-            : "መረጃውን መጫን አልተቻለም።",
-        );
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    void loadApp();
-
-    return () => {
-      controller.abort();
-    };
-  }, []);
+      
   useEffect(() => {
     if (!telegramReady) {
       return;
