@@ -1,3 +1,4 @@
+
 import "dotenv/config";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -30,6 +31,8 @@ async function migrate() {
 
     await client.query("BEGIN");
     await client.query(schema);
+
+    await ensureAppAuthSchema(client);
     await ensureWalletTransactionTypes(client);
     await ensureWinnerCountMinimum(client);
     await ensurePhysicalWinnerRecipient(client);
@@ -53,6 +56,61 @@ async function migrate() {
     client.release();
     await pool.end();
   }
+}
+
+async function ensureAppAuthSchema(
+  client: import("pg").PoolClient,
+): Promise<void> {
+  // Telegram users remain supported. Standalone app users may have
+  // no Telegram account, so their telegram_id must be nullable.
+  await client.query(`
+    ALTER TABLE users
+    ALTER COLUMN telegram_id DROP NOT NULL
+  `);
+
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS app_credentials (
+      user_id UUID PRIMARY KEY
+        REFERENCES users(id) ON DELETE CASCADE,
+
+      login_identifier TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      salt TEXT NOT NULL,
+
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+      CONSTRAINT app_credentials_identifier_length
+        CHECK (
+          char_length(login_identifier) BETWEEN 3 AND 255
+        )
+    )
+  `);
+
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS app_sessions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+      user_id UUID NOT NULL
+        REFERENCES users(id) ON DELETE CASCADE,
+
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS app_sessions_user_id_idx
+    ON app_sessions(user_id)
+  `);
+
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS app_sessions_expires_at_idx
+    ON app_sessions(expires_at)
+  `);
+
+  console.log("Standalone app authentication schema is ready.");
 }
 
 async function ensureWalletTransactionTypes(
@@ -172,8 +230,7 @@ async function removeLegacyEntryNumberConstraint(
   const result = await client.query<{
     constraint_name: string;
   }>(`
-    SELECT
-      tc.constraint_name
+    SELECT tc.constraint_name
     FROM information_schema.table_constraints tc
     WHERE tc.constraint_type = 'UNIQUE'
       AND tc.table_schema = 'public'
@@ -187,8 +244,7 @@ async function removeLegacyEntryNumberConstraint(
       column_name: string;
     }>(
       `
-        SELECT
-          kcu.column_name
+        SELECT kcu.column_name
         FROM information_schema.key_column_usage kcu
         WHERE kcu.constraint_schema = 'public'
           AND kcu.constraint_name = $1
