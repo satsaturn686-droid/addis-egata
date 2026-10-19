@@ -175,34 +175,32 @@ const [needsLogin, setNeedsLogin] = useState(false);
 ‎const [authSubmitting, setAuthSubmitting] = useState(false);
   useEffect(() => {
 ‎  const webApp = window.Telegram?.WebApp;
-‎  const appToken = getAppSessionToken();
-‎
-‎  if (webApp) {
-‎    const storedInitData = sessionStorage.getItem(
-‎      "addis-egata-telegram-init-data",
-‎    );
-‎
-‎    if (webApp.initData) {
-‎      sessionStorage.setItem(
-‎        "addis-egata-telegram-init-data",
-‎        webApp.initData,
-‎      );
-‎    } else if (!storedInitData) {
-‎      setError(
-‎        "የTelegram ማረጋገጫ መረጃ አልተገኘም። App ውስጥ እንደገና ይክፈቱ።",
-‎      );
-‎      setLoading(false);
-‎      return;
-‎    }
-‎
-‎    webApp.ready();
-‎    webApp.expand();
-‎    setTelegramReady(true);
-‎  } else if (!appToken) {
-‎    setNeedsLogin(true);
-‎    setLoading(false);
-‎    return;
-‎  }
+‎    const webApp = window.Telegram?.WebApp;
+  const appToken = getAppSessionToken();
+  const storedInitData = sessionStorage.getItem(
+    "addis-egata-telegram-init-data",
+  );
+
+  const hasTelegramAuth = Boolean(
+    webApp?.initData || storedInitData,
+  );
+
+  if (webApp && hasTelegramAuth) {
+    if (webApp.initData) {
+      sessionStorage.setItem(
+        "addis-egata-telegram-init-data",
+        webApp.initData,
+      );
+    }
+
+    webApp.ready();
+    webApp.expand();
+    setTelegramReady(true);
+  } else if (!appToken) {
+    setNeedsLogin(true);
+    setLoading(false);
+    return;
+  }
 ‎
 ‎  const controller = new AbortController();
 ‎
