@@ -174,7 +174,7 @@ const [needsLogin, setNeedsLogin] = useState(false);
 ‎const [authError, setAuthError] = useState<string | null>(null);
 ‎const [authSubmitting, setAuthSubmitting] = useState(false);
   useEffect(() => {
-‎  const webApp = window.Telegram?.WebApp;
+‎  
 ‎    const webApp = window.Telegram?.WebApp;
   const appToken = getAppSessionToken();
   const storedInitData = sessionStorage.getItem(
