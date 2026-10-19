@@ -1,3 +1,4 @@
+
 import type {
   NextFunction,
   Request,
@@ -10,10 +11,15 @@ import {
 } from "../services/telegram.js";
 
 import {
+  getUserById,
   isAdminUser,
   upsertTelegramUser,
   type User,
 } from "../services/users.js";
+
+import {
+  getAppUserByToken,
+} from "../services/app-auth.js";
 
 declare global {
   namespace Express {
@@ -22,14 +28,13 @@ declare global {
       telegramUser?: TelegramUser;
       telegramAuthDate?: number;
       telegramQueryId?: string;
+      appSessionAuth?: boolean;
     }
   }
 }
 
 function getInitData(req: Request): string {
-  const headerValue = req.header(
-    "x-telegram-init-data",
-  );
+  const headerValue = req.header("x-telegram-init-data");
 
   if (headerValue?.trim()) {
     return headerValue.trim();
@@ -52,6 +57,34 @@ function getInitData(req: Request): string {
   return "";
 }
 
+function getBearerToken(
+  req: Request,
+): string {
+  const authorization = req.header("authorization");
+
+  if (!authorization) {
+    return "";
+  }
+
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+
+  return match?.[1]?.trim() ?? "";
+}
+
+function sendAuthRequired(res: Response): void {
+  res.status(401).json({
+    error: "AUTHENTICATION_REQUIRED",
+    message: "Please open the app or log in to continue.",
+  });
+}
+
+/**
+ * Accepts either validated Telegram Mini App initData
+ * or a valid standalone Android app session.
+ *
+ * Telegram initData remains validated using the existing
+ * Telegram verification service.
+ */
 export async function requireTelegramAuth(
   req: Request,
   res: Response,
@@ -60,37 +93,58 @@ export async function requireTelegramAuth(
   try {
     const initData = getInitData(req);
 
-    if (!initData) {
-      console.error(
-        "Telegram authentication validation failed: TELEGRAM_AUTH_REQUIRED",
-      );
+    // Preserve the existing Telegram authentication flow.
+    if (initData) {
+      const auth = validateTelegramInitData(initData);
+      const user = await upsertTelegramUser(auth.user);
 
+      req.user = user;
+      req.telegramUser = auth.user;
+      req.telegramAuthDate = auth.authDate;
+      req.telegramQueryId = auth.queryId;
+      req.appSessionAuth = false;
+
+      next();
+      return;
+    }
+
+    // Allow the standalone app to authenticate with its session.
+    const token = getBearerToken(req);
+
+    if (!token) {
+      sendAuthRequired(res);
+      return;
+    }
+
+    const appUser = await getAppUserByToken(token);
+
+    if (!appUser) {
       res.status(401).json({
-        error: "TELEGRAM_AUTH_REQUIRED",
-        message: "Telegram authentication is required.",
+        error: "INVALID_OR_EXPIRED_SESSION",
+        message: "Your session has expired. Please log in again.",
       });
       return;
     }
 
-    const auth = validateTelegramInitData(
-      initData,
-    );
+    const user = await getUserById(appUser.id);
 
-    const user = await upsertTelegramUser(
-      auth.user,
-    );
+    if (!user) {
+      res.status(401).json({
+        error: "USER_NOT_FOUND",
+        message: "This account could not be found.",
+      });
+      return;
+    }
 
     req.user = user;
-    req.telegramUser = auth.user;
-    req.telegramAuthDate = auth.authDate;
-    req.telegramQueryId = auth.queryId;
+    req.appSessionAuth = true;
 
     next();
   } catch (error) {
     const message =
       error instanceof Error
         ? error.message
-        : "TELEGRAM_AUTH_FAILED";
+        : "AUTHENTICATION_FAILED";
 
     const authErrors = new Set([
       "TELEGRAM_AUTH_REQUIRED",
@@ -108,11 +162,6 @@ export async function requireTelegramAuth(
     ]);
 
     if (authErrors.has(message)) {
-      console.error(
-        "Telegram authentication validation failed:",
-        message,
-      );
-
       res.status(401).json({
         error: message,
         message: "Telegram authentication failed.",
@@ -120,10 +169,7 @@ export async function requireTelegramAuth(
       return;
     }
 
-    console.error(
-      "Telegram authentication error:",
-      error,
-    );
+    console.error("Authentication error:", error);
 
     res.status(500).json({
       error: "AUTHENTICATION_ERROR",
@@ -139,16 +185,11 @@ export async function requireAdmin(
 ): Promise<void> {
   try {
     if (!req.user) {
-      res.status(401).json({
-        error: "AUTHENTICATION_REQUIRED",
-        message: "Authentication is required.",
-      });
+      sendAuthRequired(res);
       return;
     }
 
-    const admin = await isAdminUser(
-      req.user.id,
-    );
+    const admin = await isAdminUser(req.user.id);
 
     if (!admin) {
       res.status(403).json({
@@ -160,10 +201,7 @@ export async function requireAdmin(
 
     next();
   } catch (error) {
-    console.error(
-      "Admin authorization error:",
-      error,
-    );
+    console.error("Admin authorization error:", error);
 
     res.status(500).json({
       error: "AUTHORIZATION_ERROR",
