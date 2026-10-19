@@ -5,13 +5,19 @@ import {
   type FormEvent,
 } from "react";
 import {
+  clearAppSessionToken,
   createTelebirrPayment,
+  getAppCurrentUser,
+  getAppSessionToken,
   getCurrentUser,
   getDraw,
   getDraws,
   getMyEntries,
   getPaymentSettings,
+  loginAppUser,
+  registerAppUser,
   reserveNumber,
+  type AppUser,
   type Draw,
   type DrawPrize,
   type Entry,
@@ -19,7 +25,7 @@ import {
 } from "./api";
 import PublicResults from "./PublicResults";
 import UserWalletButton from "./UserWalletButton";
-  import WalletPanel from "./WalletPanel";
+import WalletPanel from "./WalletPanel";
 type TelegramWebApp = {
   ready: () => void;
   expand: () => void;
@@ -117,9 +123,9 @@ function getFriendlyPaymentError(error: unknown): string {
 }
 
 function App() {
-  const [user, setUser] =
-    useState<TelegramAuthResponse["user"] | null>(null);
-
+  
+const [user, setUser] =
+  useState<AppUser | TelegramAuthResponse["user"] | null>(null);
     const [draws, setDraws] = useState<Draw[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
 const [drawPrizes, setDrawPrizes] = useState<DrawPrize[]>([]);
