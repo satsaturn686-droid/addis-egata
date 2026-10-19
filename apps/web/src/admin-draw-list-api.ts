@@ -1,3 +1,4 @@
+
 import type { ApiError } from "./api";
 
 const API_BASE_URL =
@@ -75,6 +76,11 @@ async function adminDrawListRequest<T>(
   return payload as T;
 }
 
+export type AdminDrawPrizeItem = {
+  rank: number;
+  amount: number;
+};
+
 export type AdminDrawListItem = {
   id: string;
   name: string;
@@ -102,6 +108,7 @@ export type AdminDrawListItem = {
     | "cancelled";
   createdAt: string;
   updatedAt: string;
+  prizes: AdminDrawPrizeItem[];
 };
 
 export type AdminDrawListResponse = {
