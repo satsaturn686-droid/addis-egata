@@ -53,12 +53,15 @@ export type Draw = {
 };
 
 export type DrawPrize = {
+
+export type DrawPrize = {
   id: string;
   drawId: string;
   rank: number;
-  prizeAmount: number;
+  amount: number;
   createdAt: string;
 };
+
 
 export type DrawResponse = {
   draw: Draw;
