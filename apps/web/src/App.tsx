@@ -165,14 +165,14 @@ const [drawPrizes, setDrawPrizes] = useState<DrawPrize[]>([]);
     useState<Entry | null>(null);
 
   const [now, setNow] = useState(Date.now());
-const [needsLogin, setNeedsLogin] = useState(false);
-‎const [authMode, setAuthMode] = useState<"login" | "register">("login");
-‎const [loginIdentifier, setLoginIdentifier] = useState("");
-‎const [authPassword, setAuthPassword] = useState("");
-‎const [authFirstName, setAuthFirstName] = useState("");
-‎const [authLastName, setAuthLastName] = useState("");
-‎const [authError, setAuthError] = useState<string | null>(null);
-‎const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [needsLogin, setNeedsLogin] = useState(false);
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [loginIdentifier, setLoginIdentifier] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authFirstName, setAuthFirstName] = useState("");
+  const [authLastName, setAuthLastName] = useState("");
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authSubmitting, setAuthSubmitting] = useState(false);
   useEffect(() => {
 ‎  
 ‎    const webApp = window.Telegram?.WebApp;
