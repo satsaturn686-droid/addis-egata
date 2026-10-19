@@ -2536,6 +2536,37 @@ export default function AdminDrawManage() {
     }}
   />
 )}
+                  
+{draw.prizes && draw.prizes.length > 0 && (
+  <div style={{ marginTop: "12px" }}>
+    <h3>የአሸናፊዎች የሽልማት ድልድል</h3>
+
+    {draw.prizes
+      .slice()
+      .sort((a, b) => a.rank - b.rank)
+      .map((prize) => (
+        <p key={`${draw.id}-${prize.rank}`}>
+          {prize.rank === 1
+            ? "🥇 1ኛ ደረጃ"
+            : prize.rank === 2
+              ? "🥈 2ኛ ደረጃ"
+              : prize.rank === 3
+                ? "🥉 3ኛ ደረጃ"
+                : `${prize.rank}ኛ ደረጃ`}
+          {" — "}
+          {formatMoney(prize.amount)}
+        </p>
+      ))}
+  </div>
+)}
+
+{draw.actualPrizeCost != null && (
+  <p>
+    የሽልማት ትክክለኛ የግዢ ወጪ (Admin ብቻ)፦{" "}
+    {formatMoney(draw.actualPrizeCost)}
+  </p>
+)}
+
                 </div>
 
                 <span
