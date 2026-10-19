@@ -124,7 +124,23 @@ async function sendWinnerPaidNotification(
 }
 
 router.use(requireTelegramAuth);
+router.use((req, res, next) => {
+if (req.path.startsWith("/admin/")) {
+next();
+return;
+}
 
+if (!req.user || req.user.telegramId == null) {
+res.status(403).json({
+error: "TELEGRAM_ACCOUNT_REQUIRED",
+message:
+"This winner payout action requires a Telegram account.",
+});
+return;
+}
+
+next();
+});
 /*
  * GET /winner-payouts/mine
  */
