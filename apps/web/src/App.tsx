@@ -631,7 +631,7 @@ const numberBoardSummary = useMemo(() => {
       setLoadingEntries(false);
     }
   }
-
+‎
   if (loading) {
     return (
       <main className="app-shell">
@@ -667,7 +667,122 @@ const numberBoardSummary = useMemo(() => {
       </main>
     );
   }
+if (needsLogin) {
+  return (
+    <main className="app-shell">
+      <header className="topbar">
+        <div>
+          <p className="brand">ADDIS ዕጣ</p>
+          <p className="tagline">እድልህን ዲጂታል አድርግ</p>
+        </div>
+      </header>
 
+      <section className="hero">
+        <span className="status-badge">
+          {authMode === "login" ? "መግቢያ" : "መመዝገቢያ"}
+        </span>
+
+        <h1>
+          {authMode === "login"
+            ? "ወደ መለያዎ ይግቡ"
+            : "አዲስ መለያ ይፍጠሩ"}
+        </h1>
+
+        <p className="hero-description">
+          በUsername ወይም በስልክ ቁጥር ይግቡ።
+        </p>
+      </section>
+
+      <section className="draw-card">
+        <form
+          onSubmit={handleAppAuth}
+          style={{ display: "grid", gap: "12px" }}
+        >
+          {authMode === "register" && (
+            <>
+              <input
+                type="text"
+                placeholder="ስም"
+                autoComplete="given-name"
+                value={authFirstName}
+                onChange={(event) =>
+                  setAuthFirstName(event.target.value)
+                }
+              />
+
+              <input
+                type="text"
+                placeholder="የአባት ስም (ካለ)"
+                autoComplete="family-name"
+                value={authLastName}
+                onChange={(event) =>
+                  setAuthLastName(event.target.value)
+                }
+              />
+            </>
+          )}
+
+          <input
+            type="text"
+            placeholder="Username ወይም ስልክ ቁጥር"
+            autoComplete="username"
+            required
+            value={loginIdentifier}
+            onChange={(event) =>
+              setLoginIdentifier(event.target.value)
+            }
+          />
+
+          <input
+            type="password"
+            placeholder="Password (ቢያንስ 8 ቁምፊ)"
+            autoComplete={
+              authMode === "login"
+                ? "current-password"
+                : "new-password"
+            }
+            minLength={8}
+            maxLength={128}
+            required
+            value={authPassword}
+            onChange={(event) =>
+              setAuthPassword(event.target.value)
+            }
+          />
+
+          {authError && (
+            <p role="alert" className="error-message">
+              {authError}
+            </p>
+          )}
+
+          <button type="submit" disabled={authSubmitting}>
+            {authSubmitting
+              ? "እባክዎ ይጠብቁ..."
+              : authMode === "login"
+                ? "ግባ"
+                : "መለያ ፍጠር"}
+          </button>
+        </form>
+
+        <button
+          type="button"
+          onClick={() => {
+            setAuthMode((current) =>
+              current === "login" ? "register" : "login",
+            );
+            setAuthError(null);
+          }}
+          style={{ marginTop: "12px" }}
+        >
+          {authMode === "login"
+            ? "መለያ የለዎትም? ይመዝገቡ"
+            : "መለያ አለዎት? ይግቡ"}
+        </button>
+      </section>
+    </main>
+  );
+}
   if (error) {
     return (
       <main className="app-shell">
