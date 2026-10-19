@@ -5,16 +5,20 @@ import {
   type FormEvent,
 } from "react";
 import {
-  createTelebirrPayment,
-  getCurrentUser,
-  getDraws,
-  getMyEntries,
-  getPaymentSettings,
-  reserveNumber,
-  type Draw,
-  type Entry,
-  type TelegramAuthResponse,
-} from "./api";
+‎  createTelebirrPayment,
+‎  getCurrentUser,
+‎  getDraw,
+‎  getDraws,
+‎  getMyEntries,
+‎  getPaymentSettings,
+‎  reserveNumber,
+‎  type Draw,
+‎  type DrawPrize,
+‎  type Entry,
+‎  type TelegramAuthResponse,
+‎} from "./api";
+‎
+‎
 import PublicResults from "./PublicResults";
 import UserWalletButton from "./UserWalletButton";
   import WalletPanel from "./WalletPanel";
@@ -120,7 +124,8 @@ function App() {
 
     const [draws, setDraws] = useState<Draw[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
-
+const [drawPrizes, setDrawPrizes] = useState<DrawPrize[]>([]);
+  
   const [telebirrNumber, setTelebirrNumber] =
     useState("");
 
@@ -327,7 +332,33 @@ function App() {
     );
   }, [draws]);
 
-  
+  ‎useEffect(() => {
+‎  if (!activeDraw) {
+‎    setDrawPrizes([]);
+‎    return;
+‎  }
+‎
+‎  const controller = new AbortController();
+‎
+‎  getDraw(activeDraw.id, controller.signal)
+‎    .then((response) => {
+‎      setDrawPrizes(
+‎        [...response.prizes].sort(
+‎          (a, b) => a.rank - b.rank,
+‎        ),
+‎      );
+‎    })
+‎    .catch(() => {
+‎      if (!controller.signal.aborted) {
+‎        setDrawPrizes([]);
+‎      }
+‎    });
+‎
+‎  return () => {
+‎    controller.abort();
+‎  };
+‎}, [activeDraw?.id]);
+‎
   const myActiveEntries = useMemo(() => {
     if (!activeDraw) {
       return [];
@@ -841,6 +872,29 @@ const numberBoardSummary = useMemo(() => {
     </strong>
   </div>
 )}
+          
+{drawPrizes.length > 0 && (
+  <div className="prize-value">
+    <span>የእያንዳንዱ ደረጃ ሽልማት</span>
+
+    {drawPrizes.map((prize) => (
+      <div key={prize.id}>
+        <strong>
+          {prize.rank === 1
+            ? "🥇 1ኛ ደረጃ"
+            : prize.rank === 2
+              ? "🥈 2ኛ ደረጃ"
+              : prize.rank === 3
+                ? "🥉 3ኛ ደረጃ"
+                : `${prize.rank}ኛ ደረጃ`}
+          {" — "}
+          {formatMoney(prize.amount)}
+        </strong>
+      </div>
+    ))}
+  </div>
+)}
+
           <div className="stats">
             <div>
               <span>የመግቢያ ክፍያ</span>
