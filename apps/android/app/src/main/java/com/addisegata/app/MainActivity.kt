@@ -223,7 +223,7 @@ class MainActivity : Activity() {
                 val filled = draw.optInt("filledNumbers", 0)
                 val statusText = draw.optString("status", "")
 
-                addText(
+                val cardText =
                     "🎟️ $name\n" +
                     "🏆 ሽልማት፦ $prize\n" +
                     (if (description.isNotBlank() && description != "null")
@@ -231,14 +231,30 @@ class MainActivity : Activity() {
                     "💰 የመግቢያ ክፍያ፦ $fee ETB\n" +
                     "🔢 የቁጥር ብዛት፦ $total\n" +
                     "✅ የተያዙ፦ $filled\n" +
-                    "📌 ሁኔታ፦ $statusText",
-                    16,
-                    true
-                )
+                    "📌 ሁኔታ፦ $statusText\n\n" +
+                    "👉 ዕጣውን ለመክፈት እዚህ ይንኩ"
 
-                action("ዕጣውን እና ቁጥሮችን ክፈት") {
-                    openDraw(draw)
-                }
+                root.addView(Button(this).apply {
+                    text = cardText
+                    isAllCaps = false
+                    textSize = 16f
+                    gravity = Gravity.START or Gravity.CENTER_VERTICAL
+                    setPadding(28, 24, 28, 24)
+                    minHeight = 120
+                    setTextColor(android.graphics.Color.WHITE)
+                    backgroundTintList =
+                        android.content.res.ColorStateList.valueOf(
+                            android.graphics.Color.rgb(22, 101, 52)
+                        )
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                    setOnClickListener {
+                        openDraw(draw)
+                    }
+                })
+
                 addDivider()
             }
 
