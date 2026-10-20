@@ -667,7 +667,7 @@ async function handleAppAuth(
     setAuthSubmitting(false);
   }
 }
-‎if (loading) {
+  if (loading) {
     return (
       <main className="app-shell">
         <header className="topbar">
