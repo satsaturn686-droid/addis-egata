@@ -173,9 +173,9 @@ const [drawPrizes, setDrawPrizes] = useState<DrawPrize[]>([]);
   const [authLastName, setAuthLastName] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSubmitting, setAuthSubmitting] = useState(false);
-  useEffect(() => {
-‎  
-‎    const webApp = window.Telegram?.WebApp;
+  
+useEffect(() => {
+  const webApp = window.Telegram?.WebApp;
   const appToken = getAppSessionToken();
   const storedInitData = sessionStorage.getItem(
     "addis-egata-telegram-init-data",
@@ -201,74 +201,74 @@ const [drawPrizes, setDrawPrizes] = useState<DrawPrize[]>([]);
     setLoading(false);
     return;
   }
-‎
-‎  const controller = new AbortController();
-‎
-‎  async function loadApp() {
-‎    try {
-‎      setLoading(true);
-‎      setError(null);
-‎
-‎      const [userResponse, drawsResponse] = await Promise.all([
-  appToken && !hasTelegramAuth
-    ? getAppCurrentUser()
-    : getCurrentUser(controller.signal),
-  getDraws(controller.signal),
-]);
-‎
-‎      setUser(userResponse.user);
-‎      setDraws(drawsResponse.draws);
-‎
-‎      try {
-‎        const paymentSettingsResponse = await getPaymentSettings(
-‎          controller.signal,
-‎        );
-‎        setTelebirrNumber(
-‎          paymentSettingsResponse.settings.telebirrNumber,
-‎        );
-‎      } catch {
-‎        setTelebirrNumber("");
-‎      }
-‎
-‎      try {
-‎        const entriesResponse = await getMyEntries(controller.signal);
-‎        setEntries(entriesResponse.entries);
-‎      } catch {
-‎        setEntries([]);
-‎      }
-‎    } catch (loadError) {
-‎      if (
-‎        loadError instanceof DOMException &&
-‎        loadError.name === "AbortError"
-‎      ) {
-‎        return;
-‎      }
-‎
-‎      if (!hasTelegramAuth) {
-‎        clearAppSessionToken();
-‎        setNeedsLogin(true);
-‎        setAuthError(
-‎          loadError instanceof Error
-‎            ? loadError.message
-‎            : "መግባት አልተቻለም። እንደገና ይሞክሩ።",
-‎        );
-‎      } else {
-‎        setError(
-‎          loadError instanceof Error
-‎            ? loadError.message
-‎            : "መረጃውን መጫን አልተቻለም።",
-‎        );
-‎      }
-‎    } finally {
-‎      setLoading(false);
-‎    }
-‎  }
-‎
-‎  void loadApp();
-‎
-‎  return () => controller.abort();
-‎}, []);
-      
+
+  const controller = new AbortController();
+
+  async function loadApp() {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const [userResponse, drawsResponse] = await Promise.all([
+        appToken && !hasTelegramAuth
+          ? getAppCurrentUser()
+          : getCurrentUser(controller.signal),
+        getDraws(controller.signal),
+      ]);
+
+      setUser(userResponse.user);
+      setDraws(drawsResponse.draws);
+
+      try {
+        const paymentSettingsResponse = await getPaymentSettings(
+          controller.signal,
+        );
+        setTelebirrNumber(
+          paymentSettingsResponse.settings.telebirrNumber,
+        );
+      } catch {
+        setTelebirrNumber("");
+      }
+
+      try {
+        const entriesResponse = await getMyEntries(controller.signal);
+        setEntries(entriesResponse.entries);
+      } catch {
+        setEntries([]);
+      }
+    } catch (loadError) {
+      if (
+        loadError instanceof DOMException &&
+        loadError.name === "AbortError"
+      ) {
+        return;
+      }
+
+      if (!hasTelegramAuth) {
+        clearAppSessionToken();
+        setNeedsLogin(true);
+        setAuthError(
+          loadError instanceof Error
+            ? loadError.message
+            : "መግባት አልተቻለም። እንደገና ይሞክሩ።",
+        );
+      } else {
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "መረጃውን መጫን አልተቻለም።",
+        );
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  void loadApp();
+
+  return () => controller.abort();
+}, []);
+
   useEffect(() => {
     if (!telegramReady && !getAppSessionToken()) {
       return;
