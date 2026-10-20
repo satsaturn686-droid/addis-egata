@@ -636,8 +636,7 @@ const numberBoardSummary = useMemo(() => {
       setLoadingEntries(false);
     }
   }
-‎async function handleAppAuth(
-  
+‎
 async function handleAppAuth(
   event: FormEvent<HTMLFormElement>,
 ) {
