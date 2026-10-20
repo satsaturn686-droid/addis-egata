@@ -1,4 +1,3 @@
-
 package com.addisegata.app
 
 import android.app.Activity
@@ -127,7 +126,7 @@ class MainActivity : Activity() {
         val password = field("Password")
         password.inputType = 129
 
-        action("ግባ") {
+        action("Log in") {
             val id = identifier.text.toString().trim()
             val pass = password.text.toString()
 
@@ -154,7 +153,7 @@ class MainActivity : Activity() {
             }
         }
 
-        action("አዲስ መለያ ፍጠር") { showRegister() }
+        action("Register") { showRegister() }
     }
 
     private fun showRegister() {
@@ -166,7 +165,7 @@ class MainActivity : Activity() {
         val password = field("Password — ቢያንስ 8 ቁምፊ")
         password.inputType = 129
 
-        action("መለያ ፍጠር") {
+        action("Register") {
             val id = identifier.text.toString().trim()
             val pass = password.text.toString()
 
@@ -192,7 +191,7 @@ class MainActivity : Activity() {
             }
         }
 
-        action("ወደ መግቢያ ተመለስ") { showLogin() }
+        action("Back to Log in") { showLogin() }
     }
 
     private fun showDraws() {
@@ -243,6 +242,7 @@ class MainActivity : Activity() {
                 addDivider()
             }
 
+            action("💰 Wallet") { showWallet() }
             action("የእኔ ቁጥሮች") { showMyEntries() }
             action("ዕጣዎችን አድስ") { showDraws() }
             action("ውጣ") { logout() }
@@ -500,6 +500,191 @@ class MainActivity : Activity() {
 
             action("ዕጣዎችን ክፈት") { showDraws() }
             action("አድስ") { showMyEntries() }
+        }
+    }
+
+    private fun showWallet() {
+        screen("ADDIS ዕጣ", "💰 Wallet")
+        message("ዋሌት እየተጫነ ነው…")
+
+        request("GET", "/payments/wallet", auth = true) { code, body ->
+            if (code != 200) {
+                message(body.optString("message", "ዋሌትን መጫን አልተቻለም።"))
+                action("Retry") { showWallet() }
+                action("Back to draws") { showDraws() }
+                return@request
+            }
+
+            val wallet = body.optJSONObject("wallet") ?: JSONObject()
+            val balance = wallet.optDouble("balance", 0.0)
+            status.text = ""
+            addText("Current balance: %.2f ETB".format(balance), 22, true)
+
+            action("Deposit with Telebirr") { showWalletDeposit() }
+            action("Withdraw to Telebirr") { showWalletWithdraw(balance) }
+            action("Wallet history") { showWalletHistory() }
+            action("Refresh balance") { showWallet() }
+            action("Back to draws") { showDraws() }
+        }
+    }
+
+    private fun showWalletDeposit() {
+        screen("ADDIS ዕጣ", "Deposit with Telebirr")
+        val amount = field("Amount in ETB")
+        amount.inputType = 8194
+        val reference = field("Telebirr transaction reference")
+        val sender = field("Sender full name (optional)")
+
+        request("GET", "/payments/settings", auth = true) { code, body ->
+            val number = if (code == 200) {
+                body.optJSONObject("settings")?.optString("telebirrNumber", "") ?: ""
+            } else ""
+            status.text = if (number.isNotBlank()) {
+                "Send the deposit to Telebirr number: $number"
+            } else {
+                "Telebirr number is unavailable. Please check with the administrator."
+            }
+        }
+
+        action("Copy Telebirr number") {
+            request("GET", "/payments/settings", auth = true) { code, body ->
+                val number = if (code == 200) {
+                    body.optJSONObject("settings")?.optString("telebirrNumber", "") ?: ""
+                } else ""
+                if (number.isBlank()) {
+                    message("Telebirr number is unavailable.")
+                } else {
+                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Telebirr", number))
+                    message("Telebirr number copied.")
+                }
+            }
+        }
+
+        action("Submit deposit request") {
+            val value = amount.text.toString().trim().toDoubleOrNull()
+            val ref = reference.text.toString().trim()
+            val name = sender.text.toString().trim()
+            if (value == null || value <= 0 || ref.isBlank()) {
+                message("Enter a valid amount and transaction reference.")
+                return@action
+            }
+
+            val payload = JSONObject()
+                .put("amount", value)
+                .put("transactionReference", ref)
+            if (name.isNotBlank()) payload.put("senderName", name)
+
+            message("Submitting deposit request…")
+            request("POST", "/payments/wallet/deposit/telebirr", payload, true) { resultCode, result ->
+                if (resultCode == 201) {
+                    screen("ADDIS ዕጣ", "Deposit request submitted")
+                    addText("Your deposit request is pending admin approval.", 18, true)
+                    addText("Amount: %.2f ETB".format(value))
+                    addText("Reference: $ref")
+                    action("Open Wallet") { showWallet() }
+                } else {
+                    message(result.optString("message", "Deposit request failed."))
+                }
+            }
+        }
+        action("Back to Wallet") { showWallet() }
+    }
+
+    private fun showWalletWithdraw(balance: Double) {
+        screen("ADDIS ዕጣ", "Withdraw to Telebirr")
+        addText("Available balance: %.2f ETB".format(balance), 18, true)
+        val amount = field("Amount in ETB")
+        amount.inputType = 8194
+        val number = field("Your Telebirr number")
+        number.inputType = 3
+
+        action("Submit withdrawal request") {
+            val value = amount.text.toString().trim().toDoubleOrNull()
+            val phone = number.text.toString().trim()
+            if (value == null || value <= 0 || phone.isBlank()) {
+                message("Enter a valid amount and Telebirr number.")
+                return@action
+            }
+            if (value > balance) {
+                message("The amount exceeds your available balance.")
+                return@action
+            }
+
+            val payload = JSONObject()
+                .put("amount", value)
+                .put("telebirrNumber", phone)
+            message("Submitting withdrawal request…")
+            request("POST", "/payments/wallet/withdraw", payload, true) { code, body ->
+                if (code == 201) {
+                    screen("ADDIS ዕጣ", "Withdrawal request submitted")
+                    addText("Your withdrawal request is pending admin processing.", 18, true)
+                    addText("Amount: %.2f ETB".format(value))
+                    action("Open Wallet") { showWallet() }
+                } else {
+                    message(body.optString("message", "Withdrawal request failed."))
+                }
+            }
+        }
+        action("Back to Wallet") { showWallet() }
+    }
+
+    private fun showWalletHistory() {
+        screen("ADDIS ዕጣ", "Wallet history")
+        message("Loading wallet history…")
+        request("GET", "/payments/wallet/history", auth = true) { code, body ->
+            if (code != 200) {
+                message(body.optString("message", "Wallet history could not be loaded."))
+                action("Retry") { showWalletHistory() }
+                action("Back to Wallet") { showWallet() }
+                return@request
+            }
+
+            status.text = ""
+            val history = body.optJSONObject("history") ?: JSONObject()
+            val transactions = history.optJSONArray("transactions") ?: JSONArray()
+            val deposits = history.optJSONArray("deposits") ?: JSONArray()
+            val withdrawals = history.optJSONArray("withdrawals") ?: JSONArray()
+
+            addText("Transactions", 18, true)
+            if (transactions.length() == 0) addText("No transactions yet.")
+            for (i in 0 until transactions.length()) {
+                val item = transactions.optJSONObject(i) ?: continue
+                addText(
+                    "${item.optString("type")} • ${item.optDouble("amount", 0.0)} ETB\n" +
+                    "${item.optString("description", "")}\n" +
+                    "Balance after: ${item.optDouble("balanceAfter", 0.0)} ETB\n" +
+                    "${item.optString("createdAt", "")}"
+                )
+                addDivider()
+            }
+
+            addText("Deposits", 18, true)
+            if (deposits.length() == 0) addText("No deposits yet.")
+            for (i in 0 until deposits.length()) {
+                val item = deposits.optJSONObject(i) ?: continue
+                addText(
+                    "${item.optDouble("amount", 0.0)} ETB • ${item.optString("status")}\n" +
+                    "Reference: ${item.optString("transactionReference", "")}\n" +
+                    "${item.optString("createdAt", "")}"
+                )
+                addDivider()
+            }
+
+            addText("Withdrawals", 18, true)
+            if (withdrawals.length() == 0) addText("No withdrawals yet.")
+            for (i in 0 until withdrawals.length()) {
+                val item = withdrawals.optJSONObject(i) ?: continue
+                addText(
+                    "${item.optDouble("amount", 0.0)} ETB • ${item.optString("status")}\n" +
+                    "Telebirr: ${item.optString("telebirrNumber", "")}\n" +
+                    "${item.optString("createdAt", "")}"
+                )
+                addDivider()
+            }
+
+            action("Refresh history") { showWalletHistory() }
+            action("Back to Wallet") { showWallet() }
         }
     }
 
