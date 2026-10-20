@@ -259,7 +259,7 @@ class MainActivity : Activity() {
         val input = EditText(this).apply {
             hint = hintText
             textSize = 16f
-            singleLine = true
+            setSingleLine(true)
         }
         root.addView(input)
         return input
