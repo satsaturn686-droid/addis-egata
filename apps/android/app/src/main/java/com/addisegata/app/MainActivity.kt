@@ -789,7 +789,6 @@ private fun showMyWinners() {
         action("💰 ዋሌት") { showWallet() }
         action("ወደ ዕጣዎች ተመለስ") { showDraws() }
     }
-}
 private fun showResultsHistory() {
     screen("ADDIS ዕጣ", "📋 የዕጣ ውጤት ታሪክ")
     message("የዕጣ ውጤቶች እየተጫኑ ነው…")
