@@ -617,86 +617,176 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showMyWinners() {
-        screen("ADDIS ዕጣ", "🏆 የእኔ አሸናፊ ሽልማቶች")
-        message("የአሸናፊ ታሪክ እየተጫነ ነው…")
+private fun showMyWinners() {
+    screen("ADDIS ዕጣ", "🏆 የእኔ አሸናፊ ሽልማቶች")
+    message("የአሸናፊ ታሪክ እየተጫነ ነው…")
 
-        request("GET", "/full-app/winners/mine", auth = true) { code, body ->
-            if (code != 200) {
-                message(
-                    body.optString(
-                        "message",
-                        "የአሸናፊ ታሪክን መጫን አልተቻለም።"
-                    )
+    request("GET", "/full-app/winners/mine", auth = true) { code, body ->
+        if (code != 200) {
+            message(
+                body.optString(
+                    "message",
+                    "የአሸናፊ ታሪክን መጫን አልተቻለም።"
                 )
-                action("እንደገና ሞክር") { showMyWinners() }
-                action("ወደ ዕጣዎች ተመለስ") { showDraws() }
-                return@request
-            }
+            )
+            action("እንደገና ሞክር") { showMyWinners() }
+            action("ወደ ዕጣዎች ተመለስ") { showDraws() }
+            return@request
+        }
 
-            status.text = ""
-            val winners = body.optJSONArray("winners") ?: JSONArray()
+        status.text = ""
+        val winners = body.optJSONArray("winners") ?: JSONArray()
 
-            if (winners.length() == 0) {
-                addText("እስካሁን ያሸነፉት ሽልማት የለም።", 18, true)
-            }
+        if (winners.length() == 0) {
+            addText("እስካሁን ያሸነፉት ሽልማት የለም።", 18, true)
+        }
 
-            for (i in 0 until winners.length()) {
-                val winner = winners.optJSONObject(i) ?: continue
-                val winnerId = winner.optString("winnerId")
-                val drawName = winner.optString("drawName", "ዕጣ")
-                val prizeType = winner.optString("prizeType", "")
-                val amount = winner.optDouble("prizeAmount", 0.0)
-                val credited = winner.optBoolean("creditedToWallet", false)
+        for (i in 0 until winners.length()) {
+            val winner = winners.optJSONObject(i) ?: continue
+            val winnerId = winner.optString("winnerId")
+            val drawName = winner.optString("drawName", "ዕጣ")
+            val prizeType = winner.optString("prizeType", "")
+            val amount = winner.optDouble("prizeAmount", 0.0)
+            val credited = winner.optBoolean("creditedToWallet", false)
+            val payoutStatus = winner.optString("payoutStatus", "")
+            val recipientName = winner.optString("recipientFullName", "")
+            val recipientPhone = winner.optString("recipientPhone", "")
 
-                addDivider()
-                addText("🏆 $drawName", 19, true)
+            addDivider()
+            addText("🏆 $drawName", 19, true)
 
-                if (prizeType == "cash") {
-                    addText("💰 የገንዘብ ሽልማት፦ %.2f ETB".format(amount))
+            if (prizeType == "cash") {
+                addText("💰 የገንዘብ ሽልማት፦ %.2f ETB".format(amount))
 
-                    if (credited) {
-                        addText("✅ ሽልማቱ ወደ Wallet ገብቷል።", 16, true)
-                    } else {
-                        action("💰 ሽልማቱን ወደ Wallet አስገባ") {
+                if (credited) {
+                    addText("✅ ሽልማቱ ወደ Wallet ገብቷል።", 16, true)
+                } else {
+                    action("💰 ሽልማቱን ወደ Wallet አስገባ") {
+                        if (winnerId.isBlank()) {
+                            message("የአሸናፊው መለያ አልተገኘም።")
+                            return@action
+                        }
+
+                        message("ሽልማቱ ወደ Wallet እየገባ ነው…")
+
+                        request(
+                            "POST",
+                            "/full-app/winners/$winnerId/credit",
+                            auth = true
+                        ) { creditCode, creditBody ->
+                            if (creditCode == 200) {
+                                message("✅ ሽልማቱ ወደ Wallet ገብቷል።")
+                                showMyWinners()
+                            } else {
+                                message(
+                                    creditBody.optString(
+                                        "message",
+                                        "ሽልማቱን ወደ Wallet ማስገባት አልተቻለም።"
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            } else if (prizeType == "physical") {
+                addText("🎁 የአካላዊ ሽልማት አሸናፊ ነዎት!", 18, true)
+                addText(
+                    "ሽልማትዎን ለመቀበል ሙሉ ስምዎንና ስልክ ቁጥርዎን ይላኩ።"
+                )
+
+                when (payoutStatus) {
+                    "submitted" -> {
+                        addText("🕒 መረጃዎ ለAdmin ደርሷል። ማረጋገጫ እየተጠበቀ ነው።", 16, true)
+                        if (recipientName.isNotBlank()) {
+                            addText("ሙሉ ስም፦ $recipientName")
+                        }
+                        if (recipientPhone.isNotBlank()) {
+                            addText("ስልክ፦ $recipientPhone")
+                        }
+                    }
+
+                    "approved" -> {
+                        addText("✅ የሽልማት መረጃዎ ተፈቅዷል። Admin የማስረከብ ሂደቱን ያስተናግዳል።", 16, true)
+                    }
+
+                    "paid" -> {
+                        addText("✅ ሽልማትዎ ተሰጥቷል።", 16, true)
+                    }
+
+                    else -> {
+                        if (payoutStatus == "rejected") {
+                            addText("⚠️ የቀድሞ ጥያቄዎ አልተቀበለም። መረጃዎን እንደገና ይላኩ።")
+                        }
+
+                        val fullNameInput = field("ሙሉ ስምዎ")
+                        if (recipientName.isNotBlank()) {
+                            fullNameInput.setText(recipientName)
+                        }
+
+                        val phoneInput = field("ስልክ ቁጥርዎ")
+                        phoneInput.inputType = 3
+                        if (recipientPhone.isNotBlank()) {
+                            phoneInput.setText(recipientPhone)
+                        }
+
+                        action("📨 ሽልማቴን ለመቀበል መረጃ ላክ") {
+                            val fullName = fullNameInput.text.toString().trim()
+                            val phone = phoneInput.text.toString().trim()
+
+                            if (fullName.isBlank() || phone.isBlank()) {
+                                message("እባክዎ ሙሉ ስምዎንና ስልክ ቁጥርዎን ያስገቡ።")
+                                return@action
+                            }
+
                             if (winnerId.isBlank()) {
                                 message("የአሸናፊው መለያ አልተገኘም።")
                                 return@action
                             }
 
-                            message("ሽልማቱ ወደ Wallet እየገባ ነው…")
+                            val payload = JSONObject()
+                                .put("fullName", fullName)
+                                .put("phone", phone)
+
+                            message("የሽልማት መረጃዎ እየተላከ ነው…")
 
                             request(
                                 "POST",
-                                "/full-app/winners/$winnerId/credit",
-                                auth = true
-                            ) { creditCode, creditBody ->
-                                if (creditCode == 200) {
-                                    message("✅ ሽልማቱ ወደ Wallet ገብቷል።")
+                                "/full-app/winners/$winnerId/physical-claim",
+                                payload,
+                                true
+                            ) { claimCode, claimBody ->
+                                if (claimCode == 200) {
+                                    message(
+                                        claimBody.optString(
+                                            "message",
+                                            "መረጃዎ ለAdmin ተልኳል።"
+                                        )
+                                    )
                                     showMyWinners()
                                 } else {
                                     message(
-                                        creditBody.optString(
+                                        claimBody.optString(
                                             "message",
-                                            "ሽልማቱን ወደ Wallet ማስገባት አልተቻለም።"
+                                            "መረጃውን መላክ አልተቻለም።"
                                         )
                                     )
                                 }
                             }
                         }
                     }
-                } else {
-                    addText("🎁 የሽልማት አይነት፦ $prizeType")
-                    addText("ይህ የገንዘብ ሽልማት ስላልሆነ በዚህ ቁልፍ Wallet ውስጥ አይገባም።")
                 }
+            } else {
+                addText("🎁 የሽልማት አይነት፦ $prizeType")
+                addText("ለዚህ ሽልማት የሚያስፈልገውን መረጃ ከAdmin ያረጋግጡ።")
             }
-
-            addDivider()
-            action("🔄 ታሪኩን አድስ") { showMyWinners() }
-            action("💰 ዋሌት") { showWallet() }
-            action("ወደ ዕጣዎች ተመለስ") { showDraws() }
         }
+
+        addDivider()
+        action("🔄 ታሪኩን አድስ") { showMyWinners() }
+        action("💰 ዋሌት") { showWallet() }
+        action("ወደ ዕጣዎች ተመለስ") { showDraws() }
     }
+}
 
     private fun showWallet() {
         screen("ADDIS ዕጣ", "💰 ዋሌት")
