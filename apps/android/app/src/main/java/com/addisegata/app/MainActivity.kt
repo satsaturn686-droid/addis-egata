@@ -86,17 +86,11 @@ class MainActivity : Activity() {
 
                         if (data != null) {
                             doOutput = true
-                            setRequestProperty(
-                                "Content-Type",
-                                "application/json"
-                            )
+                            setRequestProperty("Content-Type", "application/json")
                         }
 
                         if (auth && token.isNotBlank()) {
-                            setRequestProperty(
-                                "Authorization",
-                                "Bearer $token"
-                            )
+                            setRequestProperty("Authorization", "Bearer $token")
                         }
                     }
 
@@ -126,7 +120,6 @@ class MainActivity : Activity() {
                 } catch (_: Exception) {
                     JSONObject().put("message", body)
                 }
-
             } catch (e: Exception) {
                 result = JSONObject().put(
                     "message",
@@ -237,7 +230,6 @@ class MainActivity : Activity() {
                 return@request
             }
 
-            status.text = ""
             val draws = body.optJSONArray("draws") ?: JSONArray()
 
             if (draws.length() == 0) {
@@ -390,6 +382,7 @@ class MainActivity : Activity() {
                     orientation = LinearLayout.VERTICAL
                 }
                 root.addView(grid)
+
                 var row: LinearLayout? = null
 
                 for (number in 1..total) {
@@ -404,14 +397,25 @@ class MainActivity : Activity() {
                     val numberButton = Button(this).apply {
                         text = number.toString()
                         isAllCaps = false
-                        textSize = 13f
+                        textSize = 16f
+                        setTypeface(null, Typeface.BOLD)
                         val isOpen = selectedDraw.optString("status") == "open"
                         isEnabled = number !in taken && isOpen
 
-                        backgroundTintList = android.content.res.ColorStateList.valueOf(
-                            if (number in taken) android.graphics.Color.GRAY else greenLight
-                        )
-                        setTextColor(white)
+                        backgroundTintList =
+                            android.content.res.ColorStateList.valueOf(
+                                if (number in taken) {
+                                    android.graphics.Color.rgb(180, 185, 190)
+                                } else {
+                                    android.graphics.Color.rgb(22, 101, 52)
+                                }
+                            )
+
+                        setTextColor(android.graphics.Color.WHITE)
+                        minimumWidth = 0
+                        minWidth = 0
+                        minHeight = 52
+                        setPadding(0, 0, 0, 0)
                     }
 
                     numberButton.setOnClickListener {
@@ -434,9 +438,12 @@ class MainActivity : Activity() {
                         }
                     }
 
-                    row?.addView(numberButton, LinearLayout.LayoutParams(0, 48, 1f).apply {
-                        setMargins(2, 2, 2, 2)
-                    })
+                    row?.addView(
+                        numberButton,
+                        LinearLayout.LayoutParams(0, 52, 1f).apply {
+                            setMargins(3, 3, 3, 3)
+                        }
+                    )
                 }
             }
 
@@ -704,7 +711,6 @@ class MainActivity : Activity() {
             val closeTime = settings.optString("serviceCloseTime", "12:00")
             val localTime = settings.optString("localTime", "")
             val isOpen = settings.optBoolean("isOpen", false)
-
             val range = "${displayTime(openTime)} – ${displayTime(closeTime)}"
 
             details.text = when {
@@ -750,12 +756,17 @@ class MainActivity : Activity() {
         amount.inputType = 8194
         val reference = field("የTelebirr Transaction Reference")
         val sender = field("የላኪው ሙሉ ስም (አማራጭ)")
+        val targetRoot = root
 
         request("GET", "/payments/settings", auth = true) { code, body ->
-            if (root !== root) return@request
+            if (root !== targetRoot) return@request
+
             val number = if (code == 200) {
                 body.optJSONObject("settings")?.optString("telebirrNumber", "") ?: ""
-            } else ""
+            } else {
+                ""
+            }
+
             status.text = if (number.isNotBlank()) {
                 "📱 የTelebirr ቁጥር፦ $number"
             } else {
@@ -767,7 +778,9 @@ class MainActivity : Activity() {
             request("GET", "/payments/settings", auth = true) { code, body ->
                 val number = if (code == 200) {
                     body.optJSONObject("settings")?.optString("telebirrNumber", "") ?: ""
-                } else ""
+                } else {
+                    ""
+                }
 
                 if (number.isBlank()) {
                     message("የTelebirr ቁጥር አልተገኘም።")
@@ -802,7 +815,12 @@ class MainActivity : Activity() {
 
             message("የDeposit ጥያቄው እየተላከ ነው…")
 
-            request("POST", "/payments/wallet/deposit/telebirr", payload, true) { resultCode, result ->
+            request(
+                "POST",
+                "/payments/wallet/deposit/telebirr",
+                payload,
+                true
+            ) { resultCode, result ->
                 if (resultCode == 201) {
                     screen("ADDIS ዕጣ", "የDeposit ጥያቄ")
                     addText("✅ የDeposit ጥያቄዎ ተልኳል።", 20, true)
@@ -893,7 +911,9 @@ class MainActivity : Activity() {
 
             addText("የገንዘብ እንቅስቃሴ", 19, true)
 
-            if (transactions.length() == 0) addText("እስካሁን የገንዘብ እንቅስቃሴ የለም።")
+            if (transactions.length() == 0) {
+                addText("እስካሁን የገንዘብ እንቅስቃሴ የለም።")
+            }
 
             for (i in 0 until transactions.length()) {
                 val item = transactions.optJSONObject(i) ?: continue
@@ -1055,7 +1075,8 @@ class MainActivity : Activity() {
             setTypeface(null, Typeface.BOLD)
             setTextColor(white)
             minHeight = 52
-            backgroundTintList = android.content.res.ColorStateList.valueOf(greenLight)
+            backgroundTintList =
+                android.content.res.ColorStateList.valueOf(greenLight)
             setPadding(16, 10, 16, 10)
             setOnClickListener { run() }
         }, LinearLayout.LayoutParams(
