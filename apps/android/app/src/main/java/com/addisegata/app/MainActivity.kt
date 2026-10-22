@@ -1,4 +1,3 @@
-
 package com.addisegata.app
 
 import android.app.Activity
