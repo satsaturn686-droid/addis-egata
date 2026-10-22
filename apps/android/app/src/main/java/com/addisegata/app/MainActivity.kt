@@ -322,6 +322,9 @@ class MainActivity : Activity() {
             action("🏆 የእኔ አሸናፊ ሽልማቶች") {
     showMyWinners()
 }
+            action("📋 የዕጣ ውጤት ታሪክ") {
+    showResultsHistory()
+}
             action("ውጣ") { logout() }
         }
     }
@@ -787,7 +790,114 @@ private fun showMyWinners() {
         action("ወደ ዕጣዎች ተመለስ") { showDraws() }
     }
 }
+private fun showResultsHistory() {
+    screen("ADDIS ዕጣ", "📋 የዕጣ ውጤት ታሪክ")
+    message("የዕጣ ውጤቶች እየተጫኑ ነው…")
 
+    request("GET", "/results", auth = true) { code, body ->
+        if (code != 200) {
+            message(
+                body.optString(
+                    "message",
+                    "የዕጣ ውጤት ታሪክን መጫን አልተቻለም።"
+                )
+            )
+            action("🔄 እንደገና ሞክር") {
+                showResultsHistory()
+            }
+            action("ወደ ዕጣዎች ተመለስ") {
+                showDraws()
+            }
+            return@request
+        }
+
+        status.text = ""
+
+        val results = body.optJSONArray("results")
+            ?: JSONArray()
+
+        if (results.length() == 0) {
+            addText("እስካሁን የታተመ የዕጣ ውጤት የለም።", 18, true)
+        }
+
+        for (i in 0 until results.length()) {
+            val result = results.optJSONObject(i)
+                ?: continue
+
+            addDivider()
+
+            addText(
+                "🎟️ ${result.optString("drawName", "ዕጣ")}",
+                20,
+                true
+            )
+
+            addText(
+                "🏆 ሽልማት፦ ${result.optString("prizeName", "—")}",
+                17,
+                true
+            )
+
+            addText(
+                "👥 የአሸናፊዎች ብዛት፦ " +
+                    result.optInt("winnerCount", 0)
+            )
+
+            addText(
+                "📅 ውጤቱ የታተመበት፦ " +
+                    result.optString("publishedAt", "—")
+            )
+
+            val winners = result.optJSONArray("winners")
+                ?: JSONArray()
+
+            addText("🏅 የአሸናፊዎች ዝርዝር", 17, true)
+
+            if (winners.length() == 0) {
+                addText("የአሸናፊዎች ዝርዝር የለም።")
+            }
+
+            for (j in 0 until winners.length()) {
+                val winner = winners.optJSONObject(j)
+                    ?: continue
+
+                val firstName = winner.optString("firstName", "")
+                val lastName = winner.optString("lastName", "")
+                val username = winner.optString("username", "")
+
+                val name = listOf(firstName, lastName)
+                    .filter {
+                        it.isNotBlank() && it != "null"
+                    }
+                    .joinToString(" ")
+                    .ifBlank {
+                        if (username.isNotBlank() && username != "null") {
+                            "@$username"
+                        } else {
+                            "ተሳታፊ"
+                        }
+                    }
+
+                addText(
+                    "${winner.optInt("rank")}ኛ — $name\n" +
+                        "🎟️ ቁጥር፦ #${winner.optInt("number")}\n" +
+                        "💰 ሽልማት፦ " +
+                        "${winner.optDouble("prizeAmount", 0.0)} ETB"
+                )
+            }
+        }
+
+        addDivider()
+
+        action("🔄 ውጤቶችን አድስ") {
+            showResultsHistory()
+        }
+
+        action("ወደ ዕጣዎች ተመለስ") {
+            showDraws()
+        }
+    }
+}
     private fun showWallet() {
         screen("ADDIS ዕጣ", "💰 ዋሌት")
         addServiceHoursNotice()
