@@ -480,7 +480,7 @@ class MainActivity : Activity() {
     }
 
     private fun showPayment() {
-        screen("ADDIS ዕጣ", "የTelebirr ክፍያ")
+        screen("ADDIS ዕጣ", "💰 ከWallet ክፈል")
 
         val entryId = selectedEntry.optString("id")
         val number = selectedEntry.optInt("number", selectedNumber)
@@ -488,76 +488,78 @@ class MainActivity : Activity() {
 
         addText("🎟️ ${selectedDraw.optString("name")}", 19, true)
         addText("🔢 የመረጡት ቁጥር፦ $number")
-        addText("💰 የሚከፈል፦ $fee ETB", 18, true)
-        addText("⏳ ቁጥሩ ለ30 ደቂቃ ይያዛል። በዚህ ጊዜ ውስጥ ክፍያውን ያስገቡ።")
+        addText("💰 የሚከፈለው፦ $fee ETB", 18, true)
+        addText("ከWallet ለመክፈል ከታች ያለውን ቁልፍ ይጫኑ።")
 
-        val reference = field("የTelebirr Transaction Reference")
-        val sender = field("የላኪው ሙሉ ስም (አማራጭ)")
-
-        message("የTelebirr ቁጥር እየተጫነ ነው…")
-
-        request("GET", "/payments/settings", auth = true) { code, body ->
-            telebirrNumber = if (code == 200) {
-                body.optJSONObject("settings")?.optString("telebirrNumber", "") ?: ""
+        request("GET", "/payments/wallet", auth = true) { code, body ->
+            val wallet = body.optJSONObject("wallet")
+            status.text = if (code == 200 && wallet != null) {
+                "💰 ቀሪ ሂሳብ፦ ${"%.2f".format(wallet.optDouble("balance", 0.0))} ETB"
             } else {
-                ""
-            }
-
-            status.text = if (telebirrNumber.isNotBlank()) {
-                "📱 የTelebirr ቁጥር፦ $telebirrNumber"
-            } else {
-                "የTelebirr ቁጥር መጫን አልተቻለም። ከአስተዳደሩ ያረጋግጡ።"
+                body.optString("message", "Wallet መጫን አልተቻለም።")
             }
         }
 
-        action("የTelebirr ቁጥር ቅዳ") {
-            if (telebirrNumber.isBlank()) {
-                message("የTelebirr ቁጥሩ ገና አልተጫነም።")
-            } else {
-                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("Telebirr", telebirrNumber))
-                message("የTelebirr ቁጥሩ ተቀድቷል።")
-            }
-        }
-
-        action("ክፍያውን አስገባ") {
-            val ref = reference.text.toString().trim()
-            val name = sender.text.toString().trim()
-
-            if (entryId.isBlank() || ref.isBlank()) {
-                message("የTelebirr Transaction Reference ያስገቡ።")
+        action("💰 ከWallet ክፈል") {
+            if (entryId.isBlank()) {
+                message("የቁጥሩ መለያ አልተገኘም። ቁጥሩን እንደገና ይምረጡ።")
                 return@action
             }
 
-            if (ref.length > 200 || name.length > 200) {
-                message("ያስገቡት መረጃ ከሚፈቀደው ርዝመት በላይ ነው።")
-                return@action
-            }
+            message("ክፍያው እየተፈጸመ ነው…")
 
-            val payload = JSONObject()
-                .put("entryId", entryId)
-                .put("transactionReference", ref)
+            request(
+                "POST",
+                "/payments/wallet/purchase",
+                JSONObject().put("entryId", entryId),
+                true
+            ) { code, body ->
+                if (code == 200) {
+                    val result = body.optJSONObject("result") ?: JSONObject()
 
-            if (name.isNotBlank()) payload.put("senderName", name)
+                    screen("ADDIS ዕጣ", "✅ ክፍያ ተሳክቷል")
+                    addText("🎟️ ዕጣ፦ ${selectedDraw.optString("name")}")
+                    addText("🔢 ቁጥር፦ $number", 19, true)
+                    addText("💸 የተቀነሰው፦ $fee ETB")
+                    addText(
+                        "💰 አዲስ ቀሪ ሂሳብ፦ ${
+                            "%.2f".format(result.optDouble("balance", 0.0))
+                        } ETB",
+                        18,
+                        true
+                    )
+                    addText("ቁጥርዎ ተከፍሏል። የዕጣውን ውጤት ይጠብቁ።")
 
-            message("የክፍያ ጥያቄው እየተላከ ነው…")
-
-            request("POST", "/payments/telebirr", payload, true) { code, body ->
-                if (code == 201) {
-                    screen("ADDIS ዕጣ", "የክፍያ ጥያቄ")
-                    addText("✅ የክፍያ ጥያቄዎ ተልኳል።", 20, true)
-                    addText("🔢 ቁጥር፦ $number")
-                    addText("💰 ክፍያ፦ $fee ETB")
-                    addText("አስተዳደሩ ክፍያውን እስኪያረጋግጥ ይጠብቁ።")
-                    action("የእኔ ቁጥሮች") { showMyEntries() }
+                    action("💰 Wallet ክፈት") { showWallet() }
+                    action("🎟️ የእኔ ቁጥሮች") { showMyEntries() }
                     action("ወደ ዕጣዎች ተመለስ") { showDraws() }
                 } else {
-                    message(body.optString("message", "የክፍያ ጥያቄው አልተላከም።"))
+                    val error = body.optString("error", "")
+                    val errorMessage = when (error) {
+                        "INSUFFICIENT_WALLET_BALANCE" ->
+                            "የWallet ቀሪ ሂሳብ በቂ አይደለም። Wallet ይሙሉ።"
+                        "RESERVATION_EXPIRED" ->
+                            "የቁጥር መያዣው ጊዜ አልፏል። ቁጥሩን እንደገና ይምረጡ።"
+                        "NUMBER_UNAVAILABLE" ->
+                            "ይህ ቁጥር ከዚህ በፊት ተይዟል። ሌላ ቁጥር ይምረጡ።"
+                        else ->
+                            body.optString("message", "ክፍያው አልተሳካም።")
+                    }
+
+                    message(errorMessage)
+
+                    if (error == "INSUFFICIENT_WALLET_BALANCE") {
+                        action("➕ Wallet ሙላ") { showWallet() }
+                    }
+
+                    action("እንደገና ሞክር") { showPayment() }
+                    action("ወደ ዕጣዎች ተመለስ") { showDraws() }
                 }
             }
         }
 
-        action("ወደ ዕጣ ተመለስ") { openDraw(selectedDraw) }
+        action("ወደ Wallet ሂድ") { showWallet() }
+        action("ወደ ዕጣዎች ተመለስ") { openDraw(selectedDraw) }
     }
 
     private fun showMyEntries() {
