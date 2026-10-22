@@ -319,6 +319,9 @@ class MainActivity : Activity() {
             action("💰 ዋሌት") { showWallet() }
             action("የእኔ ቁጥሮች") { showMyEntries() }
             action("ዕጣዎችን አድስ") { showDraws() }
+            action("🏆 የእኔ አሸናፊ ሽልማቶች") {
+    showMyWinners()
+}
             action("ውጣ") { logout() }
         }
     }
@@ -611,6 +614,87 @@ class MainActivity : Activity() {
 
             action("ዕጣዎችን ክፈት") { showDraws() }
             action("አድስ") { showMyEntries() }
+        }
+    }
+
+    private fun showMyWinners() {
+        screen("ADDIS ዕጣ", "🏆 የእኔ አሸናፊ ሽልማቶች")
+        message("የአሸናፊ ታሪክ እየተጫነ ነው…")
+
+        request("GET", "/full-app/winners/mine", auth = true) { code, body ->
+            if (code != 200) {
+                message(
+                    body.optString(
+                        "message",
+                        "የአሸናፊ ታሪክን መጫን አልተቻለም።"
+                    )
+                )
+                action("እንደገና ሞክር") { showMyWinners() }
+                action("ወደ ዕጣዎች ተመለስ") { showDraws() }
+                return@request
+            }
+
+            status.text = ""
+            val winners = body.optJSONArray("winners") ?: JSONArray()
+
+            if (winners.length() == 0) {
+                addText("እስካሁን ያሸነፉት ሽልማት የለም።", 18, true)
+            }
+
+            for (i in 0 until winners.length()) {
+                val winner = winners.optJSONObject(i) ?: continue
+                val winnerId = winner.optString("winnerId")
+                val drawName = winner.optString("drawName", "ዕጣ")
+                val prizeType = winner.optString("prizeType", "")
+                val amount = winner.optDouble("prizeAmount", 0.0)
+                val credited = winner.optBoolean("creditedToWallet", false)
+
+                addDivider()
+                addText("🏆 $drawName", 19, true)
+
+                if (prizeType == "cash") {
+                    addText("💰 የገንዘብ ሽልማት፦ %.2f ETB".format(amount))
+
+                    if (credited) {
+                        addText("✅ ሽልማቱ ወደ Wallet ገብቷል።", 16, true)
+                    } else {
+                        action("💰 ሽልማቱን ወደ Wallet አስገባ") {
+                            if (winnerId.isBlank()) {
+                                message("የአሸናፊው መለያ አልተገኘም።")
+                                return@action
+                            }
+
+                            message("ሽልማቱ ወደ Wallet እየገባ ነው…")
+
+                            request(
+                                "POST",
+                                "/full-app/winners/$winnerId/credit",
+                                auth = true
+                            ) { creditCode, creditBody ->
+                                if (creditCode == 200) {
+                                    message("✅ ሽልማቱ ወደ Wallet ገብቷል።")
+                                    showMyWinners()
+                                } else {
+                                    message(
+                                        creditBody.optString(
+                                            "message",
+                                            "ሽልማቱን ወደ Wallet ማስገባት አልተቻለም።"
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    addText("🎁 የሽልማት አይነት፦ $prizeType")
+                    addText("ይህ የገንዘብ ሽልማት ስላልሆነ በዚህ ቁልፍ Wallet ውስጥ አይገባም።")
+                }
+            }
+
+            addDivider()
+            action("🔄 ታሪኩን አድስ") { showMyWinners() }
+            action("💰 ዋሌት") { showWallet() }
+            action("ወደ ዕጣዎች ተመለስ") { showDraws() }
         }
     }
 
