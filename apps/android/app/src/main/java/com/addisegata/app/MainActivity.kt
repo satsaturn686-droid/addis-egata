@@ -1,3 +1,4 @@
+
 package com.addisegata.app
 
 import android.app.Activity
@@ -47,14 +48,11 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         token = prefs.getString("token", "") ?: ""
 
         if (token.isNotBlank()) {
             request("GET", "/app-auth/me", auth = true) { code, _ ->
-                if (code == 200) {
-                    showDraws()
-                } else {
+                if (code == 200) showDraws() else {
                     clearSession()
                     showLogin()
                 }
@@ -75,46 +73,28 @@ class MainActivity : Activity() {
             var code = 0
             var result = JSONObject()
             var connection: HttpURLConnection? = null
-
             try {
-                connection =
-                    (URL(api + path).openConnection() as HttpURLConnection).apply {
-                        requestMethod = method
-                        connectTimeout = 20000
-                        readTimeout = 20000
-                        setRequestProperty("Accept", "application/json")
-
-                        if (data != null) {
-                            doOutput = true
-                            setRequestProperty("Content-Type", "application/json")
-                        }
-
-                        if (auth && token.isNotBlank()) {
-                            setRequestProperty("Authorization", "Bearer $token")
-                        }
+                connection = (URL(api + path).openConnection() as HttpURLConnection).apply {
+                    requestMethod = method
+                    connectTimeout = 20000
+                    readTimeout = 20000
+                    setRequestProperty("Accept", "application/json")
+                    if (data != null) {
+                        doOutput = true
+                        setRequestProperty("Content-Type", "application/json")
                     }
-
+                    if (auth && token.isNotBlank()) {
+                        setRequestProperty("Authorization", "Bearer $token")
+                    }
+                }
                 if (data != null) {
-                    OutputStreamWriter(
-                        connection.outputStream,
-                        Charsets.UTF_8
-                    ).use {
+                    OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use {
                         it.write(data.toString())
                     }
                 }
-
                 code = connection.responseCode
-
-                val stream = if (code in 200..399) {
-                    connection.inputStream
-                } else {
-                    connection.errorStream
-                }
-
-                val body = stream
-                    ?.bufferedReader()
-                    ?.use { it.readText() } ?: "{}"
-
+                val stream = if (code in 200..399) connection.inputStream else connection.errorStream
+                val body = stream?.bufferedReader()?.use { it.readText() } ?: "{}"
                 result = try {
                     JSONObject(body)
                 } catch (_: Exception) {
@@ -128,10 +108,7 @@ class MainActivity : Activity() {
             } finally {
                 connection?.disconnect()
             }
-
-            runOnUiThread {
-                done(code, result)
-            }
+            runOnUiThread { done(code, result) }
         }
     }
 
@@ -139,28 +116,20 @@ class MainActivity : Activity() {
         screen("ADDIS ዕጣ", "እድልህን ዲጂታል አድርግ")
         addText("ወደ መለያዎ ይግቡ", 21, true)
         addText("ዕጣዎችን ለማየትና ለመሳተፍ መለያዎን ይጠቀሙ።")
-
         val identifier = field("Username ወይም ስልክ ቁጥር")
         val password = field("Password")
         password.inputType = 129
-
         action("ግባ") {
             val id = identifier.text.toString().trim()
             val pass = password.text.toString()
-
             if (id.isBlank() || pass.isBlank()) {
                 message("Username/ስልክ ቁጥር እና Password ያስገቡ።")
                 return@action
             }
-
             message("እየገባ ነው…")
-
             request(
-                "POST",
-                "/app-auth/login",
-                JSONObject()
-                    .put("loginIdentifier", id)
-                    .put("password", pass)
+                "POST", "/app-auth/login",
+                JSONObject().put("loginIdentifier", id).put("password", pass)
             ) { code, body ->
                 if (code == 200 && body.optString("token").isNotBlank()) {
                     token = body.getString("token")
@@ -171,38 +140,29 @@ class MainActivity : Activity() {
                 }
             }
         }
-
-        action("አዲስ መለያ ፍጠር") {
-            showRegister()
-        }
+        action("አዲስ መለያ ፍጠር") { showRegister() }
     }
 
     private fun showRegister() {
         screen("ADDIS ዕጣ", "አዲስ መለያ ይፍጠሩ")
-
         val identifier = field("Username ወይም ስልክ ቁጥር")
         val firstName = field("ስም (አማራጭ)")
         val lastName = field("የአባት ስም (አማራጭ)")
         val password = field("Password — ቢያንስ 8 ቁምፊ")
         password.inputType = 129
-
         action("መለያ ፍጠር") {
             val id = identifier.text.toString().trim()
             val pass = password.text.toString()
-
             if (id.isBlank() || pass.length < 8) {
                 message("Username/ስልክ ቁጥር ያስገቡ፤ Password ቢያንስ 8 ቁምፊ ይሁን።")
                 return@action
             }
-
             val payload = JSONObject()
                 .put("loginIdentifier", id)
                 .put("password", pass)
                 .put("firstName", firstName.text.toString().trim())
                 .put("lastName", lastName.text.toString().trim())
-
             message("መለያው እየተፈጠረ ነው…")
-
             request("POST", "/app-auth/register", payload) { code, body ->
                 if (code == 201) {
                     showLogin()
@@ -212,16 +172,12 @@ class MainActivity : Activity() {
                 }
             }
         }
-
-        action("ወደ መግቢያ ተመለስ") {
-            showLogin()
-        }
+        action("ወደ መግቢያ ተመለስ") { showLogin() }
     }
 
     private fun showDraws() {
         screen("ADDIS ዕጣ", "የሚገኙ ዕጣዎች")
         message("ዕጣዎች እየተጫኑ ነው…")
-
         request("GET", "/draws") { code, body ->
             if (code != 200) {
                 message(body.optString("message", "ዕጣዎችን መጫን አልተቻለም።"))
@@ -229,13 +185,8 @@ class MainActivity : Activity() {
                 action("ውጣ") { logout() }
                 return@request
             }
-
             val draws = body.optJSONArray("draws") ?: JSONArray()
-
-            if (draws.length() == 0) {
-                addText("በአሁኑ ጊዜ የሚገኝ ዕጣ የለም።", 18, true)
-            }
-
+            if (draws.length() == 0) addText("በአሁኑ ጊዜ የሚገኝ ዕጣ የለም።", 18, true)
             for (i in 0 until draws.length()) {
                 val draw = draws.optJSONObject(i) ?: continue
                 val name = draw.optString("name", "ዕጣ")
@@ -245,7 +196,6 @@ class MainActivity : Activity() {
                 val total = draw.optInt("totalNumbers", 0)
                 val filled = draw.optInt("filledNumbers", 0)
                 val remaining = (total - filled).coerceAtLeast(0)
-
                 val card = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
                     setPadding(18, 16, 18, 16)
@@ -254,7 +204,6 @@ class MainActivity : Activity() {
                     isFocusable = true
                     setOnClickListener { openDraw(draw) }
                 }
-
                 card.addView(TextView(this).apply {
                     text = "🎟️ $name"
                     textSize = 21f
@@ -262,7 +211,6 @@ class MainActivity : Activity() {
                     setTextColor(green)
                     setPadding(0, 0, 0, 10)
                 })
-
                 card.addView(TextView(this).apply {
                     text = "🏆 ሽልማት፦ $prize"
                     textSize = 17f
@@ -270,7 +218,6 @@ class MainActivity : Activity() {
                     setTextColor(textColor)
                     setPadding(0, 4, 0, 6)
                 })
-
                 if (description.isNotBlank() && description != "null") {
                     card.addView(TextView(this).apply {
                         text = "📝 $description"
@@ -279,7 +226,6 @@ class MainActivity : Activity() {
                         setPadding(0, 4, 0, 8)
                     })
                 }
-
                 card.addView(TextView(this).apply {
                     text = "💰 የመግቢያ ክፍያ፦ $fee ETB"
                     textSize = 16f
@@ -287,21 +233,18 @@ class MainActivity : Activity() {
                     setTextColor(green)
                     setPadding(0, 6, 0, 6)
                 })
-
                 card.addView(TextView(this).apply {
                     text = "🔢 የቁጥር ብዛት፦ $total"
                     textSize = 15f
                     setTextColor(textColor)
                     setPadding(0, 4, 0, 4)
                 })
-
                 card.addView(TextView(this).apply {
                     text = "✅ የተያዙ፦ $filled     🟢 የቀሩ፦ $remaining"
                     textSize = 15f
                     setTextColor(textColor)
                     setPadding(0, 4, 0, 4)
                 })
-
                 card.addView(TextView(this).apply {
                     text = "ዕጣውን ለመክፈት እዚህ ይንኩ  →"
                     textSize = 15f
@@ -309,22 +252,16 @@ class MainActivity : Activity() {
                     setTextColor(greenLight)
                     setPadding(0, 8, 0, 0)
                 })
-
                 root.addView(card, LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { bottomMargin = 14 })
             }
-
             action("💰 ዋሌት") { showWallet() }
             action("የእኔ ቁጥሮች") { showMyEntries() }
             action("ዕጣዎችን አድስ") { showDraws() }
-            action("🏆 የእኔ አሸናፊ ሽልማቶች") {
-    showMyWinners()
-}
-            action("📋 የዕጣ ውጤት ታሪክ") {
-    showResultsHistory()
-}
+            action("🏆 የእኔ አሸናፊ ሽልማቶች") { showMyWinners() }
+            action("📋 የዕጣ ውጤት ታሪክ") { showResultsHistory() }
             action("ውጣ") { logout() }
         }
     }
@@ -333,36 +270,27 @@ class MainActivity : Activity() {
         selectedDraw = draw
         selectedNumber = 0
         val id = draw.optString("id")
-
         screen("ADDIS ዕጣ", draw.optString("name", "የዕጣ ዝርዝር"))
         message("የዕጣ መረጃ እየተጫነ ነው…")
-
         request("GET", "/draws/$id") { code, body ->
             if (code != 200) {
                 message(body.optString("message", "የዕጣ መረጃ መጫን አልተሳካም።"))
                 action("ተመለስ") { showDraws() }
                 return@request
             }
-
             selectedDraw = body.optJSONObject("draw") ?: draw
             val prizes = body.optJSONArray("prizes") ?: JSONArray()
-
             screen("ADDIS ዕጣ", selectedDraw.optString("name", "የዕጣ ዝርዝር"))
             addText("🏆 ሽልማት፦ ${selectedDraw.optString("prizeName", "—")}", 20, true)
             addText("💰 ክፍያ፦ ${selectedDraw.opt("entryFee")} ETB", 17, true)
             addText("🔢 የቁጥር ብዛት፦ ${selectedDraw.optInt("totalNumbers")}")
             addText("📌 ሁኔታ፦ ${selectedDraw.optString("status")}")
-
             val description = selectedDraw.optString("description", "")
-            if (description.isNotBlank() && description != "null") {
-                addText(description)
-            }
-
+            if (description.isNotBlank() && description != "null") addText(description)
             val prizeDescription = selectedDraw.optString("prizeDescription", "")
             if (prizeDescription.isNotBlank() && prizeDescription != "null") {
                 addText("የሽልማት መግለጫ፦ $prizeDescription")
             }
-
             if (prizes.length() > 0) {
                 addText("የሽልማት ዝርዝር", 19, true)
                 for (i in 0 until prizes.length()) {
@@ -370,27 +298,17 @@ class MainActivity : Activity() {
                     addText("${prize.optInt("rank")}ኛ ቦታ፦ ${prize.opt("amount")} ETB")
                 }
             }
-
             val total = selectedDraw.optInt("totalNumbers", 0)
             val occupied = selectedDraw.optJSONArray("occupiedNumbers") ?: JSONArray()
             val taken = HashSet<Int>()
-
-            for (i in 0 until occupied.length()) {
-                taken.add(occupied.optInt(i))
-            }
-
+            for (i in 0 until occupied.length()) taken.add(occupied.optInt(i))
             addDivider()
             addText("ቁጥር ይምረጡ", 20, true)
             addText("የተያዙ ቁጥሮች መመረጥ አይችሉም።")
-
             if (total > 0) {
-                val grid = LinearLayout(this).apply {
-                    orientation = LinearLayout.VERTICAL
-                }
+                val grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
                 root.addView(grid)
-
                 var row: LinearLayout? = null
-
                 for (number in 1..total) {
                     if ((number - 1) % 5 == 0) {
                         row = LinearLayout(this).apply {
@@ -399,7 +317,6 @@ class MainActivity : Activity() {
                         }
                         grid.addView(row)
                     }
-
                     val numberButton = Button(this).apply {
                         text = number.toString()
                         isAllCaps = false
@@ -407,27 +324,19 @@ class MainActivity : Activity() {
                         setTypeface(null, Typeface.BOLD)
                         val isOpen = selectedDraw.optString("status") == "open"
                         isEnabled = number !in taken && isOpen
-
-                        backgroundTintList =
-                            android.content.res.ColorStateList.valueOf(
-                                if (number in taken) {
-                                    android.graphics.Color.rgb(180, 185, 190)
-                                } else {
-                                    android.graphics.Color.rgb(22, 101, 52)
-                                }
-                            )
-
+                        backgroundTintList = android.content.res.ColorStateList.valueOf(
+                            if (number in taken) android.graphics.Color.rgb(180, 185, 190)
+                            else android.graphics.Color.rgb(22, 101, 52)
+                        )
                         setTextColor(android.graphics.Color.WHITE)
                         minimumWidth = 0
                         minWidth = 0
                         minHeight = 52
                         setPadding(0, 0, 0, 0)
                     }
-
                     numberButton.setOnClickListener {
                         selectedNumber = number
                         message("ቁጥር $number መርጠዋል።")
-
                         for (j in 0 until grid.childCount) {
                             val line = grid.getChildAt(j) as? LinearLayout ?: continue
                             for (k in 0 until line.childCount) {
@@ -443,16 +352,11 @@ class MainActivity : Activity() {
                             }
                         }
                     }
-
-                    row?.addView(
-                        numberButton,
-                        LinearLayout.LayoutParams(0, 52, 1f).apply {
-                            setMargins(3, 3, 3, 3)
-                        }
-                    )
+                    row?.addView(numberButton, LinearLayout.LayoutParams(0, 52, 1f).apply {
+                        setMargins(3, 3, 3, 3)
+                    })
                 }
             }
-
             action("የመረጥኩትን ቁጥር ያዝ") { reserveSelectedNumber() }
             action("የእኔ ቁጥሮች") { showMyEntries() }
             action("ወደ ዕጣዎች ተመለስ") { showDraws() }
@@ -464,14 +368,10 @@ class MainActivity : Activity() {
             message("በመጀመሪያ ቁጥር ይምረጡ።")
             return
         }
-
         message("ቁጥር $selectedNumber እየተያዘ ነው…")
-
         request(
-            "POST",
-            "/entries/reserve",
-            JSONObject()
-                .put("drawId", selectedDraw.optString("id"))
+            "POST", "/entries/reserve",
+            JSONObject().put("drawId", selectedDraw.optString("id"))
                 .put("number", selectedNumber),
             true
         ) { code, body ->
@@ -487,83 +387,54 @@ class MainActivity : Activity() {
 
     private fun showPayment() {
         screen("ADDIS ዕጣ", "💰 ከWallet ክፈል")
-
         val entryId = selectedEntry.optString("id")
         val number = selectedEntry.optInt("number", selectedNumber)
         val fee = selectedDraw.opt("entryFee")?.toString() ?: "—"
-
         addText("🎟️ ${selectedDraw.optString("name")}", 19, true)
         addText("🔢 የመረጡት ቁጥር፦ $number")
         addText("💰 የሚከፈለው፦ $fee ETB", 18, true)
         addText("ከWallet ለመክፈል ከታች ያለውን ቁልፍ ይጫኑ።")
-
         request("GET", "/payments/wallet", auth = true) { code, body ->
             val wallet = body.optJSONObject("wallet")
             status.text = if (code == 200 && wallet != null) {
                 "💰 ቀሪ ሂሳብ፦ ${"%.2f".format(wallet.optDouble("balance", 0.0))} ETB"
-            } else {
-                body.optString("message", "Wallet መጫን አልተቻለም።")
-            }
+            } else body.optString("message", "Wallet መጫን አልተቻለም።")
         }
-
         action("💰 ከWallet ክፈል") {
             if (entryId.isBlank()) {
                 message("የቁጥሩ መለያ አልተገኘም። ቁጥሩን እንደገና ይምረጡ።")
                 return@action
             }
-
             message("ክፍያው እየተፈጸመ ነው…")
-
-            request(
-                "POST",
-                "/payments/wallet/purchase",
-                JSONObject().put("entryId", entryId),
-                true
-            ) { code, body ->
+            request("POST", "/payments/wallet/purchase", JSONObject().put("entryId", entryId), true) { code, body ->
                 if (code == 200) {
                     val result = body.optJSONObject("result") ?: JSONObject()
-
                     screen("ADDIS ዕጣ", "✅ ክፍያ ተሳክቷል")
                     addText("🎟️ ዕጣ፦ ${selectedDraw.optString("name")}")
                     addText("🔢 ቁጥር፦ $number", 19, true)
                     addText("💸 የተቀነሰው፦ $fee ETB")
-                    addText(
-                        "💰 አዲስ ቀሪ ሂሳብ፦ ${
-                            "%.2f".format(result.optDouble("balance", 0.0))
-                        } ETB",
-                        18,
-                        true
-                    )
+                    addText("💰 አዲስ ቀሪ ሂሳብ፦ ${"%.2f".format(result.optDouble("balance", 0.0))} ETB", 18, true)
                     addText("ቁጥርዎ ተከፍሏል። የዕጣውን ውጤት ይጠብቁ።")
-
                     action("💰 Wallet ክፈት") { showWallet() }
                     action("🎟️ የእኔ ቁጥሮች") { showMyEntries() }
                     action("ወደ ዕጣዎች ተመለስ") { showDraws() }
                 } else {
                     val error = body.optString("error", "")
                     val errorMessage = when (error) {
-                        "INSUFFICIENT_WALLET_BALANCE" ->
-                            "የWallet ቀሪ ሂሳብ በቂ አይደለም። Wallet ይሙሉ።"
-                        "RESERVATION_EXPIRED" ->
-                            "የቁጥር መያዣው ጊዜ አልፏል። ቁጥሩን እንደገና ይምረጡ።"
-                        "NUMBER_UNAVAILABLE" ->
-                            "ይህ ቁጥር ከዚህ በፊት ተይዟል። ሌላ ቁጥር ይምረጡ።"
-                        else ->
-                            body.optString("message", "ክፍያው አልተሳካም።")
+                        "INSUFFICIENT_WALLET_BALANCE" -> "የWallet ቀሪ ሂሳብ በቂ አይደለም። Wallet ይሙሉ።"
+                        "RESERVATION_EXPIRED" -> "የቁጥር መያዣው ጊዜ አልፏል። ቁጥሩን እንደገና ይምረጡ።"
+                        "NUMBER_UNAVAILABLE" -> "ይህ ቁጥር ከዚህ በፊት ተይዟል። ሌላ ቁጥር ይምረጡ።"
+                        else -> body.optString("message", "ክፍያው አልተሳካም።")
                     }
-
                     message(errorMessage)
-
                     if (error == "INSUFFICIENT_WALLET_BALANCE") {
                         action("➕ Wallet ሙላ") { showWallet() }
                     }
-
                     action("እንደገና ሞክር") { showPayment() }
                     action("ወደ ዕጣዎች ተመለስ") { showDraws() }
                 }
             }
         }
-
         action("ወደ Wallet ሂድ") { showWallet() }
         action("ወደ ዕጣዎች ተመለስ") { openDraw(selectedDraw) }
     }
@@ -571,7 +442,6 @@ class MainActivity : Activity() {
     private fun showMyEntries() {
         screen("ADDIS ዕጣ", "የእኔ ቁጥሮች")
         message("የእርስዎ ቁጥሮች እየተጫኑ ነው…")
-
         request("GET", "/entries/mine", auth = true) { code, body ->
             if (code != 200) {
                 message(body.optString("message", "የእኔ ቁጥሮችን መጫን አልተቻለም።"))
@@ -579,25 +449,17 @@ class MainActivity : Activity() {
                 action("ወደ ዕጣዎች ተመለስ") { showDraws() }
                 return@request
             }
-
             status.text = ""
             val entries = body.optJSONArray("entries") ?: JSONArray()
-
-            if (entries.length() == 0) {
-                addText("እስካሁን የያዙት ቁጥር የለም።", 18, true)
-            }
-
+            if (entries.length() == 0) addText("እስካሁን የያዙት ቁጥር የለም።", 18, true)
             for (i in 0 until entries.length()) {
                 val entry = entries.optJSONObject(i) ?: continue
                 val number = entry.optInt("number")
                 val state = entry.optString("status")
-
                 addText(
                     "🎟️ ቁጥር፦ $number\n📌 ሁኔታ፦ $state\n🗓️ የተፈጠረበት፦ ${entry.optString("createdAt", "—")}",
-                    16,
-                    true
+                    16, true
                 )
-
                 if (state == "reserved") {
                     action("የቁጥር $number ክፍያ አስገባ") {
                         selectedEntry = entry
@@ -605,306 +467,164 @@ class MainActivity : Activity() {
                             if (drawCode == 200) {
                                 selectedDraw = drawBody.optJSONObject("draw") ?: JSONObject()
                                 showPayment()
-                            } else {
-                                message("የዕጣ መረጃ መጫን አልተቻለም።")
-                            }
+                            } else message("የዕጣ መረጃ መጫን አልተቻለም።")
                         }
                     }
                 }
-
                 addDivider()
             }
-
             action("ዕጣዎችን ክፈት") { showDraws() }
             action("አድስ") { showMyEntries() }
         }
     }
 
-private fun showMyWinners() {
-    screen("ADDIS ዕጣ", "🏆 የእኔ አሸናፊ ሽልማቶች")
-    message("የአሸናፊ ታሪክ እየተጫነ ነው…")
-
-    request("GET", "/full-app/winners/mine", auth = true) { code, body ->
-        if (code != 200) {
-            message(
-                body.optString(
-                    "message",
-                    "የአሸናፊ ታሪክን መጫን አልተቻለም።"
-                )
-            )
-            action("እንደገና ሞክር") { showMyWinners() }
-            action("ወደ ዕጣዎች ተመለስ") { showDraws() }
-            return@request
-        }
-
-        status.text = ""
-        val winners = body.optJSONArray("winners") ?: JSONArray()
-
-        if (winners.length() == 0) {
-            addText("እስካሁን ያሸነፉት ሽልማት የለም።", 18, true)
-        }
-
-        for (i in 0 until winners.length()) {
-            val winner = winners.optJSONObject(i) ?: continue
-            val winnerId = winner.optString("winnerId")
-            val drawName = winner.optString("drawName", "ዕጣ")
-            val prizeType = winner.optString("prizeType", "")
-            val amount = winner.optDouble("prizeAmount", 0.0)
-            val credited = winner.optBoolean("creditedToWallet", false)
-            val payoutStatus = winner.optString("payoutStatus", "")
-            val recipientName = winner.optString("recipientFullName", "")
-            val recipientPhone = winner.optString("recipientPhone", "")
-
-            addDivider()
-            addText("🏆 $drawName", 19, true)
-
-            if (prizeType == "cash") {
-                addText("💰 የገንዘብ ሽልማት፦ %.2f ETB".format(amount))
-
-                if (credited) {
-                    addText("✅ ሽልማቱ ወደ Wallet ገብቷል።", 16, true)
-                } else {
-                    action("💰 ሽልማቱን ወደ Wallet አስገባ") {
-                        if (winnerId.isBlank()) {
-                            message("የአሸናፊው መለያ አልተገኘም።")
-                            return@action
-                        }
-
-                        message("ሽልማቱ ወደ Wallet እየገባ ነው…")
-
-                        request(
-                            "POST",
-                            "/full-app/winners/$winnerId/credit",
-                            auth = true
-                        ) { creditCode, creditBody ->
-                            if (creditCode == 200) {
-                                message("✅ ሽልማቱ ወደ Wallet ገብቷል።")
-                                showMyWinners()
-                            } else {
-                                message(
-                                    creditBody.optString(
-                                        "message",
-                                        "ሽልማቱን ወደ Wallet ማስገባት አልተቻለም።"
-                                    )
-                                )
-                            }
-                        }
-                    }
-                }
-            } else if (prizeType == "physical") {
-                addText("🎁 የአካላዊ ሽልማት አሸናፊ ነዎት!", 18, true)
-                addText(
-                    "ሽልማትዎን ለመቀበል ሙሉ ስምዎንና ስልክ ቁጥርዎን ይላኩ።"
-                )
-
-                when (payoutStatus) {
-                    "submitted" -> {
-                        addText("🕒 መረጃዎ ለAdmin ደርሷል። ማረጋገጫ እየተጠበቀ ነው።", 16, true)
-                        if (recipientName.isNotBlank()) {
-                            addText("ሙሉ ስም፦ $recipientName")
-                        }
-                        if (recipientPhone.isNotBlank()) {
-                            addText("ስልክ፦ $recipientPhone")
-                        }
-                    }
-
-                    "approved" -> {
-                        addText("✅ የሽልማት መረጃዎ ተፈቅዷል። Admin የማስረከብ ሂደቱን ያስተናግዳል።", 16, true)
-                    }
-
-                    "paid" -> {
-                        addText("✅ ሽልማትዎ ተሰጥቷል።", 16, true)
-                    }
-
-                    else -> {
-                        if (payoutStatus == "rejected") {
-                            addText("⚠️ የቀድሞ ጥያቄዎ አልተቀበለም። መረጃዎን እንደገና ይላኩ።")
-                        }
-
-                        val fullNameInput = field("ሙሉ ስምዎ")
-                        if (recipientName.isNotBlank()) {
-                            fullNameInput.setText(recipientName)
-                        }
-
-                        val phoneInput = field("ስልክ ቁጥርዎ")
-                        phoneInput.inputType = 3
-                        if (recipientPhone.isNotBlank()) {
-                            phoneInput.setText(recipientPhone)
-                        }
-
-                        action("📨 ሽልማቴን ለመቀበል መረጃ ላክ") {
-                            val fullName = fullNameInput.text.toString().trim()
-                            val phone = phoneInput.text.toString().trim()
-
-                            if (fullName.isBlank() || phone.isBlank()) {
-                                message("እባክዎ ሙሉ ስምዎንና ስልክ ቁጥርዎን ያስገቡ።")
-                                return@action
-                            }
-
+    private fun showMyWinners() {
+        screen("ADDIS ዕጣ", "🏆 የእኔ አሸናፊ ሽልማቶች")
+        message("የአሸናፊ ታሪክ እየተጫነ ነው…")
+        request("GET", "/full-app/winners/mine", auth = true) { code, body ->
+            if (code != 200) {
+                message(body.optString("message", "የአሸናፊ ታሪክን መጫን አልተቻለም።"))
+                action("እንደገና ሞክር") { showMyWinners() }
+                action("ወደ ዕጣዎች ተመለስ") { showDraws() }
+                return@request
+            }
+            status.text = ""
+            val winners = body.optJSONArray("winners") ?: JSONArray()
+            if (winners.length() == 0) addText("እስካሁን ያሸነፉት ሽልማት የለም።", 18, true)
+            for (i in 0 until winners.length()) {
+                val winner = winners.optJSONObject(i) ?: continue
+                val winnerId = winner.optString("winnerId")
+                val drawName = winner.optString("drawName", "ዕጣ")
+                val prizeType = winner.optString("prizeType", "")
+                val amount = winner.optDouble("prizeAmount", 0.0)
+                val credited = winner.optBoolean("creditedToWallet", false)
+                val payoutStatus = winner.optString("payoutStatus", "")
+                val recipientName = winner.optString("recipientFullName", "")
+                val recipientPhone = winner.optString("recipientPhone", "")
+                addDivider()
+                addText("🏆 $drawName", 19, true)
+                if (prizeType == "cash") {
+                    addText("💰 የገንዘብ ሽልማት፦ %.2f ETB".format(amount))
+                    if (credited) {
+                        addText("✅ ሽልማቱ ወደ Wallet ገብቷል።", 16, true)
+                    } else {
+                        action("💰 ሽልማቱን ወደ Wallet አስገባ") {
                             if (winnerId.isBlank()) {
                                 message("የአሸናፊው መለያ አልተገኘም።")
                                 return@action
                             }
-
-                            val payload = JSONObject()
-                                .put("fullName", fullName)
-                                .put("phone", phone)
-
-                            message("የሽልማት መረጃዎ እየተላከ ነው…")
-
-                            request(
-                                "POST",
-                                "/full-app/winners/$winnerId/physical-claim",
-                                payload,
-                                true
-                            ) { claimCode, claimBody ->
-                                if (claimCode == 200) {
-                                    message(
-                                        claimBody.optString(
-                                            "message",
-                                            "መረጃዎ ለAdmin ተልኳል።"
-                                        )
-                                    )
+                            message("ሽልማቱ ወደ Wallet እየገባ ነው…")
+                            request("POST", "/full-app/winners/$winnerId/credit", auth = true) { creditCode, creditBody ->
+                                if (creditCode == 200) {
+                                    message("✅ ሽልማቱ ወደ Wallet ገብቷል።")
                                     showMyWinners()
-                                } else {
-                                    message(
-                                        claimBody.optString(
-                                            "message",
-                                            "መረጃውን መላክ አልተቻለም።"
-                                        )
-                                    )
+                                } else message(creditBody.optString("message", "ሽልማቱን ወደ Wallet ማስገባት አልተቻለም።"))
+                            }
+                        }
+                    }
+                } else if (prizeType == "physical") {
+                    addText("🎁 የአካላዊ ሽልማት አሸናፊ ነዎት!", 18, true)
+                    addText("ሽልማትዎን ለመቀበል ሙሉ ስምዎንና ስልክ ቁጥርዎን ይላኩ።")
+                    when (payoutStatus) {
+                        "submitted" -> {
+                            addText("🕒 መረጃዎ ለAdmin ደርሷል። ማረጋገጫ እየተጠበቀ ነው።", 16, true)
+                            if (recipientName.isNotBlank()) addText("ሙሉ ስም፦ $recipientName")
+                            if (recipientPhone.isNotBlank()) addText("ስልክ፦ $recipientPhone")
+                        }
+                        "approved" -> addText("✅ የሽልማት መረጃዎ ተፈቅዷል። Admin የማስረከብ ሂደቱን ያስተናግዳል።", 16, true)
+                        "paid" -> addText("✅ ሽልማትዎ ተሰጥቷል።", 16, true)
+                        else -> {
+                            if (payoutStatus == "rejected") addText("⚠️ የቀድሞ ጥያቄዎ አልተቀበለም። መረጃዎን እንደገና ይላኩ።")
+                            val fullNameInput = field("ሙሉ ስምዎ")
+                            if (recipientName.isNotBlank()) fullNameInput.setText(recipientName)
+                            val phoneInput = field("ስልክ ቁጥርዎ")
+                            phoneInput.inputType = 3
+                            if (recipientPhone.isNotBlank()) phoneInput.setText(recipientPhone)
+                            action("📨 ሽልማቴን ለመቀበል መረጃ ላክ") {
+                                val fullName = fullNameInput.text.toString().trim()
+                                val phone = phoneInput.text.toString().trim()
+                                if (fullName.isBlank() || phone.isBlank()) {
+                                    message("እባክዎ ሙሉ ስምዎንና ስልክ ቁጥርዎን ያስገቡ።")
+                                    return@action
+                                }
+                                if (winnerId.isBlank()) {
+                                    message("የአሸናፊው መለያ አልተገኘም።")
+                                    return@action
+                                }
+                                val payload = JSONObject().put("fullName", fullName).put("phone", phone)
+                                message("የሽልማት መረጃዎ እየተላከ ነው…")
+                                request("POST", "/full-app/winners/$winnerId/physical-claim", payload, true) { claimCode, claimBody ->
+                                    if (claimCode == 200) {
+                                        message(claimBody.optString("message", "መረጃዎ ለAdmin ተልኳል።"))
+                                        showMyWinners()
+                                    } else message(claimBody.optString("message", "መረጃውን መላክ አልተቻለም።"))
                                 }
                             }
                         }
                     }
+                } else {
+                    addText("🎁 የሽልማት አይነት፦ $prizeType")
+                    addText("ለዚህ ሽልማት የሚያስፈልገውን መረጃ ከAdmin ያረጋግጡ።")
                 }
-            } else {
-                addText("🎁 የሽልማት አይነት፦ $prizeType")
-                addText("ለዚህ ሽልማት የሚያስፈልገውን መረጃ ከAdmin ያረጋግጡ።")
             }
-        }
-
-        addDivider()
-                    action("🔄 ታሪኩን አድስ") { showMyWinners() }
+            addDivider()
+            action("🔄 ታሪኩን አድስ") { showMyWinners() }
             action("💰 ዋሌት") { showWallet() }
             action("ወደ ዕጣዎች ተመለስ") { showDraws() }
         }
     }
-}
 
-private fun showResultsHistory() {
-    screen("ADDIS ዕጣ", "📋 የዕጣ ውጤት ታሪክ")
-    message("የዕጣ ውጤቶች እየተጫኑ ነው…")
-
-    request("GET", "/results", auth = true) { code, body ->
-        if (code != 200) {
-            message(
-                body.optString(
-                    "message",
-                    "የዕጣ ውጤት ታሪክን መጫን አልተቻለም።"
-                )
-            )
-            action("🔄 እንደገና ሞክር") {
-                showResultsHistory()
+    private fun showResultsHistory() {
+        screen("ADDIS ዕጣ", "📋 የዕጣ ውጤት ታሪክ")
+        message("የዕጣ ውጤቶች እየተጫኑ ነው…")
+        request("GET", "/results", auth = true) { code, body ->
+            if (code != 200) {
+                message(body.optString("message", "የዕጣ ውጤት ታሪክን መጫን አልተቻለም።"))
+                action("🔄 እንደገና ሞክር") { showResultsHistory() }
+                action("ወደ ዕጣዎች ተመለስ") { showDraws() }
+                return@request
             }
-            action("ወደ ዕጣዎች ተመለስ") {
-                showDraws()
-            }
-            return@request
-        }
-
-        status.text = ""
-
-        val results = body.optJSONArray("results")
-            ?: JSONArray()
-
-        if (results.length() == 0) {
-            addText("እስካሁን የታተመ የዕጣ ውጤት የለም።", 18, true)
-        }
-
-        for (i in 0 until results.length()) {
-            val result = results.optJSONObject(i)
-                ?: continue
-
-            addDivider()
-
-            addText(
-                "🎟️ ${result.optString("drawName", "ዕጣ")}",
-                20,
-                true
-            )
-
-            addText(
-                "🏆 ሽልማት፦ ${result.optString("prizeName", "—")}",
-                17,
-                true
-            )
-
-            addText(
-                "👥 የአሸናፊዎች ብዛት፦ " +
-                    result.optInt("winnerCount", 0)
-            )
-
-            addText(
-                "📅 ውጤቱ የታተመበት፦ " +
-                    result.optString("publishedAt", "—")
-            )
-
-            val winners = result.optJSONArray("winners")
-                ?: JSONArray()
-
-            addText("🏅 የአሸናፊዎች ዝርዝር", 17, true)
-
-            if (winners.length() == 0) {
-                addText("የአሸናፊዎች ዝርዝር የለም።")
-            }
-
-            for (j in 0 until winners.length()) {
-                val winner = winners.optJSONObject(j)
-                    ?: continue
-
-                val firstName = winner.optString("firstName", "")
-                val lastName = winner.optString("lastName", "")
-                val username = winner.optString("username", "")
-
-                val name = listOf(firstName, lastName)
-                    .filter {
-                        it.isNotBlank() && it != "null"
-                    }
-                    .joinToString(" ")
-                    .ifBlank {
-                        if (username.isNotBlank() && username != "null") {
-                            "@$username"
-                        } else {
-                            "ተሳታፊ"
+            status.text = ""
+            val results = body.optJSONArray("results") ?: JSONArray()
+            if (results.length() == 0) addText("እስካሁን የታተመ የዕጣ ውጤት የለም።", 18, true)
+            for (i in 0 until results.length()) {
+                val result = results.optJSONObject(i) ?: continue
+                addDivider()
+                addText("🎟️ ${result.optString("drawName", "ዕጣ")}", 20, true)
+                addText("🏆 ሽልማት፦ ${result.optString("prizeName", "—")}", 17, true)
+                addText("👥 የአሸናፊዎች ብዛት፦ ${result.optInt("winnerCount", 0)}")
+                addText("📅 ውጤቱ የታተመበት፦ ${result.optString("publishedAt", "—")}")
+                val winners = result.optJSONArray("winners") ?: JSONArray()
+                addText("🏅 የአሸናፊዎች ዝርዝር", 17, true)
+                if (winners.length() == 0) addText("የአሸናፊዎች ዝርዝር የለም።")
+                for (j in 0 until winners.length()) {
+                    val winner = winners.optJSONObject(j) ?: continue
+                    val firstName = winner.optString("firstName", "")
+                    val lastName = winner.optString("lastName", "")
+                    val username = winner.optString("username", "")
+                    val name = listOf(firstName, lastName)
+                        .filter { it.isNotBlank() && it != "null" }
+                        .joinToString(" ")
+                        .ifBlank {
+                            if (username.isNotBlank() && username != "null") "@$username" else "ተሳታፊ"
                         }
-                    }
-
-                addText(
-                    "${winner.optInt("rank")}ኛ — $name\n" +
-                        "🎟️ ቁጥር፦ #${winner.optInt("number")}\n" +
-                        "💰 ሽልማት፦ " +
-                        "${winner.optDouble("prizeAmount", 0.0)} ETB"
-                )
+                    addText(
+                        "${winner.optInt("rank")}ኛ — $name\n" +
+                            "🎟️ ቁጥር፦ #${winner.optInt("number")}\n" +
+                            "💰 ሽልማት፦ ${winner.optDouble("prizeAmount", 0.0)} ETB"
+                    )
+                }
             }
-        }
-
-        addDivider()
-
-        action("🔄 ውጤቶችን አድስ") {
-            showResultsHistory()
-        }
-
-        action("ወደ ዕጣዎች ተመለስ") {
-            showDraws()
+            addDivider()
+            action("🔄 ውጤቶችን አድስ") { showResultsHistory() }
+            action("ወደ ዕጣዎች ተመለስ") { showDraws() }
         }
     }
-}
+
     private fun showWallet() {
         screen("ADDIS ዕጣ", "💰 ዋሌት")
         addServiceHoursNotice()
         message("ዋሌት እየተጫነ ነው…")
-
         request("GET", "/payments/wallet", auth = true) { code, body ->
             if (code != 200) {
                 message(body.optString("message", "ዋሌትን መጫን አልተቻለም።"))
@@ -912,23 +632,19 @@ private fun showResultsHistory() {
                 action("ወደ ዕጣዎች ተመለስ") { showDraws() }
                 return@request
             }
-
             val wallet = body.optJSONObject("wallet") ?: JSONObject()
             val balance = wallet.optDouble("balance", 0.0)
             status.text = ""
-
             val balanceCard = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(22, 22, 22, 22)
                 background = rounded(green, green, 22f)
             }
-
             balanceCard.addView(TextView(this).apply {
                 text = "የአሁኑ ቀሪ ሂሳብ"
                 textSize = 16f
                 setTextColor(android.graphics.Color.rgb(220, 245, 230))
             })
-
             balanceCard.addView(TextView(this).apply {
                 text = "%.2f ETB".format(balance)
                 textSize = 30f
@@ -936,12 +652,10 @@ private fun showResultsHistory() {
                 setTextColor(white)
                 setPadding(0, 8, 0, 0)
             })
-
             root.addView(balanceCard, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { bottomMargin = 18 })
-
             addText("ገንዘብ ለመጨመር ወይም ለማውጣት ከታች ይምረጡ።")
             action("➕ በTelebirr ገንዘብ ጨምር") { showWalletDeposit() }
             action("➖ ወደ Telebirr ገንዘብ አውጣ") { showWalletWithdraw(balance) }
@@ -953,46 +667,37 @@ private fun showResultsHistory() {
 
     private fun addServiceHoursNotice() {
         val targetRoot = root
-
         val notice = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(16, 14, 16, 14)
             background = rounded(
                 android.graphics.Color.rgb(255, 251, 235),
-                android.graphics.Color.rgb(245, 205, 120),
-                18f
+                android.graphics.Color.rgb(245, 205, 120), 18f
             )
         }
-
         notice.addView(TextView(this).apply {
             text = "🕒 የDeposit እና Withdraw አገልግሎት ሰዓት"
             textSize = 16f
             setTypeface(null, Typeface.BOLD)
             setTextColor(android.graphics.Color.rgb(120, 75, 10))
         })
-
         val details = TextView(this).apply {
             text = "የአገልግሎት ሰዓቱ እየተጫነ ነው…"
             textSize = 14f
             setTextColor(textColor)
             setPadding(0, 8, 0, 0)
         }
-
         notice.addView(details)
         targetRoot.addView(notice, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { bottomMargin = 14 })
-
         request("GET", "/payments/settings", auth = true) { code, body ->
             if (root !== targetRoot) return@request
-
             if (code != 200) {
-                details.text =
-                    "Deposit እና Withdraw የሚገኙት በአገልግሎት ሰዓት ብቻ ነው።"
+                details.text = "Deposit እና Withdraw የሚገኙት በአገልግሎት ሰዓት ብቻ ነው።"
                 return@request
             }
-
             val settings = body.optJSONObject("settings") ?: JSONObject()
             val enabled = settings.optBoolean("serviceEnabled", true)
             val openTime = settings.optString("serviceOpenTime", "03:00")
@@ -1000,21 +705,10 @@ private fun showResultsHistory() {
             val localTime = settings.optString("localTime", "")
             val isOpen = settings.optBoolean("isOpen", false)
             val range = "${displayTime(openTime)} – ${displayTime(closeTime)}"
-
             details.text = when {
-                !enabled ->
-                    "አገልግሎቱ ለጊዜው ተዘግቷል።\nየሰዓት ቀጠና፦ የኢትዮጵያ ሰዓት"
-
-                isOpen ->
-                    "የሚሰራበት ሰዓት፦ $range\n" +
-                    "ሁኔታ፦ አሁን ክፍት ነው ✅\n" +
-                    "የአሁኑ ሰዓት፦ ${displayTime(localTime)} (የኢትዮጵያ ሰዓት)"
-
-                else ->
-                    "የሚሰራበት ሰዓት፦ $range\n" +
-                    "ሁኔታ፦ አሁን ዝግ ነው 🔒\n" +
-                    "እባክዎ በአገልግሎት ሰዓት ይሞክሩ።\n" +
-                    "የሰዓት ቀጠና፦ የኢትዮጵያ ሰዓት"
+                !enabled -> "አገልግሎቱ ለጊዜው ተዘግቷል።\nየሰዓት ቀጠና፦ የኢትዮጵያ ሰዓት"
+                isOpen -> "የሚሰራበት ሰዓት፦ $range\nሁኔታ፦ አሁን ክፍት ነው ✅\nየአሁኑ ሰዓት፦ ${displayTime(localTime)} (የኢትዮጵያ ሰዓት)"
+                else -> "የሚሰራበት ሰዓት፦ $range\nሁኔታ፦ አሁን ዝግ ነው 🔒\nእባክዎ በአገልግሎት ሰዓት ይሞክሩ።\nየሰዓት ቀጠና፦ የኢትዮጵያ ሰዓት"
             }
         }
     }
@@ -1022,93 +716,55 @@ private fun showResultsHistory() {
     private fun displayTime(value: String): String {
         val parts = value.split(":")
         if (parts.size < 2) return value
-
         val hour = parts[0].toIntOrNull() ?: return value
         val minute = parts[1].toIntOrNull() ?: return value
         val suffix = if (hour < 12) "AM" else "PM"
         val hour12 = if (hour % 12 == 0) 12 else hour % 12
-
         return "%02d:%02d %s".format(hour12, minute, suffix)
     }
 
     private fun showWalletDeposit() {
         screen("ADDIS ዕጣ", "➕ በTelebirr ገንዘብ ጨምር")
         addServiceHoursNotice()
-
-        addText(
-            "ገንዘብ ወደ Telebirr ቁጥሩ ከላኩ በኋላ " +
-            "የግብይት ማረጋገጫውን ያስገቡ።"
-        )
-
+        addText("ገንዘብ ወደ Telebirr ቁጥሩ ከላኩ በኋላ የግብይት ማረጋገጫውን ያስገቡ።")
         val amount = field("የሚጨመረው ገንዘብ (ETB)")
         amount.inputType = 8194
         val reference = field("የTelebirr Transaction Reference")
         val sender = field("የላኪው ሙሉ ስም (አማራጭ)")
         val targetRoot = root
-
         request("GET", "/payments/settings", auth = true) { code, body ->
             if (root !== targetRoot) return@request
-
-            val number = if (code == 200) {
-                body.optJSONObject("settings")?.optString("telebirrNumber", "") ?: ""
-            } else {
-                ""
-            }
-
-            status.text = if (number.isNotBlank()) {
-                "📱 የTelebirr ቁጥር፦ $number"
-            } else {
-                "የTelebirr ቁጥር አልተገኘም። ከአስተዳደሩ ያረጋግጡ።"
-            }
+            val number = if (code == 200) body.optJSONObject("settings")?.optString("telebirrNumber", "") ?: "" else ""
+            status.text = if (number.isNotBlank()) "📱 የTelebirr ቁጥር፦ $number"
+            else "የTelebirr ቁጥር አልተገኘም። ከአስተዳደሩ ያረጋግጡ።"
         }
-
         action("📋 የTelebirr ቁጥር ቅዳ") {
             request("GET", "/payments/settings", auth = true) { code, body ->
-                val number = if (code == 200) {
-                    body.optJSONObject("settings")?.optString("telebirrNumber", "") ?: ""
-                } else {
-                    ""
-                }
-
-                if (number.isBlank()) {
-                    message("የTelebirr ቁጥር አልተገኘም።")
-                } else {
+                val number = if (code == 200) body.optJSONObject("settings")?.optString("telebirrNumber", "") ?: "" else ""
+                if (number.isBlank()) message("የTelebirr ቁጥር አልተገኘም።")
+                else {
                     val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("Telebirr", number))
                     message("የTelebirr ቁጥሩ ተቀድቷል።")
                 }
             }
         }
-
         action("የDeposit ጥያቄ ላክ") {
             val value = amount.text.toString().trim().toDoubleOrNull()
             val ref = reference.text.toString().trim()
             val name = sender.text.toString().trim()
-
             if (value == null || value <= 0 || ref.isBlank()) {
                 message("ትክክለኛ የገንዘብ መጠንና Transaction Reference ያስገቡ።")
                 return@action
             }
-
             if (ref.length > 200 || name.length > 200) {
                 message("ያስገቡት መረጃ ከሚፈቀደው ርዝመት በላይ ነው።")
                 return@action
             }
-
-            val payload = JSONObject()
-                .put("amount", value)
-                .put("transactionReference", ref)
-
+            val payload = JSONObject().put("amount", value).put("transactionReference", ref)
             if (name.isNotBlank()) payload.put("senderName", name)
-
             message("የDeposit ጥያቄው እየተላከ ነው…")
-
-            request(
-                "POST",
-                "/payments/wallet/deposit/telebirr",
-                payload,
-                true
-            ) { resultCode, result ->
+            request("POST", "/payments/wallet/deposit/telebirr", payload, true) { resultCode, result ->
                 if (resultCode == 201) {
                     screen("ADDIS ዕጣ", "የDeposit ጥያቄ")
                     addText("✅ የDeposit ጥያቄዎ ተልኳል።", 20, true)
@@ -1116,52 +772,38 @@ private fun showResultsHistory() {
                     addText("Reference፦ $ref")
                     addText("አስተዳደሩ እስኪያረጋግጥ ጥያቄው በመጠባበቅ ላይ ይቆያል።")
                     action("ወደ Wallet ተመለስ") { showWallet() }
-                } else {
-                    message(result.optString("message", "የDeposit ጥያቄው አልተሳካም።"))
-                }
+                } else message(result.optString("message", "የDeposit ጥያቄው አልተሳካም።"))
             }
         }
-
         action("ወደ Wallet ተመለስ") { showWallet() }
     }
 
     private fun showWalletWithdraw(balance: Double) {
         screen("ADDIS ዕጣ", "➖ ገንዘብ አውጣ")
         addServiceHoursNotice()
-
         addText("ያለዎት ቀሪ ሂሳብ፦ %.2f ETB".format(balance), 20, true)
         addText("የሚፈልጉትን መጠንና ገንዘቡ የሚላክበትን የTelebirr ቁጥር ያስገቡ።")
-
         val amount = field("የሚወጣው ገንዘብ (ETB)")
         amount.inputType = 8194
         val number = field("የእርስዎ Telebirr ቁጥር")
         number.inputType = 3
-
         action("የWithdrawal ጥያቄ ላክ") {
             val value = amount.text.toString().trim().toDoubleOrNull()
             val phone = number.text.toString().trim()
-
             if (value == null || value <= 0 || phone.isBlank()) {
                 message("ትክክለኛ የገንዘብ መጠንና የTelebirr ቁጥር ያስገቡ።")
                 return@action
             }
-
             if (value > balance) {
                 message("የገንዘቡ መጠን ካለዎት ቀሪ ሂሳብ በላይ ነው።")
                 return@action
             }
-
             if (phone.length > 30) {
                 message("ያስገቡት የTelebirr ቁጥር አልተቀበለም።")
                 return@action
             }
-
-            val payload = JSONObject()
-                .put("amount", value)
-                .put("telebirrNumber", phone)
-
+            val payload = JSONObject().put("amount", value).put("telebirrNumber", phone)
             message("የWithdrawal ጥያቄው እየተላከ ነው…")
-
             request("POST", "/payments/wallet/withdraw", payload, true) { code, body ->
                 if (code == 201) {
                     screen("ADDIS ዕጣ", "የWithdrawal ጥያቄ")
@@ -1170,19 +812,15 @@ private fun showResultsHistory() {
                     addText("የTelebirr ቁጥር፦ $phone")
                     addText("አስተዳደሩ እስኪያስተናግድ ይጠብቁ።")
                     action("ወደ Wallet ተመለስ") { showWallet() }
-                } else {
-                    message(body.optString("message", "የWithdrawal ጥያቄው አልተሳካም።"))
-                }
+                } else message(body.optString("message", "የWithdrawal ጥያቄው አልተሳካም።"))
             }
         }
-
         action("ወደ Wallet ተመለስ") { showWallet() }
     }
 
     private fun showWalletHistory() {
         screen("ADDIS ዕጣ", "📋 የWallet ታሪክ")
         message("የWallet ታሪክ እየተጫነ ነው…")
-
         request("GET", "/payments/wallet/history", auth = true) { code, body ->
             if (code != 200) {
                 message(body.optString("message", "የWallet ታሪክን መጫን አልተቻለም።"))
@@ -1190,58 +828,47 @@ private fun showResultsHistory() {
                 action("ወደ Wallet ተመለስ") { showWallet() }
                 return@request
             }
-
             status.text = ""
             val history = body.optJSONObject("history") ?: JSONObject()
             val transactions = history.optJSONArray("transactions") ?: JSONArray()
             val deposits = history.optJSONArray("deposits") ?: JSONArray()
             val withdrawals = history.optJSONArray("withdrawals") ?: JSONArray()
-
             addText("የገንዘብ እንቅስቃሴ", 19, true)
-
-            if (transactions.length() == 0) {
-                addText("እስካሁን የገንዘብ እንቅስቃሴ የለም።")
-            }
-
+            if (transactions.length() == 0) addText("እስካሁን የገንዘብ እንቅስቃሴ የለም።")
             for (i in 0 until transactions.length()) {
                 val item = transactions.optJSONObject(i) ?: continue
                 addText(
                     "${item.optString("type")} • ${item.optDouble("amount", 0.0)} ETB\n" +
-                    "${item.optString("description", "")}\n" +
-                    "ቀሪ ሂሳብ፦ ${item.optDouble("balanceAfter", 0.0)} ETB\n" +
-                    item.optString("createdAt", "")
+                        "${item.optString("description", "")}\n" +
+                        "ቀሪ ሂሳብ፦ ${item.optDouble("balanceAfter", 0.0)} ETB\n" +
+                        item.optString("createdAt", "")
                 )
                 addDivider()
             }
-
             addText("የDeposit ጥያቄዎች", 19, true)
             if (deposits.length() == 0) addText("የDeposit ጥያቄ የለም።")
-
             for (i in 0 until deposits.length()) {
                 val item = deposits.optJSONObject(i) ?: continue
                 addText(
                     "መጠን፦ ${item.optDouble("amount", 0.0)} ETB\n" +
-                    "ሁኔታ፦ ${item.optString("status")}\n" +
-                    "Reference፦ ${item.optString("transactionReference", "")}\n" +
-                    item.optString("createdAt", "")
+                        "ሁኔታ፦ ${item.optString("status")}\n" +
+                        "Reference፦ ${item.optString("transactionReference", "")}\n" +
+                        item.optString("createdAt", "")
                 )
                 addDivider()
             }
-
             addText("የWithdrawal ጥያቄዎች", 19, true)
             if (withdrawals.length() == 0) addText("የWithdrawal ጥያቄ የለም።")
-
             for (i in 0 until withdrawals.length()) {
                 val item = withdrawals.optJSONObject(i) ?: continue
                 addText(
                     "መጠን፦ ${item.optDouble("amount", 0.0)} ETB\n" +
-                    "ሁኔታ፦ ${item.optString("status")}\n" +
-                    "Telebirr፦ ${item.optString("telebirrNumber", "")}\n" +
-                    item.optString("createdAt", "")
+                        "ሁኔታ፦ ${item.optString("status")}\n" +
+                        "Telebirr፦ ${item.optString("telebirrNumber", "")}\n" +
+                        item.optString("createdAt", "")
                 )
                 addDivider()
             }
-
             action("ታሪኩን አድስ") { showWalletHistory() }
             action("ወደ Wallet ተመለስ") { showWallet() }
         }
@@ -1266,26 +893,21 @@ private fun showResultsHistory() {
             gravity = Gravity.TOP
             setBackgroundColor(pageColor)
         }
-
         val scroll = ScrollView(this).apply {
             setFillViewport(true)
             clipToPadding = false
         }
-
         scroll.addView(root)
         setContentView(scroll)
-
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(22, 22, 22, 22)
             background = rounded(green, green, 22f)
         }
-
         root.addView(header, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { bottomMargin = 14 })
-
         header.addView(TextView(this).apply {
             text = title
             textSize = 28f
@@ -1293,27 +915,20 @@ private fun showResultsHistory() {
             setTextColor(white)
             setPadding(0, 0, 0, 8)
         })
-
         header.addView(TextView(this).apply {
             text = subtitle
             textSize = 17f
             setTextColor(android.graphics.Color.rgb(225, 245, 234))
         })
-
         status = TextView(this).apply {
             textSize = 15f
             setTextColor(textColor)
             setPadding(4, 10, 4, 12)
         }
-
         root.addView(status)
     }
 
-    private fun addText(
-        text: String,
-        size: Int = 16,
-        bold: Boolean = false
-    ) {
+    private fun addText(text: String, size: Int = 16, bold: Boolean = false) {
         root.addView(TextView(this).apply {
             this.text = text
             textSize = size.toFloat()
@@ -1327,8 +942,7 @@ private fun showResultsHistory() {
         root.addView(android.view.View(this).apply {
             setBackgroundColor(borderColor)
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                1
+                LinearLayout.LayoutParams.MATCH_PARENT, 1
             ).apply {
                 topMargin = 7
                 bottomMargin = 7
@@ -1346,12 +960,10 @@ private fun showResultsHistory() {
             setPadding(15, 10, 15, 10)
             background = rounded(white, borderColor, 14f)
         }
-
         root.addView(input, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { bottomMargin = 12 })
-
         return input
     }
 
@@ -1363,8 +975,7 @@ private fun showResultsHistory() {
             setTypeface(null, Typeface.BOLD)
             setTextColor(white)
             minHeight = 52
-            backgroundTintList =
-                android.content.res.ColorStateList.valueOf(greenLight)
+            backgroundTintList = android.content.res.ColorStateList.valueOf(greenLight)
             setPadding(16, 10, 16, 10)
             setOnClickListener { run() }
         }, LinearLayout.LayoutParams(
