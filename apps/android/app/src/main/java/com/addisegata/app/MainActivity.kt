@@ -785,11 +785,13 @@ private fun showMyWinners() {
         }
 
         addDivider()
-        action("🔄 ታሪኩን አድስ") { showMyWinners() }
-        action("💰 ዋሌት") { showWallet() }
-        action("ወደ ዕጣዎች ተመለስ") { showDraws() }
+                    action("🔄 ታሪኩን አድስ") { showMyWinners() }
+            action("💰 ዋሌት") { showWallet() }
+            action("ወደ ዕጣዎች ተመለስ") { showDraws() }
+        }
     }
 }
+
 private fun showResultsHistory() {
     screen("ADDIS ዕጣ", "📋 የዕጣ ውጤት ታሪክ")
     message("የዕጣ ውጤቶች እየተጫኑ ነው…")
