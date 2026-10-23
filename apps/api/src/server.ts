@@ -55,7 +55,9 @@ const DEFAULT_API_URL =
 const WINNER_GROUP_CHAT_ID =
   process.env.WINNER_GROUP_CHAT_ID?.trim() ||
   "";
-
+  if (!pool) {
+    throw new Error("DATABASE_URL is not configured");
+  }
 const SCHEDULED_DRAWS_CRON_TOKEN =
   process.env.SCHEDULED_DRAWS_CRON_TOKEN?.trim() ||
   "";
@@ -82,7 +84,10 @@ async function recordTelegramStart(
       ON CONFLICT (telegram_user_id, local_date)
       DO UPDATE SET
         username = COALESCE(
-          EXCLUDED.username,
+            if (!pool) {
+    throw new Error("DATABASE_URL is not configured");
+  }
+  EXCLUDED.username,
           telegram_bot_daily_starts.username
         ),
         first_name = COALESCE(
