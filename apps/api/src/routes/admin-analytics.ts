@@ -12,6 +12,9 @@ router.use(requireTelegramAuth, requireAdmin);
 
 router.get("/", async (_req, res) => {
   try {
+        if (!pool) {
+      throw new Error("DATABASE_URL is not configured");
+    }
     const result = await pool.query(`
       SELECT
         (NOW() AT TIME ZONE 'Africa/Addis_Ababa')::date
