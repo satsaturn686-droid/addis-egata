@@ -1,4 +1,3 @@
-
 import "dotenv/config";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -33,6 +32,7 @@ async function migrate() {
     await client.query(schema);
 
     await ensureAppAuthSchema(client);
+    await ensureTelegramStartAnalyticsSchema(client);
     await ensureWalletTransactionTypes(client);
     await ensureWinnerCountMinimum(client);
     await ensurePhysicalWinnerRecipient(client);
@@ -56,6 +56,29 @@ async function migrate() {
     client.release();
     await pool.end();
   }
+}
+
+async function ensureTelegramStartAnalyticsSchema(
+  client: import("pg").PoolClient,
+): Promise<void> {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS telegram_bot_daily_starts (
+      telegram_user_id BIGINT NOT NULL,
+      local_date DATE NOT NULL,
+      username TEXT,
+      first_name TEXT,
+      first_started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (telegram_user_id, local_date)
+    )
+  `);
+
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS
+      telegram_bot_daily_starts_date_idx
+    ON telegram_bot_daily_starts (local_date)
+  `);
+
+  console.log("Telegram daily start analytics schema is ready.");
 }
 
 async function ensureAppAuthSchema(
