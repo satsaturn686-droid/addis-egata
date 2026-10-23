@@ -8,7 +8,7 @@ if (!databaseUrl) {
   );
 }
 
-export const pool = databaseUrl
+export const pool: Pool | null = databaseUrl
   ? new Pool({
       connectionString: databaseUrl,
       max: 10,
@@ -21,7 +21,9 @@ export const pool = databaseUrl
     })
   : null;
 
-export async function query<T extends QueryResultRow = QueryResultRow>(
+export async function query<
+  T extends QueryResultRow = QueryResultRow,
+>(
   text: string,
   values: unknown[] = [],
 ): Promise<T[]> {
