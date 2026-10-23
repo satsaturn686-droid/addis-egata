@@ -6,7 +6,7 @@ import express, {
 } from "express";
 import cors from "cors";
 
-import { checkDatabase } from "./db.js";
+import { checkDatabase, pool } from "./db.js";
 import authRouter from "./routes/auth.js";
 import appAuthRouter from "./routes/app-auth.js";
 import fullAppWinnersRouter from "./routes/full-app-winners.js";
@@ -59,6 +59,65 @@ const WINNER_GROUP_CHAT_ID =
 const SCHEDULED_DRAWS_CRON_TOKEN =
   process.env.SCHEDULED_DRAWS_CRON_TOKEN?.trim() ||
   "";
+
+async function recordTelegramStart(
+  telegramUserId: number,
+  username?: string,
+  firstName?: string,
+): Promise<number> {
+  await pool.query(
+    `
+      INSERT INTO telegram_bot_daily_starts (
+        telegram_user_id,
+        local_date,
+        username,
+        first_name
+      )
+      VALUES (
+        $1,
+        (NOW() AT TIME ZONE 'Africa/Addis_Ababa')::date,
+        $2,
+        $3
+      )
+      ON CONFLICT (telegram_user_id, local_date)
+      DO UPDATE SET
+        username = COALESCE(
+          EXCLUDED.username,
+          telegram_bot_daily_starts.username
+        ),
+        first_name = COALESCE(
+          EXCLUDED.first_name,
+          telegram_bot_daily_starts.first_name
+        )
+    `,
+    [telegramUserId, username ?? null, firstName ?? null],
+  );
+
+  return getTodayTelegramStartCount();
+}
+
+async function getTodayTelegramStartCount(): Promise<number> {
+  const result = await pool.query<{ count: number }>(
+    `
+      SELECT COUNT(*)::int AS count
+      FROM telegram_bot_daily_starts
+      WHERE local_date =
+        (NOW() AT TIME ZONE 'Africa/Addis_Ababa')::date
+    `,
+  );
+
+  return result.rows[0]?.count ?? 0;
+}
+
+function isTelegramAnalyticsAdmin(telegramUserId: number): boolean {
+  const configuredIds = (process.env.ADMIN_TELEGRAM_IDS ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => /^\d+$/.test(value))
+    .map(Number);
+
+  return configuredIds.includes(telegramUserId);
+}
 
 function getTelegramApiUrl(
   method: string,
@@ -729,6 +788,8 @@ app.post(
         };
         from?: {
           id?: number;
+          username?: string;
+          first_name?: string;
         };
         text?: string;
         photo?: Array<{
@@ -796,12 +857,54 @@ app.post(
     }
 
     /*
+     * Admin daily unique-start statistics
+     */
+    if (
+      isPrivateChat &&
+      /^\/stats(?:@\w+)?(?:\s|$)/.test(text)
+    ) {
+      if (!isTelegramAnalyticsAdmin(telegramUserId)) {
+        return;
+      }
+
+      try {
+        const count = await getTodayTelegramStartCount();
+        await sendTelegramMessage(
+          chatId,
+          "📊 ADDIS ዕጣ — የዛሬ ሪፖርት\n\n" +
+            `👥 ዛሬ Start ያደረጉ የተለዩ ሰዎች፦ ${count}\n\n` +
+            "🕒 የሰዓት ቀጣና፦ Ethiopia (UTC+3)",
+        );
+      } catch (error) {
+        console.error("Telegram analytics command failed:", error);
+        await sendTelegramMessage(
+          chatId,
+          "⚠️ የዛሬን ሪፖርት ማውጣት አልተቻለም።",
+        );
+      }
+      return;
+    }
+
+    /*
      * Normal /start
      */
     if (
       text === "/start" ||
       text.startsWith("/start ")
     ) {
+      if (isPrivateChat) {
+        try {
+          const count = await recordTelegramStart(
+            telegramUserId,
+            message.from?.username,
+            message.from?.first_name,
+          );
+          console.log(`[Telegram Analytics] Today unique starts: ${count}`);
+        } catch (error) {
+          console.error("Telegram start analytics failed:", error);
+        }
+      }
+
       await sendTelegramWelcome(chatId);
       return;
     }
