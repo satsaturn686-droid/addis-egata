@@ -147,3 +147,19 @@ CREATE INDEX IF NOT EXISTS idx_withdrawals_created
 
 CREATE INDEX IF NOT EXISTS idx_winner_wallet_credits_user
   ON winner_wallet_credits(user_id);
+
+/*
+ * Telegram bot daily unique /start analytics.
+ * One record per Telegram user per Ethiopia-local date.
+ */
+CREATE TABLE IF NOT EXISTS telegram_bot_daily_starts (
+  telegram_user_id BIGINT NOT NULL,
+  local_date DATE NOT NULL,
+  username TEXT,
+  first_name TEXT,
+  first_started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (telegram_user_id, local_date)
+);
+
+CREATE INDEX IF NOT EXISTS telegram_bot_daily_starts_date_idx
+  ON telegram_bot_daily_starts (local_date);
