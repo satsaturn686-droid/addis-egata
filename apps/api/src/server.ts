@@ -22,7 +22,7 @@ import adminDrawNumbersRouter from "./routes/admin-draw-numbers.js";
 import adminDrawDeleteRouter from "./routes/admin-draw-delete.js";
 import adminDrawTestResetRouter from "./routes/admin-draw-test-reset.js";
 import winnerPayoutsRouter from "./routes/winner-payouts.js";
-
+import adminAnalyticsRouter from "./routes/admin-analytics.js";
 import { processScheduledDraws } from "./services/scheduled-draws.js";
 
 import {
@@ -1015,7 +1015,10 @@ app.use("/payments", paymentsRouter);
  * Admin payment verification
  */
 app.use("/admin/payments", adminPaymentsRouter);
-
+/*
+ * Admin analytics dashboard API
+ */
+app.use("/admin/analytics", adminAnalyticsRouter);
 /*
  * Winner payout and claim flow
  */
