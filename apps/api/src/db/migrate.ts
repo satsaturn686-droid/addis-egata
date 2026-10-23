@@ -84,8 +84,6 @@ async function ensureTelegramStartAnalyticsSchema(
 async function ensureAppAuthSchema(
   client: import("pg").PoolClient,
 ): Promise<void> {
-  // Telegram users remain supported. Standalone app users may have
-  // no Telegram account, so their telegram_id must be nullable.
   await client.query(`
     ALTER TABLE users
     ALTER COLUMN telegram_id DROP NOT NULL
@@ -95,14 +93,11 @@ async function ensureAppAuthSchema(
     CREATE TABLE IF NOT EXISTS app_credentials (
       user_id UUID PRIMARY KEY
         REFERENCES users(id) ON DELETE CASCADE,
-
       login_identifier TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL,
       salt TEXT NOT NULL,
-
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
       CONSTRAINT app_credentials_identifier_length
         CHECK (
           char_length(login_identifier) BETWEEN 3 AND 255
@@ -113,10 +108,8 @@ async function ensureAppAuthSchema(
   await client.query(`
     CREATE TABLE IF NOT EXISTS app_sessions (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-
       user_id UUID NOT NULL
         REFERENCES users(id) ON DELETE CASCADE,
-
       token_hash TEXT NOT NULL UNIQUE,
       expires_at TIMESTAMPTZ NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
