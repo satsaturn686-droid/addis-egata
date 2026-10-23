@@ -55,9 +55,7 @@ const DEFAULT_API_URL =
 const WINNER_GROUP_CHAT_ID =
   process.env.WINNER_GROUP_CHAT_ID?.trim() ||
   "";
-  if (!pool) {
-    throw new Error("DATABASE_URL is not configured");
-  }
+
 const SCHEDULED_DRAWS_CRON_TOKEN =
   process.env.SCHEDULED_DRAWS_CRON_TOKEN?.trim() ||
   "";
@@ -67,6 +65,10 @@ async function recordTelegramStart(
   username?: string,
   firstName?: string,
 ): Promise<number> {
+  if (!pool) {
+    throw new Error("DATABASE_URL is not configured");
+  }
+
   await pool.query(
     `
       INSERT INTO telegram_bot_daily_starts (
@@ -84,10 +86,7 @@ async function recordTelegramStart(
       ON CONFLICT (telegram_user_id, local_date)
       DO UPDATE SET
         username = COALESCE(
-            if (!pool) {
-    throw new Error("DATABASE_URL is not configured");
-  }
-  EXCLUDED.username,
+          EXCLUDED.username,
           telegram_bot_daily_starts.username
         ),
         first_name = COALESCE(
@@ -102,6 +101,10 @@ async function recordTelegramStart(
 }
 
 async function getTodayTelegramStartCount(): Promise<number> {
+  if (!pool) {
+    throw new Error("DATABASE_URL is not configured");
+  }
+
   const result = await pool.query<{ count: number }>(
     `
       SELECT COUNT(*)::int AS count
@@ -996,6 +999,7 @@ app.get(
 app.use("/auth", authRouter);
 app.use("/app-auth", appAuthRouter);
 app.use("/full-app/winners", fullAppWinnersRouter);
+
 /*
  * Public draws
  */
@@ -1020,10 +1024,12 @@ app.use("/payments", paymentsRouter);
  * Admin payment verification
  */
 app.use("/admin/payments", adminPaymentsRouter);
+
 /*
  * Admin analytics dashboard API
  */
 app.use("/admin/analytics", adminAnalyticsRouter);
+
 /*
  * Winner payout and claim flow
  */
