@@ -16,6 +16,7 @@ import entriesRouter from "./routes/entries.js";
 import paymentsRouter from "./routes/payments.js";
 import resultsRouter from "./routes/results.js";
 import adminPaymentsRouter from "./routes/admin-payments.js";
+import adminReferralsRouter from "./routes/admin-referrals.js";
 import adminDrawsRouter from "./routes/admin-draws.js";
 import adminDrawListRouter from "./routes/admin-draw-list.js";
 import adminDrawExecutionRouter from "./routes/admin-draw-execution.js";
@@ -1026,6 +1027,10 @@ app.use("/payments", paymentsRouter);
  * Admin payment verification
  */
 app.use("/admin/payments", adminPaymentsRouter);
+/*
+ * Admin referral rewards
+ */
+app.use("/admin/referrals", adminReferralsRouter);
 
 /*
  * Admin analytics dashboard API
