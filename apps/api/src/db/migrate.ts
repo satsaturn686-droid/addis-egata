@@ -34,6 +34,7 @@ async function migrate() {
     await ensureAppAuthSchema(client);
     await ensureTelegramStartAnalyticsSchema(client);
     await ensureWalletTransactionTypes(client);
+    await ensureReferralSchema(client);
     await ensureWinnerCountMinimum(client);
     await ensurePhysicalWinnerRecipient(client);
     await removeLegacyEntryNumberConstraint(client);
@@ -188,6 +189,98 @@ async function ensureWalletTransactionTypes(
 
     throw error;
   });
+}
+
+async function ensureReferralSchema(
+  client: import("pg").PoolClient,
+): Promise<void> {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS referral_codes (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id),
+      code TEXT NOT NULL UNIQUE,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT referral_codes_code_length
+        CHECK (char_length(code) BETWEEN 6 AND 32)
+    )
+  `);
+
+  await client.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS
+      referral_codes_one_active_per_user
+    ON referral_codes(user_id)
+    WHERE is_active = TRUE
+  `);
+
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS referrals (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      inviter_user_id UUID NOT NULL REFERENCES users(id),
+      invitee_user_id UUID NOT NULL UNIQUE REFERENCES users(id),
+      referral_code TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'qualified', 'rejected')),
+      first_verified_deposit_id UUID REFERENCES wallet_deposits(id),
+      qualified_at TIMESTAMPTZ,
+      reviewed_by UUID REFERENCES users(id),
+      reviewed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT referrals_no_self_referral
+        CHECK (inviter_user_id <> invitee_user_id)
+    )
+  `);
+
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS referrals_inviter_status_idx
+    ON referrals(inviter_user_id, status, qualified_at)
+  `);
+
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS referral_rewards (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      referral_id UUID NOT NULL UNIQUE REFERENCES referrals(id),
+      inviter_user_id UUID NOT NULL REFERENCES users(id),
+      reward_amount NUMERIC(12, 2) NOT NULL DEFAULT 10.00
+        CHECK (reward_amount = 10.00),
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (
+          status IN ('pending', 'approved', 'credited', 'rejected')
+        ),
+      wallet_transaction_id UUID UNIQUE
+        REFERENCES wallet_transactions(id),
+      approved_by UUID REFERENCES users(id),
+      approved_at TIMESTAMPTZ,
+      credited_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS referral_rewards_inviter_status_idx
+    ON referral_rewards(inviter_user_id, status)
+  `);
+
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS referral_audit_logs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      referral_id UUID REFERENCES referrals(id),
+      reward_id UUID REFERENCES referral_rewards(id),
+      actor_user_id UUID REFERENCES users(id),
+      action TEXT NOT NULL,
+      details JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS referral_audit_logs_created_idx
+    ON referral_audit_logs(created_at)
+  `);
+
+  console.log("Referral schema is ready.");
 }
 
 async function ensureWinnerCountMinimum(
