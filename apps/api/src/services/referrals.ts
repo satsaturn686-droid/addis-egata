@@ -1,8 +1,7 @@
-
 import type { PoolClient } from "pg";
 
 const REFERRAL_REWARD_ETB = "10.00";
-const MAX_QUALIFIED_REFERRALS_PER_MONTH = 5;
+const MAX_REWARDED_REFERRALS_PER_MONTH = 5;
 
 export async function qualifyReferralAfterVerifiedDeposit(
   client: PoolClient,
@@ -47,6 +46,7 @@ export async function qualifyReferralAfterVerifiedDeposit(
       };
     }
 
+    // Serialize qualifications for the same inviter.
     const inviterLock = await client.query(
       `
         SELECT id
@@ -113,20 +113,25 @@ export async function qualifyReferralAfterVerifiedDeposit(
       };
     }
 
+    // Count only referrals that have actually been allocated a bonus.
+    // This lets additional valid referrals qualify for the monthly contest
+    // without granting more than five bonuses to the same inviter per month.
     const monthLimitResult = await client.query<{
       count: number;
     }>(
       `
         SELECT COUNT(*)::int AS count
-        FROM referrals
-        WHERE inviter_user_id = $1
-          AND status = 'qualified'
-          AND qualified_at >=
+        FROM referrals r
+        INNER JOIN referral_rewards rr
+          ON rr.referral_id = r.id
+        WHERE r.inviter_user_id = $1
+          AND r.status = 'qualified'
+          AND r.qualified_at >=
             date_trunc(
               'month',
               NOW() AT TIME ZONE 'Africa/Addis_Ababa'
             ) AT TIME ZONE 'Africa/Addis_Ababa'
-          AND qualified_at <
+          AND r.qualified_at <
             (
               date_trunc(
                 'month',
@@ -137,55 +142,12 @@ export async function qualifyReferralAfterVerifiedDeposit(
       [referral.inviter_user_id],
     );
 
-    if (
-      Number(monthLimitResult.rows[0]?.count ?? 0) >=
-      MAX_QUALIFIED_REFERRALS_PER_MONTH
-    ) {
-      await client.query(
-        `
-          UPDATE referrals
-          SET
-            status = 'rejected',
-            rejection_reason = 'MONTHLY_REFERRAL_LIMIT_REACHED',
-            reviewed_by = $2,
-            reviewed_at = NOW(),
-            updated_at = NOW()
-          WHERE id = $1
-            AND status = 'pending'
-        `,
-        [referral.id, reviewerUserId],
-      );
+    const rewardedCount = Number(
+      monthLimitResult.rows[0]?.count ?? 0,
+    );
 
-      await client.query(
-        `
-          INSERT INTO referral_audit_logs (
-            referral_id,
-            actor_user_id,
-            action,
-            details
-          )
-          VALUES ($1, $2, $3, $4::jsonb)
-        `,
-        [
-          referral.id,
-          reviewerUserId,
-          "referral_monthly_limit_reached",
-          JSON.stringify({
-            inviteeUserId,
-            verifiedDepositId,
-            monthlyLimit: MAX_QUALIFIED_REFERRALS_PER_MONTH,
-          }),
-        ],
-      );
-
-      await client.query("RELEASE SAVEPOINT qualify_referral");
-
-      return {
-        qualified: false,
-        reason: "MONTHLY_REFERRAL_LIMIT_REACHED",
-        referralId: referral.id,
-      };
-    }
+    const rewardEligible =
+      rewardedCount < MAX_REWARDED_REFERRALS_PER_MONTH;
 
     const updateResult = await client.query(
       `
@@ -214,23 +176,29 @@ export async function qualifyReferralAfterVerifiedDeposit(
       };
     }
 
-    await client.query(
-      `
-        INSERT INTO referral_rewards (
-          referral_id,
-          inviter_user_id,
-          reward_amount,
-          status
-        )
-        VALUES ($1, $2, $3, 'pending')
-        ON CONFLICT (referral_id) DO NOTHING
-      `,
-      [
-        referral.id,
-        referral.inviter_user_id,
-        REFERRAL_REWARD_ETB,
-      ],
-    );
+    if (rewardEligible) {
+      await client.query(
+        `
+          INSERT INTO referral_rewards (
+            referral_id,
+            inviter_user_id,
+            reward_amount,
+            status
+          )
+          VALUES ($1, $2, $3, 'pending')
+          ON CONFLICT (referral_id) DO NOTHING
+        `,
+        [
+          referral.id,
+          referral.inviter_user_id,
+          REFERRAL_REWARD_ETB,
+        ],
+      );
+    }
+
+    const action = rewardEligible
+      ? "referral_qualified"
+      : "referral_qualified_without_monthly_bonus";
 
     await client.query(
       `
@@ -245,11 +213,16 @@ export async function qualifyReferralAfterVerifiedDeposit(
       [
         referral.id,
         reviewerUserId,
-        "referral_qualified",
+        action,
         JSON.stringify({
           inviteeUserId,
           verifiedDepositId,
-          rewardAmountETB: REFERRAL_REWARD_ETB,
+          rewardAmountETB: rewardEligible
+            ? REFERRAL_REWARD_ETB
+            : null,
+          monthlyRewardLimit: MAX_REWARDED_REFERRALS_PER_MONTH,
+          rewardedReferralsBeforeThisOne: rewardedCount,
+          rewardEligible,
         }),
       ],
     );
@@ -258,7 +231,9 @@ export async function qualifyReferralAfterVerifiedDeposit(
 
     return {
       qualified: true,
-      reason: "QUALIFIED_PENDING_REWARD_APPROVAL",
+      reason: rewardEligible
+        ? "QUALIFIED_PENDING_REWARD_APPROVAL"
+        : "QUALIFIED_MONTHLY_REWARD_LIMIT_REACHED",
       referralId: referral.id,
     };
   } catch (error) {
