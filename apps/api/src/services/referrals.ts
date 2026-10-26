@@ -1,4 +1,3 @@
-
 import type { PoolClient } from "pg";
 
 const REFERRAL_REWARD_ETB = "10.00";
@@ -35,10 +34,7 @@ export async function qualifyReferralAfterVerifiedDeposit(
 
     if (!referral) {
       await client.query("RELEASE SAVEPOINT qualify_referral");
-      return {
-        qualified: false,
-        reason: "NO_REFERRAL",
-      };
+      return { qualified: false, reason: "NO_REFERRAL" };
     }
 
     if (referral.status !== "pending") {
@@ -48,6 +44,21 @@ export async function qualifyReferralAfterVerifiedDeposit(
         reason: "REFERRAL_ALREADY_PROCESSED",
         referralId: referral.id,
       };
+    }
+
+    // Serialize qualification checks for this inviter.
+    const inviterLock = await client.query(
+      `
+        SELECT id
+        FROM users
+        WHERE id = $1
+        FOR UPDATE
+      `,
+      [referral.inviter_user_id],
+    );
+
+    if (inviterLock.rows.length === 0) {
+      throw new Error("REFERRAL_INVITER_NOT_FOUND");
     }
 
     const depositResult = await client.query<{
@@ -79,7 +90,9 @@ export async function qualifyReferralAfterVerifiedDeposit(
       };
     }
 
-    const firstDepositResult = await client.query(
+    const firstDepositResult = await client.query<{
+      id: string;
+    }>(
       `
         SELECT id
         FROM wallet_deposits
@@ -91,9 +104,7 @@ export async function qualifyReferralAfterVerifiedDeposit(
       [inviteeUserId],
     );
 
-    if (
-      firstDepositResult.rows[0]?.id !== verifiedDepositId
-    ) {
+    if (firstDepositResult.rows[0]?.id !== verifiedDepositId) {
       await client.query("RELEASE SAVEPOINT qualify_referral");
       return {
         qualified: false,
@@ -122,13 +133,12 @@ export async function qualifyReferralAfterVerifiedDeposit(
                 NOW() AT TIME ZONE 'Africa/Addis_Ababa'
               ) + INTERVAL '1 month'
             ) AT TIME ZONE 'Africa/Addis_Ababa'
-        FOR UPDATE
       `,
       [referral.inviter_user_id],
     );
 
     if (
-      (monthLimitResult.rows[0]?.count ?? 0) >=
+      Number(monthLimitResult.rows[0]?.count ?? 0) >=
       MAX_QUALIFIED_REFERRALS_PER_MONTH
     ) {
       await client.query("RELEASE SAVEPOINT qualify_referral");
