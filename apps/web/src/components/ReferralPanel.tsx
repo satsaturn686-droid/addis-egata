@@ -8,20 +8,46 @@ import {
 
 const BOT_LINK = "https://t.me/Addis_draw_bot";
 
+type TelegramStartData = {
+  start_param?: string;
+};
+
 function getStartParam(): string {
   const webApp = (
     window as unknown as {
       Telegram?: {
         WebApp?: {
-          initDataUnsafe?: {
-            start_param?: string;
-          };
+          initDataUnsafe?: TelegramStartData;
         };
       };
     }
   ).Telegram?.WebApp;
 
-  return webApp?.initDataUnsafe?.start_param?.trim() ?? "";
+  const telegramParam =
+    webApp?.initDataUnsafe?.start_param?.trim();
+
+  if (telegramParam) {
+    return telegramParam;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+
+  return (
+    params.get("tgWebAppStartParam")?.trim() ||
+    params.get("startapp")?.trim() ||
+    params.get("ref")?.trim() ||
+    ""
+  );
+}
+
+function extractReferralCode(value: string): string {
+  const cleaned = value.trim();
+
+  if (/^ref_/i.test(cleaned)) {
+    return cleaned.slice(4).trim();
+  }
+
+  return cleaned;
 }
 
 export default function ReferralPanel() {
@@ -37,30 +63,28 @@ export default function ReferralPanel() {
     async function loadReferral() {
       try {
         const startParam = getStartParam();
+        const code = extractReferralCode(startParam);
 
-        if (startParam.toLowerCase().startsWith("ref_")) {
-          const code = startParam.slice(4).trim();
-          const storageKey = `addis-egata-referral-applied:${code}`;
+        if (code && /^[A-Za-z0-9_-]{6,32}$/.test(code)) {
+          const storageKey =
+            `addis-egata-referral-applied:${code.toUpperCase()}`;
 
-          if (
-            code &&
-            sessionStorage.getItem(storageKey) !== "done"
-          ) {
+          if (sessionStorage.getItem(storageKey) !== "done") {
             try {
               await applyReferralCode(code);
+
+              sessionStorage.setItem(storageKey, "done");
 
               if (active) {
                 setMessage("የግብዣ ኮዱ ተመዝግቧል።");
               }
-
-              sessionStorage.setItem(storageKey, "done");
             } catch (error) {
-              const text =
+              const errorText =
                 error instanceof Error ? error.message : "";
 
               if (
-                text.includes("REFERRAL_ALREADY_RECORDED") ||
-                text.includes("already been recorded")
+                errorText.includes("REFERRAL_ALREADY_RECORDED") ||
+                errorText.includes("already been recorded")
               ) {
                 sessionStorage.setItem(storageKey, "done");
               } else if (active) {
@@ -79,9 +103,7 @@ export default function ReferralPanel() {
         }
       } catch {
         if (active) {
-          setMessage(
-            "የግብዣ መረጃን ማምጣት አልተቻለም።",
-          );
+          setMessage("የግብዣ መረጃን ማምጣት አልተቻለም።");
         }
       } finally {
         if (active) {
@@ -112,9 +134,7 @@ export default function ReferralPanel() {
       await navigator.clipboard.writeText(link);
       setMessage("የግብዣ ሊንኩ ተቀድቷል። ለጓደኞችዎ ይላኩ።");
     } catch {
-      setMessage(
-        `የግብዣ ሊንክዎ፦ ${link}`,
-      );
+      setMessage(`የግብዣ ሊንክዎ፦ ${link}`);
     } finally {
       setCopying(false);
     }
@@ -129,13 +149,20 @@ export default function ReferralPanel() {
   }
 
   if (!referral) {
-    return null;
+    return (
+      <section className="draw-card">
+        <p className="hero-description">
+          {message || "የግብዣ መረጃ አልተገኘም።"}
+        </p>
+      </section>
+    );
   }
 
   return (
     <section className="draw-card">
       <div className="draw-info">
         <p className="eyebrow">🎁 ጓደኛዎን ይጋብዙ</p>
+
         <h2>ከግብዣዎ 10 ብር ቦነስ ያግኙ</h2>
 
         <p className="hero-description">
@@ -150,14 +177,19 @@ export default function ReferralPanel() {
             <span>የተጋበዙ</span>
             <strong>{referral.summary.total}</strong>
           </div>
+
           <div>
             <span>የተረጋገጡ</span>
             <strong>{referral.summary.qualified}</strong>
           </div>
+
           <div>
             <span>የተከፈለ ቦነስ</span>
             <strong>
-              {Number(referral.rewards.credited).toLocaleString("en-US")} ብር
+              {Number(
+                referral.rewards.credited,
+              ).toLocaleString("en-US")}{" "}
+              ብር
             </strong>
           </div>
         </div>
@@ -179,7 +211,9 @@ export default function ReferralPanel() {
             fontWeight: 700,
           }}
         >
-          {copying ? "በመቅዳት ላይ..." : "🔗 የግብዣ ሊንክ ቅዳ"}
+          {copying
+            ? "በመቅዳት ላይ..."
+            : "🔗 የግብዣ ሊንክ ቅዳ"}
         </button>
 
         {message && (
