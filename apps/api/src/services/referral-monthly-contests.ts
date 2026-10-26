@@ -1,4 +1,3 @@
-
 import type { PoolClient } from "pg";
 import { pool } from "../db.js";
 
@@ -27,6 +26,26 @@ function validateContestMonth(month: string): string {
   }
 
   return `${month}-01`;
+}
+
+async function assertContestMonthFinished(
+  client: PoolClient,
+  contestMonth: string,
+): Promise<void> {
+  const result = await client.query<{ finished: boolean }>(
+    `
+      SELECT
+        (
+          ($1::date + INTERVAL '1 month')::date
+          <= (NOW() AT TIME ZONE 'Africa/Addis_Ababa')::date
+        ) AS finished
+    `,
+    [contestMonth],
+  );
+
+  if (result.rows[0]?.finished !== true) {
+    throw new Error("CONTEST_MONTH_NOT_FINISHED");
+  }
 }
 
 async function writeAuditLog(
@@ -70,6 +89,8 @@ export async function createMonthlyReferralContest(
 
   try {
     await client.query("BEGIN");
+
+    await assertContestMonthFinished(client, contestMonth);
 
     const contestResult = await client.query<{ id: string }>(
       `
@@ -192,6 +213,10 @@ export async function approveMonthlyReferralContest(
     throw new Error("DATABASE_UNAVAILABLE");
   }
 
+  if (!adminUserId.trim()) {
+    throw new Error("INVALID_ADMIN_USER_ID");
+  }
+
   const client = await pool.connect();
 
   try {
@@ -199,11 +224,16 @@ export async function approveMonthlyReferralContest(
 
     const contestResult = await client.query<{
       id: string;
+      contest_month: string;
       status: string;
       total_budget: string | number;
     }>(
       `
-        SELECT id, status, total_budget
+        SELECT
+          id,
+          contest_month,
+          status,
+          total_budget
         FROM referral_monthly_contests
         WHERE id = $1
         FOR UPDATE
@@ -221,22 +251,56 @@ export async function approveMonthlyReferralContest(
       throw new Error("MONTHLY_CONTEST_NOT_APPROVABLE");
     }
 
+    await assertContestMonthFinished(
+      client,
+      String(contest.contest_month).slice(0, 10),
+    );
+
     if (Number(contest.total_budget) !== TOTAL_BUDGET) {
       throw new Error("INVALID_MONTHLY_CONTEST_BUDGET");
     }
 
-    const winnersResult = await client.query(
+    const winnersResult = await client.query<{
+      id: string;
+      rank: number;
+      prize_amount: string | number;
+      status: string;
+    }>(
       `
-        SELECT id
+        SELECT id, rank, prize_amount, status
         FROM referral_monthly_winners
         WHERE contest_id = $1
+        ORDER BY rank
         FOR UPDATE
       `,
       [contestId],
     );
 
-    if (winnersResult.rowCount === 0) {
-      throw new Error("MONTHLY_CONTEST_HAS_NO_WINNERS");
+    const winners = winnersResult.rows;
+
+    if (winners.length < 1 || winners.length > 3) {
+      throw new Error("MONTHLY_CONTEST_HAS_INVALID_WINNERS");
+    }
+
+    let totalPrizes = 0;
+
+    for (const winner of winners) {
+      const expectedPrize =
+        PRIZES[winner.rank as keyof typeof PRIZES];
+
+      if (
+        !expectedPrize ||
+        Number(winner.prize_amount) !== expectedPrize ||
+        winner.status !== "pending"
+      ) {
+        throw new Error("MONTHLY_CONTEST_HAS_INVALID_WINNERS");
+      }
+
+      totalPrizes += expectedPrize;
+    }
+
+    if (totalPrizes > TOTAL_BUDGET) {
+      throw new Error("INVALID_MONTHLY_CONTEST_BUDGET");
     }
 
     await client.query(
@@ -250,16 +314,6 @@ export async function approveMonthlyReferralContest(
           AND status = 'pending'
       `,
       [contestId, adminUserId],
-    );
-
-    const approvedResult = await client.query(
-      `
-        SELECT id
-        FROM referral_monthly_winners
-        WHERE contest_id = $1
-          AND status = 'approved'
-      `,
-      [contestId],
     );
 
     await client.query(
@@ -281,7 +335,9 @@ export async function approveMonthlyReferralContest(
       "monthly_referral_contest_approved",
       {
         contestId,
-        winnersApproved: approvedResult.rowCount ?? 0,
+        winnersApproved: winners.length,
+        totalPrizesETB: totalPrizes,
+        totalBudgetETB: TOTAL_BUDGET,
       },
     );
 
@@ -290,7 +346,7 @@ export async function approveMonthlyReferralContest(
     return {
       contestId,
       status: "approved",
-      winnersApproved: approvedResult.rowCount ?? 0,
+      winnersApproved: winners.length,
     };
   } catch (error) {
     await client.query("ROLLBACK");
@@ -312,6 +368,10 @@ export async function payMonthlyReferralWinner(
 }> {
   if (!pool) {
     throw new Error("DATABASE_UNAVAILABLE");
+  }
+
+  if (!adminUserId.trim()) {
+    throw new Error("INVALID_ADMIN_USER_ID");
   }
 
   const client = await pool.connect();
@@ -359,11 +419,12 @@ export async function payMonthlyReferralWinner(
     }
 
     const contestResult = await client.query<{
+      contest_month: string;
       status: string;
       total_budget: string | number;
     }>(
       `
-        SELECT status, total_budget
+        SELECT contest_month, status, total_budget
         FROM referral_monthly_contests
         WHERE id = $1
         FOR UPDATE
@@ -373,9 +434,14 @@ export async function payMonthlyReferralWinner(
 
     const contest = contestResult.rows[0];
 
-    if (contest?.status !== "approved") {
+    if (!contest || contest.status !== "approved") {
       throw new Error("MONTHLY_CONTEST_NOT_APPROVED");
     }
+
+    await assertContestMonthFinished(
+      client,
+      String(contest.contest_month).slice(0, 10),
+    );
 
     if (Number(contest.total_budget) !== TOTAL_BUDGET) {
       throw new Error("INVALID_MONTHLY_CONTEST_BUDGET");
@@ -469,12 +535,11 @@ export async function payMonthlyReferralWinner(
         SET
           status = 'paid',
           wallet_transaction_id = $1,
-          approved_by = $2,
-          approved_at = COALESCE(approved_at, NOW()),
           paid_at = NOW()
-        WHERE id = $3
+        WHERE id = $2
+          AND status = 'approved'
       `,
-      [transactionResult.rows[0].id, adminUserId, winner.id],
+      [transactionResult.rows[0].id, winner.id],
     );
 
     const unpaidResult = await client.query(
@@ -493,6 +558,7 @@ export async function payMonthlyReferralWinner(
           UPDATE referral_monthly_contests
           SET status = 'paid', updated_at = NOW()
           WHERE id = $1
+            AND status = 'approved'
         `,
         [winner.contest_id],
       );
