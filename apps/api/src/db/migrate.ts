@@ -231,7 +231,10 @@ async function ensureReferralSchema(
         CHECK (inviter_user_id <> invitee_user_id)
     )
   `);
-
+  await client.query(`
+    ALTER TABLE referrals
+    ADD COLUMN IF NOT EXISTS rejection_reason TEXT
+  `);
   await client.query(`
     CREATE INDEX IF NOT EXISTS referrals_inviter_status_idx
     ON referrals(inviter_user_id, status, qualified_at)
