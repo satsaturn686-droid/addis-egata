@@ -643,3 +643,86 @@ export async function getWinnerClaimLink(
     { signal },
   );
 }
+
+export type ReferralSummary = {
+  referralCode: string;
+  summary: {
+    total: number;
+    pending: number;
+    qualified: number;
+  };
+  rewards: {
+    credited: string;
+    pending: string;
+  };
+  rules: {
+    rewardAmountETB: number;
+    maxQualifiedReferralsPerMonth: number;
+    rewardRequiresVerifiedFirstPayment: boolean;
+  };
+};
+
+async function telegramReferralRequest<T>(
+  path: string,
+  options: {
+    method?: "GET" | "POST";
+    body?: unknown;
+  } = {},
+): Promise<T> {
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "X-Telegram-Init-Data": getTelegramInitData(),
+  };
+
+  if (options.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: options.method ?? "GET",
+    headers,
+    credentials: "include",
+    body:
+      options.body !== undefined
+        ? JSON.stringify(options.body)
+        : undefined,
+  });
+
+  const payload = (await response.json()) as
+    | T
+    | ApiError;
+
+  if (!response.ok) {
+    const errorPayload = payload as ApiError;
+    throw new Error(
+      errorPayload.message ||
+        errorPayload.error ||
+        `API request failed with status ${response.status}.`,
+    );
+  }
+
+  return payload as T;
+}
+
+export function getMyReferral(): Promise<ReferralSummary> {
+  return telegramReferralRequest<ReferralSummary>(
+    "/referrals/me",
+  );
+}
+
+export function applyReferralCode(
+  code: string,
+): Promise<{
+  success: boolean;
+  referralId: string;
+  status: string;
+  message: string;
+}> {
+  return telegramReferralRequest(
+    "/referrals/apply",
+    {
+      method: "POST",
+      body: { code },
+    },
+  );
+}
