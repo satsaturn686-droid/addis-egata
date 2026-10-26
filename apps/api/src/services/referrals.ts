@@ -1,3 +1,4 @@
+
 import type { PoolClient } from "pg";
 
 const REFERRAL_REWARD_ETB = "10.00";
@@ -46,7 +47,6 @@ export async function qualifyReferralAfterVerifiedDeposit(
       };
     }
 
-    // Serialize qualification checks for this inviter.
     const inviterLock = await client.query(
       `
         SELECT id
@@ -141,7 +141,45 @@ export async function qualifyReferralAfterVerifiedDeposit(
       Number(monthLimitResult.rows[0]?.count ?? 0) >=
       MAX_QUALIFIED_REFERRALS_PER_MONTH
     ) {
+      await client.query(
+        `
+          UPDATE referrals
+          SET
+            status = 'rejected',
+            rejection_reason = 'MONTHLY_REFERRAL_LIMIT_REACHED',
+            reviewed_by = $2,
+            reviewed_at = NOW(),
+            updated_at = NOW()
+          WHERE id = $1
+            AND status = 'pending'
+        `,
+        [referral.id, reviewerUserId],
+      );
+
+      await client.query(
+        `
+          INSERT INTO referral_audit_logs (
+            referral_id,
+            actor_user_id,
+            action,
+            details
+          )
+          VALUES ($1, $2, $3, $4::jsonb)
+        `,
+        [
+          referral.id,
+          reviewerUserId,
+          "referral_monthly_limit_reached",
+          JSON.stringify({
+            inviteeUserId,
+            verifiedDepositId,
+            monthlyLimit: MAX_QUALIFIED_REFERRALS_PER_MONTH,
+          }),
+        ],
+      );
+
       await client.query("RELEASE SAVEPOINT qualify_referral");
+
       return {
         qualified: false,
         reason: "MONTHLY_REFERRAL_LIMIT_REACHED",
@@ -158,16 +196,13 @@ export async function qualifyReferralAfterVerifiedDeposit(
           qualified_at = NOW(),
           reviewed_by = $3,
           reviewed_at = NOW(),
+          rejection_reason = NULL,
           updated_at = NOW()
         WHERE id = $1
           AND status = 'pending'
         RETURNING id
       `,
-      [
-        referral.id,
-        verifiedDepositId,
-        reviewerUserId,
-      ],
+      [referral.id, verifiedDepositId, reviewerUserId],
     );
 
     if (updateResult.rowCount !== 1) {
