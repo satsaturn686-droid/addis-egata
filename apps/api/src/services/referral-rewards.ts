@@ -1,6 +1,13 @@
 
 import { pool } from "../db.js";
 
+const MONTHLY_REFERRAL_BONUS_BUDGET = 1500;
+const REFERRAL_REWARD_AMOUNT = 10;
+
+/**
+ * Serializes referral bonus payments so concurrent admin approvals
+ * cannot exceed the monthly budget.
+ */
 export async function approveAndCreditReferralReward(
   rewardId: string,
   adminUserId: string,
@@ -27,6 +34,12 @@ export async function approveAndCreditReferralReward(
 
   try {
     await client.query("BEGIN");
+
+    // One transaction at a time may credit referral bonuses.
+    await client.query(
+      "SELECT pg_advisory_xact_lock($1, $2)",
+      [731904, 1500],
+    );
 
     const rewardResult = await client.query<{
       id: string;
@@ -61,7 +74,10 @@ export async function approveAndCreditReferralReward(
       throw new Error("REFERRAL_REWARD_ALREADY_CREDITED");
     }
 
-    if (reward.status !== "pending" && reward.status !== "approved") {
+    if (
+      reward.status !== "pending" &&
+      reward.status !== "approved"
+    ) {
       throw new Error("REFERRAL_REWARD_NOT_ELIGIBLE");
     }
 
@@ -83,8 +99,43 @@ export async function approveAndCreditReferralReward(
 
     const amount = Number(reward.reward_amount);
 
-    if (!Number.isFinite(amount) || amount !== 10) {
+    if (
+      !Number.isFinite(amount) ||
+      amount !== REFERRAL_REWARD_AMOUNT
+    ) {
       throw new Error("INVALID_REFERRAL_REWARD_AMOUNT");
+    }
+
+    // Count this month's already credited referral bonuses
+    // using Ethiopia's calendar month.
+    const budgetResult = await client.query<{
+      spent: string | number | null;
+    }>(
+      `
+        SELECT COALESCE(SUM(reward_amount), 0) AS spent
+        FROM referral_rewards
+        WHERE status = 'credited'
+          AND credited_at >= (
+            date_trunc(
+              'month',
+              NOW() AT TIME ZONE 'Africa/Addis_Ababa'
+            ) AT TIME ZONE 'Africa/Addis_Ababa'
+          )
+          AND credited_at < (
+            (
+              date_trunc(
+                'month',
+                NOW() AT TIME ZONE 'Africa/Addis_Ababa'
+              ) + INTERVAL '1 month'
+            ) AT TIME ZONE 'Africa/Addis_Ababa'
+          )
+      `,
+    );
+
+    const spent = Number(budgetResult.rows[0]?.spent ?? 0);
+
+    if (spent + amount > MONTHLY_REFERRAL_BONUS_BUDGET) {
+      throw new Error("MONTHLY_REFERRAL_BONUS_BUDGET_EXCEEDED");
     }
 
     const walletResult = await client.query<{
@@ -149,7 +200,7 @@ export async function approveAndCreditReferralReward(
         reward.inviter_user_id,
         amount,
         newBalance,
-        `referral-reward:${reward.id}`,
+        \`referral-reward:\${reward.id}\`,
         "ADDIS ዕጣ referral bonus",
       ],
     );
@@ -206,6 +257,8 @@ export async function approveAndCreditReferralReward(
           amountETB: amount,
           userId: reward.inviter_user_id,
           walletTransactionId: transactionResult.rows[0].id,
+          monthlyBudgetETB: MONTHLY_REFERRAL_BONUS_BUDGET,
+          monthlySpentBeforeCreditETB: spent,
         }),
       ],
     );
