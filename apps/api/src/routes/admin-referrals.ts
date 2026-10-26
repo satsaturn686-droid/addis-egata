@@ -1,13 +1,10 @@
-
 import { Router, type Request, type Response } from "express";
 import { pool } from "../db.js";
 import {
   requireTelegramAuth,
   requireAdmin,
 } from "../middleware/auth.js";
-import {
-  approveAndCreditReferralReward,
-} from "../services/referral-rewards.js";
+import { approveAndCreditReferralReward } from "../services/referral-rewards.js";
 import {
   createMonthlyReferralContest,
   approveMonthlyReferralContest,
@@ -19,9 +16,7 @@ const router = Router();
 router.use(requireTelegramAuth, requireAdmin);
 
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error
-    ? error.message
-    : "UNKNOWN_ERROR";
+  return error instanceof Error ? error.message : "UNKNOWN_ERROR";
 }
 
 function sendServiceError(
@@ -34,7 +29,10 @@ function sendServiceError(
 
   console.error(`${fallback}:`, error);
 
-  if (conflictErrors.includes(message)) {
+  if (
+    message === "CONTEST_MONTH_NOT_FINISHED" ||
+    conflictErrors.includes(message)
+  ) {
     res.status(409).json({ error: message });
     return;
   }
@@ -115,10 +113,7 @@ router.post(
         adminUserId,
       );
 
-      res.json({
-        success: true,
-        reward: result,
-      });
+      res.json({ success: true, reward: result });
     } catch (error) {
       sendServiceError(
         res,
@@ -212,7 +207,7 @@ router.post(
       return;
     }
 
-    if (!/^\d{4}-\d{2}$/.test(month)) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
       res.status(400).json({ error: "INVALID_CONTEST_MONTH" });
       return;
     }
@@ -232,7 +227,10 @@ router.post(
         res,
         error,
         "MONTHLY_CONTEST_CREATE_FAILED",
-        ["MONTHLY_CONTEST_ALREADY_EXISTS"],
+        [
+          "MONTHLY_CONTEST_ALREADY_EXISTS",
+          "CONTEST_MONTH_NOT_FINISHED",
+        ],
       );
     }
   },
@@ -260,10 +258,7 @@ router.post(
         adminUserId,
       );
 
-      res.json({
-        success: true,
-        contest: result,
-      });
+      res.json({ success: true, contest: result });
     } catch (error) {
       sendServiceError(
         res,
@@ -274,6 +269,8 @@ router.post(
           "MONTHLY_CONTEST_NOT_APPROVABLE",
           "INVALID_MONTHLY_CONTEST_BUDGET",
           "MONTHLY_CONTEST_HAS_NO_WINNERS",
+          "MONTHLY_CONTEST_HAS_INVALID_WINNERS",
+          "CONTEST_MONTH_NOT_FINISHED",
         ],
       );
     }
@@ -302,10 +299,7 @@ router.post(
         adminUserId,
       );
 
-      res.json({
-        success: true,
-        winner: result,
-      });
+      res.json({ success: true, winner: result });
     } catch (error) {
       sendServiceError(
         res,
@@ -319,6 +313,7 @@ router.post(
           "INVALID_MONTHLY_CONTEST_BUDGET",
           "INVALID_MONTHLY_WINNER_PRIZE",
           "MONTHLY_WINNER_TRANSACTION_EXISTS",
+          "CONTEST_MONTH_NOT_FINISHED",
         ],
       );
     }
