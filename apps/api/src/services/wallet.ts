@@ -1,5 +1,5 @@
 import { pool } from "../db.js";
-
+import { qualifyReferralAfterVerifiedDeposit } from "./referrals.js";
 type Wallet = {
   id: string;
   userId: string;
@@ -524,7 +524,20 @@ export async function approveWalletDeposit(
         `,
         [adminUserId, depositId],
       );
-
+try {
+  await qualifyReferralAfterVerifiedDeposit(
+    client,
+    deposit.user_id,
+    deposit.id,
+    adminUserId,
+  );
+} catch (referralError) {
+  // Referral failure must not block an approved wallet deposit.
+  console.error(
+    "Referral qualification failed after wallet deposit approval:",
+    referralError,
+  );
+}
     await client.query("COMMIT");
 
     return mapDeposit(updated.rows[0]);
