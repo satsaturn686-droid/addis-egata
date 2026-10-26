@@ -1,3 +1,4 @@
+
 import type { PoolClient } from "pg";
 import { pool } from "../db.js";
 
@@ -7,7 +8,8 @@ const PRIZES = {
   3: 200,
 } as const;
 
-const TOTAL_BUDGET = 2500;
+const TOTAL_BUDGET = 1000;
+const LEGACY_TOTAL_BUDGET = 2500;
 
 function validateContestMonth(month: string): string {
   if (!/^\d{4}-\d{2}$/.test(month)) {
@@ -65,6 +67,12 @@ async function writeAuditLog(
     `,
     [actorUserId, action, JSON.stringify(details)],
   );
+}
+
+function isValidStoredBudget(value: string | number): boolean {
+  const budget = Number(value);
+
+  return budget === TOTAL_BUDGET || budget === LEGACY_TOTAL_BUDGET;
 }
 
 export async function createMonthlyReferralContest(
@@ -256,7 +264,7 @@ export async function approveMonthlyReferralContest(
       String(contest.contest_month).slice(0, 10),
     );
 
-    if (Number(contest.total_budget) !== TOTAL_BUDGET) {
+    if (!isValidStoredBudget(contest.total_budget)) {
       throw new Error("INVALID_MONTHLY_CONTEST_BUDGET");
     }
 
@@ -285,8 +293,7 @@ export async function approveMonthlyReferralContest(
     let totalPrizes = 0;
 
     for (const winner of winners) {
-      const expectedPrize =
-        PRIZES[winner.rank as keyof typeof PRIZES];
+      const expectedPrize = PRIZES[winner.rank as keyof typeof PRIZES];
 
       if (
         !expectedPrize ||
@@ -337,7 +344,7 @@ export async function approveMonthlyReferralContest(
         contestId,
         winnersApproved: winners.length,
         totalPrizesETB: totalPrizes,
-        totalBudgetETB: TOTAL_BUDGET,
+        totalBudgetETB: Number(contest.total_budget),
       },
     );
 
@@ -443,7 +450,7 @@ export async function payMonthlyReferralWinner(
       String(contest.contest_month).slice(0, 10),
     );
 
-    if (Number(contest.total_budget) !== TOTAL_BUDGET) {
+    if (!isValidStoredBudget(contest.total_budget)) {
       throw new Error("INVALID_MONTHLY_CONTEST_BUDGET");
     }
 
@@ -451,6 +458,31 @@ export async function payMonthlyReferralWinner(
 
     if (!amount || Number(winner.prize_amount) !== amount) {
       throw new Error("INVALID_MONTHLY_WINNER_PRIZE");
+    }
+
+    // Serialize monthly contest payouts and ensure that the total
+    // paid for this contest never exceeds the 1,000 ETB prize pool.
+    await client.query(
+      "SELECT pg_advisory_xact_lock($1, $2)",
+      [731904, 1000],
+    );
+
+    const paidResult = await client.query<{
+      paid_total: string | number | null;
+    }>(
+      `
+        SELECT COALESCE(SUM(w.prize_amount), 0) AS paid_total
+        FROM referral_monthly_winners w
+        WHERE w.contest_id = $1
+          AND w.status = 'paid'
+      `,
+      [winner.contest_id],
+    );
+
+    const paidTotal = Number(paidResult.rows[0]?.paid_total ?? 0);
+
+    if (paidTotal + amount > TOTAL_BUDGET) {
+      throw new Error("MONTHLY_CONTEST_BUDGET_EXCEEDED");
     }
 
     const walletResult = await client.query<{
@@ -481,9 +513,7 @@ export async function payMonthlyReferralWinner(
       [walletId],
     );
 
-    const currentBalance = Number(
-      lockedWalletResult.rows[0].balance,
-    );
+    const currentBalance = Number(lockedWalletResult.rows[0].balance);
     const newBalance = currentBalance + amount;
 
     const transactionResult = await client.query<{ id: string }>(
@@ -511,7 +541,7 @@ export async function payMonthlyReferralWinner(
         winner.user_id,
         amount,
         newBalance,
-        `monthly-referral-prize:${winner.id}`,
+        "monthly-referral-prize:" + winner.id,
         `ADDIS ዕጣ monthly referral contest rank ${winner.rank}`,
       ],
     );
@@ -574,6 +604,8 @@ export async function payMonthlyReferralWinner(
         userId: winner.user_id,
         rank: winner.rank,
         amountETB: amount,
+        monthlyContestBudgetETB: TOTAL_BUDGET,
+        paidBeforeThisTransactionETB: paidTotal,
         walletTransactionId: transactionResult.rows[0].id,
       },
     );
