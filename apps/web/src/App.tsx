@@ -24,6 +24,7 @@ import {
   type TelegramAuthResponse,
 } from "./api";
 import PublicResults from "./PublicResults";
+import ReferralPanel from "./components/ReferralPanel";
 import UserWalletButton from "./UserWalletButton";
 import WalletPanel from "./WalletPanel";
 type TelegramWebApp = {
@@ -927,6 +928,7 @@ if (needsLogin) {
         </section>
 
         <PublicResults />
+        {telegramReady && <ReferralPanel />}
       </main>
     );
   }
@@ -1631,6 +1633,7 @@ if (needsLogin) {
         </div>
       </section>
       <PublicResults />
+      {telegramReady && <ReferralPanel />}
       <section className="quick-links">
         <button type="button">
           <span>🔢</span>
