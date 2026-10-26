@@ -52,10 +52,10 @@ router.get(
 router.post(
   "/rewards/:rewardId/approve",
   async (req: Request, res: Response): Promise<void> => {
-    const rewardId = Number(req.params.rewardId);
+    const rewardId = String(req.params.rewardId ?? "").trim();
     const adminUserId = req.user?.id;
 
-    if (!Number.isSafeInteger(rewardId) || rewardId <= 0) {
+    if (!rewardId || rewardId.length > 100) {
       res.status(400).json({ error: "INVALID_REWARD_ID" });
       return;
     }
@@ -86,7 +86,7 @@ router.post(
         "REFERRAL_NOT_QUALIFIED",
         "INVALID_REFERRAL_REWARD_AMOUNT",
         "REFERRAL_REWARD_ALREADY_CREDITED",
-        "REFERRAL_REWARD_NOT_APPROVABLE",
+        "REFERRAL_REWARD_NOT_ELIGIBLE",
         "REFERRAL_REWARD_TRANSACTION_EXISTS",
       ];
 
