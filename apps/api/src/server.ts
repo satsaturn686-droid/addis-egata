@@ -8,6 +8,7 @@ import cors from "cors";
 
 import { checkDatabase, pool } from "./db.js";
 import authRouter from "./routes/auth.js";
+import referralsRouter from "./routes/referrals.js";
 import appAuthRouter from "./routes/app-auth.js";
 import fullAppWinnersRouter from "./routes/full-app-winners.js";
 import drawsRouter from "./routes/draws.js";
@@ -998,6 +999,7 @@ app.get(
  */
 app.use("/auth", authRouter);
 app.use("/app-auth", appAuthRouter);
+app.use("/referrals", referralsRouter);
 app.use("/full-app/winners", fullAppWinnersRouter);
 
 /*
