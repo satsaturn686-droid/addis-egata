@@ -1,11 +1,11 @@
-import {
-  useState,
-} from "react";
+
+import { useState } from "react";
 
 import AdminDashboard from "./AdminDashboard";
 import AdminDrawCreate from "./AdminDrawCreate";
 import AdminDrawManage from "./AdminDrawManage";
 import AdminPaymentSettings from "./AdminPaymentSettings";
+import AdminReferrals from "./AdminReferrals";
 import AdminWallet from "./AdminWallet";
 
 type AdminSection =
@@ -13,7 +13,8 @@ type AdminSection =
   | "wallet"
   | "create-draw"
   | "draw-manage"
-  | "payment-settings";
+  | "payment-settings"
+  | "referrals";
 
 export default function AdminHub() {
   const [section, setSection] =
@@ -31,7 +32,7 @@ export default function AdminHub() {
 
           .admin-hub-nav {
             width: 100%;
-            max-width: 760px;
+            max-width: 900px;
             margin: 0 auto;
             padding: 14px 16px 0;
             box-sizing: border-box;
@@ -56,13 +57,13 @@ export default function AdminHub() {
 
           .admin-hub-tabs {
             display: grid;
-            grid-template-columns:
-              repeat(5, minmax(0, 1fr));
+            grid-template-columns: repeat(6, minmax(0, 1fr));
             gap: 8px;
           }
 
           .admin-hub-tab {
             min-height: 44px;
+            padding: 8px;
             border: 1px solid #293442;
             border-radius: 10px;
             background: #111720;
@@ -86,8 +87,7 @@ export default function AdminHub() {
 
           @media (max-width: 900px) {
             .admin-hub-tabs {
-              grid-template-columns:
-                repeat(3, minmax(0, 1fr));
+              grid-template-columns: repeat(3, minmax(0, 1fr));
             }
           }
 
@@ -98,7 +98,11 @@ export default function AdminHub() {
             }
 
             .admin-hub-tabs {
-              grid-template-columns: 1fr;
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .admin-hub-tab {
+              font-size: 12px;
             }
           }
         `}
@@ -109,13 +113,8 @@ export default function AdminHub() {
         aria-label="Admin navigation"
       >
         <div className="admin-hub-brand">
-          <strong>
-            Addis ዕጣ Admin
-          </strong>
-
-          <span>
-            የዕጣ እና ክፍያ አስተዳደር
-          </span>
+          <strong>Addis ዕጣ Admin</strong>
+          <span>የዕጣ፣ ክፍያ እና ግብዣ አስተዳደር</span>
         </div>
 
         <div className="admin-hub-tabs">
@@ -126,9 +125,7 @@ export default function AdminHub() {
                 ? "admin-hub-tab active"
                 : "admin-hub-tab"
             }
-            onClick={() =>
-              setSection("payments")
-            }
+            onClick={() => setSection("payments")}
           >
             የክፍያ ማረጋገጫ
           </button>
@@ -140,9 +137,7 @@ export default function AdminHub() {
                 ? "admin-hub-tab active"
                 : "admin-hub-tab"
             }
-            onClick={() =>
-              setSection("wallet")
-            }
+            onClick={() => setSection("wallet")}
           >
             💰 Wallet
           </button>
@@ -154,9 +149,7 @@ export default function AdminHub() {
                 ? "admin-hub-tab active"
                 : "admin-hub-tab"
             }
-            onClick={() =>
-              setSection("create-draw")
-            }
+            onClick={() => setSection("create-draw")}
           >
             አዲስ ዕጣ ፍጠር
           </button>
@@ -168,9 +161,7 @@ export default function AdminHub() {
                 ? "admin-hub-tab active"
                 : "admin-hub-tab"
             }
-            onClick={() =>
-              setSection("draw-manage")
-            }
+            onClick={() => setSection("draw-manage")}
           >
             ዕጣ አስተዳደር
           </button>
@@ -182,33 +173,41 @@ export default function AdminHub() {
                 ? "admin-hub-tab active"
                 : "admin-hub-tab"
             }
-            onClick={() =>
-              setSection("payment-settings")
-            }
+            onClick={() => setSection("payment-settings")}
           >
             Telebirr ቁጥር
+          </button>
+
+          <button
+            type="button"
+            className={
+              section === "referrals"
+                ? "admin-hub-tab active"
+                : "admin-hub-tab"
+            }
+            onClick={() => setSection("referrals")}
+          >
+            🎁 ግብዣ አስተዳደር
           </button>
         </div>
       </nav>
 
       {section === "payments" ? (
         <AdminDashboard
-          onBack={() =>
-            setSection("draw-manage")
-          }
+          onBack={() => setSection("draw-manage")}
         />
       ) : section === "wallet" ? (
         <AdminWallet />
       ) : section === "create-draw" ? (
         <AdminDrawCreate
-          onCreated={() =>
-            setSection("draw-manage")
-          }
+          onCreated={() => setSection("draw-manage")}
         />
       ) : section === "draw-manage" ? (
         <AdminDrawManage />
-      ) : (
+      ) : section === "payment-settings" ? (
         <AdminPaymentSettings />
+      ) : (
+        <AdminReferrals />
       )}
     </main>
   );
