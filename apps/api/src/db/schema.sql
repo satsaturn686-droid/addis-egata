@@ -1,23 +1,8 @@
-
 /*
  * Addis ዕጣ Wallet
  *
- * Wallet balance is the user's internal balance.
- *
- * Deposits:
- *   pending -> approved/rejected
- *
- * Purchases:
- *   balance is deducted atomically
- *   entry becomes paid atomically
- *
- * Withdrawals:
- *   pending -> paid/rejected
- *
- * Cash winner payouts:
- *   credited exactly once to wallet
- *
- * Wallet transactions are immutable ledger records.
+ * Existing wallet schema preserved.
+ * Referral schema is additive only.
  */
 
 CREATE TABLE IF NOT EXISTS wallets (
@@ -34,7 +19,7 @@ CREATE TABLE IF NOT EXISTS wallet_deposits (
   amount NUMERIC(12, 2) NOT NULL CHECK (amount > 0),
   payment_method TEXT NOT NULL DEFAULT 'telebirr'
     CHECK (payment_method = 'telebirr'),
-  transaction_reference TEXT NOT NULL,
+  transaction_reference TEXT NOT NULL UNIQUE,
   sender_name TEXT,
   status TEXT NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending', 'approved', 'rejected')),
@@ -42,8 +27,7 @@ CREATE TABLE IF NOT EXISTS wallet_deposits (
   verified_at TIMESTAMPTZ,
   rejection_reason TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(transaction_reference)
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS wallet_transactions (
@@ -61,10 +45,9 @@ CREATE TABLE IF NOT EXISTS wallet_transactions (
     ),
   amount NUMERIC(12, 2) NOT NULL CHECK (amount <> 0),
   balance_after NUMERIC(12, 2) NOT NULL CHECK (balance_after >= 0),
-  reference TEXT,
+  reference TEXT UNIQUE,
   description TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(reference)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS withdrawals (
@@ -91,10 +74,6 @@ CREATE TABLE IF NOT EXISTS winner_wallet_credits (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-/*
- * Telebirr payment settings and wallet service hours.
- * Service hours use Ethiopia local time (Africa/Addis_Ababa).
- */
 CREATE TABLE IF NOT EXISTS payment_settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   telebirr_number TEXT NOT NULL DEFAULT '',
@@ -105,10 +84,6 @@ CREATE TABLE IF NOT EXISTS payment_settings (
   service_close_time TIME NOT NULL DEFAULT TIME '18:00'
 );
 
-/*
- * Safe additions for installations where payment_settings
- * already exists with only the original Telebirr columns.
- */
 ALTER TABLE payment_settings
   ADD COLUMN IF NOT EXISTS service_enabled BOOLEAN NOT NULL DEFAULT TRUE;
 
@@ -149,8 +124,7 @@ CREATE INDEX IF NOT EXISTS idx_winner_wallet_credits_user
   ON winner_wallet_credits(user_id);
 
 /*
- * Telegram bot daily unique /start analytics.
- * One record per Telegram user per Ethiopia-local date.
+ * Telegram daily /start analytics.
  */
 CREATE TABLE IF NOT EXISTS telegram_bot_daily_starts (
   telegram_user_id BIGINT NOT NULL,
@@ -162,4 +136,177 @@ CREATE TABLE IF NOT EXISTS telegram_bot_daily_starts (
 );
 
 CREATE INDEX IF NOT EXISTS telegram_bot_daily_starts_date_idx
-  ON telegram_bot_daily_starts (local_date);
+  ON telegram_bot_daily_starts(local_date);
+
+/*
+ * ADDIS ዕጣ referral system.
+ *
+ * A referral is not rewarded just for opening the app.
+ * Qualification requires a verified first payment.
+ * Actual wallet credit will be implemented separately.
+ */
+
+CREATE TABLE IF NOT EXISTS referrals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  inviter_user_id UUID NOT NULL REFERENCES users(id),
+  invitee_user_id UUID NOT NULL UNIQUE REFERENCES users(id),
+
+  referral_code TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (
+      status IN (
+        'pending',
+        'qualified',
+        'rejected'
+      )
+    ),
+
+  first_verified_deposit_id UUID
+    REFERENCES wallet_deposits(id),
+
+  qualified_at TIMESTAMPTZ,
+  reviewed_by UUID REFERENCES users(id),
+  reviewed_at TIMESTAMPTZ,
+  rejection_reason TEXT,
+
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT referrals_no_self_referral
+    CHECK (inviter_user_id <> invitee_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS referrals_inviter_created_idx
+  ON referrals(inviter_user_id, created_at);
+
+CREATE INDEX IF NOT EXISTS referrals_status_created_idx
+  ON referrals(status, created_at);
+
+CREATE TABLE IF NOT EXISTS referral_codes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  user_id UUID NOT NULL UNIQUE REFERENCES users(id),
+  code TEXT NOT NULL UNIQUE,
+
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS referral_rewards (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  referral_id UUID NOT NULL UNIQUE REFERENCES referrals(id),
+  inviter_user_id UUID NOT NULL REFERENCES users(id),
+
+  reward_amount NUMERIC(12, 2) NOT NULL DEFAULT 10.00
+    CHECK (reward_amount = 10.00),
+
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (
+      status IN (
+        'pending',
+        'approved',
+        'credited',
+        'rejected'
+      )
+    ),
+
+  wallet_transaction_id UUID
+    REFERENCES wallet_transactions(id),
+
+  approved_by UUID REFERENCES users(id),
+  approved_at TIMESTAMPTZ,
+  credited_at TIMESTAMPTZ,
+
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS referral_rewards_user_status_idx
+  ON referral_rewards(inviter_user_id, status);
+
+CREATE TABLE IF NOT EXISTS referral_monthly_contests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  contest_month DATE NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'draft'
+    CHECK (
+      status IN (
+        'draft',
+        'open',
+        'closed',
+        'approved',
+        'paid'
+      )
+    ),
+
+  total_budget NUMERIC(12, 2) NOT NULL DEFAULT 2500.00
+    CHECK (total_budget = 2500.00),
+
+  created_by UUID REFERENCES users(id),
+  approved_by UUID REFERENCES users(id),
+  approved_at TIMESTAMPTZ,
+
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS referral_monthly_winners (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  contest_id UUID NOT NULL
+    REFERENCES referral_monthly_contests(id),
+
+  user_id UUID NOT NULL REFERENCES users(id),
+
+  rank INTEGER NOT NULL CHECK (rank BETWEEN 1 AND 3),
+
+  prize_amount NUMERIC(12, 2) NOT NULL
+    CHECK (
+      (rank = 1 AND prize_amount = 500.00)
+      OR
+      (rank = 2 AND prize_amount = 300.00)
+      OR
+      (rank = 3 AND prize_amount = 200.00)
+    ),
+
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (
+      status IN (
+        'pending',
+        'approved',
+        'paid',
+        'rejected'
+      )
+    ),
+
+  wallet_transaction_id UUID
+    REFERENCES wallet_transactions(id),
+
+  approved_by UUID REFERENCES users(id),
+  approved_at TIMESTAMPTZ,
+  paid_at TIMESTAMPTZ,
+
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  UNIQUE(contest_id, user_id),
+  UNIQUE(contest_id, rank)
+);
+
+CREATE TABLE IF NOT EXISTS referral_audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  referral_id UUID REFERENCES referrals(id),
+  reward_id UUID REFERENCES referral_rewards(id),
+
+  actor_user_id UUID REFERENCES users(id),
+
+  action TEXT NOT NULL,
+  details JSONB NOT NULL DEFAULT '{}'::jsonb,
+
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS referral_audit_logs_created_idx
+  ON referral_audit_logs(created_at);
