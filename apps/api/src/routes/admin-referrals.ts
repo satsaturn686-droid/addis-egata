@@ -5,6 +5,7 @@ import {
   requireAdmin,
 } from "../middleware/auth.js";
 import { approveAndCreditReferralReward } from "../services/referral-rewards.js";
+import { qualifyReferralAfterVerifiedDeposit } from "../services/referrals.js";
 import {
   createMonthlyReferralContest,
   approveMonthlyReferralContest,
@@ -86,6 +87,110 @@ router.get(
       console.error("Failed to load referral rewards:", error);
       res.status(500).json({
         error: "REFERRAL_REWARDS_LOAD_FAILED",
+      });
+    }
+  },
+);
+
+/**
+ * Reprocess referrals that are still pending despite having
+ * a verified first wallet deposit.
+ *
+ * This qualifies eligible referrals and creates pending bonus
+ * records where the monthly reward limit allows it.
+ * It does not credit wallets automatically.
+ */
+router.post(
+  "/reconcile-pending",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!pool) {
+      res.status(503).json({ error: "DATABASE_UNAVAILABLE" });
+      return;
+    }
+
+    const adminUserId = req.user?.id;
+
+    if (!adminUserId) {
+      res.status(401).json({ error: "ADMIN_ID_UNAVAILABLE" });
+      return;
+    }
+
+    let qualified = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    try {
+      const candidates = await pool.query<{
+        invitee_user_id: string;
+        deposit_id: string;
+      }>(
+        `
+          SELECT
+            r.invitee_user_id,
+            first_deposit.id AS deposit_id
+          FROM referrals r
+          JOIN LATERAL (
+            SELECT d.id
+            FROM wallet_deposits d
+            WHERE d.user_id = r.invitee_user_id
+              AND d.status = 'approved'
+            ORDER BY d.created_at ASC, d.id ASC
+            LIMIT 1
+          ) first_deposit ON TRUE
+          WHERE r.status = 'pending'
+          ORDER BY r.created_at ASC
+          LIMIT 100
+        `,
+      );
+
+      for (const candidate of candidates.rows) {
+        const client = await pool.connect();
+
+        try {
+          await client.query("BEGIN");
+
+          const result = await qualifyReferralAfterVerifiedDeposit(
+            client,
+            candidate.invitee_user_id,
+            candidate.deposit_id,
+            adminUserId,
+          );
+
+          await client.query("COMMIT");
+
+          if (result.qualified) {
+            qualified += 1;
+          } else {
+            skipped += 1;
+          }
+        } catch (error) {
+          try {
+            await client.query("ROLLBACK");
+          } catch (rollbackError) {
+            console.error(
+              "Referral reconciliation rollback failed:",
+              rollbackError,
+            );
+          }
+
+          failed += 1;
+          console.error("Referral reconciliation failed:", error);
+        } finally {
+          client.release();
+        }
+      }
+
+      res.json({
+        success: failed === 0,
+        checked: candidates.rows.length,
+        qualified,
+        skipped,
+        failed,
+      });
+    } catch (error) {
+      console.error("Referral reconciliation error:", error);
+      res.status(500).json({
+        error: "REFERRAL_RECONCILIATION_FAILED",
       });
     }
   },
