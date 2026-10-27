@@ -1,6 +1,8 @@
+
 import {
   useMemo,
   useState,
+  type ChangeEvent,
   type FormEvent,
 } from "react";
 import {
@@ -18,17 +20,20 @@ function formatAmount(value: number): string {
   }).format(value);
 }
 
-function buildInitialPrizes(
-  count: number,
-): AdminPrizeInput[] {
-  return Array.from(
-    { length: count },
-    (_, index) => ({
-      rank: index + 1,
-      amount: 0,
-    }),
-  );
+function buildInitialPrizes(count: number): AdminPrizeInput[] {
+  return Array.from({ length: count }, (_, index) => ({
+    rank: index + 1,
+    amount: 0,
+  }));
 }
+
+const MAX_IMAGE_SIZE = 2 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+];
 
 export default function AdminDrawCreate({
   onCreated,
@@ -39,6 +44,8 @@ export default function AdminDrawCreate({
     useState<"cash" | "physical">("cash");
   const [prizeName, setPrizeName] = useState("");
   const [prizeImageUrl, setPrizeImageUrl] = useState("");
+  const [prizeImageName, setPrizeImageName] = useState("");
+  const [readingPrizeImage, setReadingPrizeImage] = useState(false);
   const [prizeDescription, setPrizeDescription] = useState("");
   const [displayedPrizeValue, setDisplayedPrizeValue] = useState("");
   const [actualPrizeCost, setActualPrizeCost] = useState("");
@@ -75,7 +82,6 @@ export default function AdminDrawCreate({
 
   function updateWinnerCount(value: string) {
     setWinnerCount(value);
-
     const count = Number.parseInt(value, 10);
 
     if (
@@ -102,17 +108,62 @@ export default function AdminDrawCreate({
     );
   }
 
-  function toOptionalNumber(
-    value: string,
-  ): number | undefined {
-    const normalized = value.trim();
+  function handlePrizeImageChange(
+    event: ChangeEvent<HTMLInputElement>,
+  ) {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-    if (!normalized) {
-      return undefined;
+    setError(null);
+
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setError("JPG፣ PNG፣ WEBP ወይም GIF ምስል ብቻ ይምረጡ።");
+      event.target.value = "";
+      return;
     }
 
-    const parsed = Number.parseFloat(normalized);
+    if (file.size > MAX_IMAGE_SIZE) {
+      setError("የምስሉ መጠን ከ2 MB መብለጥ የለበትም።");
+      event.target.value = "";
+      return;
+    }
 
+    setReadingPrizeImage(true);
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setPrizeImageUrl(reader.result);
+        setPrizeImageName(file.name);
+      } else {
+        setError("ምስሉን ማንበብ አልተቻለም።");
+      }
+      setReadingPrizeImage(false);
+    };
+
+    reader.onerror = () => {
+      setError("ምስሉን ማንበብ አልተቻለም።");
+      setReadingPrizeImage(false);
+    };
+
+    reader.readAsDataURL(file);
+  }
+
+  function removePrizeImage() {
+    setPrizeImageUrl("");
+    setPrizeImageName("");
+    const input = document.getElementById(
+      "prize-image",
+    ) as HTMLInputElement | null;
+
+    if (input) input.value = "";
+  }
+
+  function toOptionalNumber(value: string): number | undefined {
+    const normalized = value.trim();
+    if (!normalized) return undefined;
+
+    const parsed = Number.parseFloat(normalized);
     return Number.isFinite(parsed) ? parsed : undefined;
   }
 
@@ -131,15 +182,11 @@ export default function AdminDrawCreate({
       const winners = Number.parseInt(winnerCount, 10);
 
       if (!Number.isInteger(numbers) || numbers < 5) {
-        throw new Error(
-          "የቁጥሮች ብዛት ቢያንስ 5 መሆን አለበት።",
-        );
+        throw new Error("የቁጥሮች ብዛት ቢያንስ 5 መሆን አለበት።");
       }
 
       if (!Number.isFinite(fee) || fee <= 0) {
-        throw new Error(
-          "የመግቢያ ክፍያ ከ0 በላይ መሆን አለበት።",
-        );
+        throw new Error("የመግቢያ ክፍያ ከ0 በላይ መሆን አለበት።");
       }
 
       if (
@@ -148,7 +195,7 @@ export default function AdminDrawCreate({
         winners > numbers
       ) {
         throw new Error(
-          "የአሸናፊዎች ብዛት ቢያንስ 1 እና ከቁጥሮች ብዛት መብለጥ የለበትም።",
+          "የአሸናፊዎች ብዛት ቢያንስ 1 እና ከጠቅላላ ቁጥሮች መብለጥ የለበትም።",
         );
       }
 
@@ -158,16 +205,18 @@ export default function AdminDrawCreate({
         );
       }
 
-      const response = await createAdminDraw({
+      if (readingPrizeImage) {
+        throw new Error("ምስሉ እስኪጫን ይጠብቁ።");
+      }
+
+      await createAdminDraw({
         name,
         description,
         prizeType,
         prizeName,
         prizeImageUrl,
         prizeDescription,
-        displayedPrizeValue: toOptionalNumber(
-          displayedPrizeValue,
-        ),
+        displayedPrizeValue: toOptionalNumber(displayedPrizeValue),
         actualPrizeCost: toOptionalNumber(actualPrizeCost),
         totalNumbers: numbers,
         entryFee: fee,
@@ -178,13 +227,9 @@ export default function AdminDrawCreate({
         prizes,
       });
 
-      setSuccess(
-        `ዕጣው "${response.draw.name}" በDraft ሁኔታ ተፈጥሯል።`,
-      );
+      setSuccess(`ዕጣው "${name}" በDraft ሁኔታ ተፈጥሯል።`);
 
-      if (onCreated) {
-        onCreated();
-      }
+      if (onCreated) onCreated();
     } catch (submitError) {
       setError(
         submitError instanceof Error
@@ -198,397 +243,156 @@ export default function AdminDrawCreate({
 
   return (
     <main className="admin-create-page">
-      <style>
-        {`
-          .admin-create-page {
-            min-height: 100%;
-            width: 100%;
-            max-width: 760px;
-            margin: 0 auto;
-            padding: 20px 16px 40px;
-            box-sizing: border-box;
-            color: #f4f7fb;
-            background: #0b0f14;
-          }
-
-          .admin-create-header {
-            margin-bottom: 20px;
-          }
-
-          .admin-create-header h1 {
-            margin: 0;
-            font-size: 25px;
-            line-height: 1.25;
-          }
-
-          .admin-create-header p {
-            margin: 8px 0 0;
-            color: #9aa7b5;
-            font-size: 14px;
-            line-height: 1.6;
-          }
-
-          .admin-create-section {
-            margin-bottom: 14px;
-            padding: 16px;
-            border: 1px solid #202a35;
-            border-radius: 16px;
-            background: #111720;
-          }
-
-          .admin-create-section h2 {
-            margin: 0 0 14px;
-            font-size: 16px;
-          }
-
-          .admin-create-grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 12px;
-          }
-
-          .admin-create-field {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-          }
-
-          .admin-create-field.full {
-            grid-column: 1 / -1;
-          }
-
-          .admin-create-field label {
-            color: #b7c1cd;
-            font-size: 13px;
-          }
-
-          .admin-create-field input,
-          .admin-create-field select,
-          .admin-create-field textarea {
-            width: 100%;
-            box-sizing: border-box;
-            border: 1px solid #293442;
-            border-radius: 10px;
-            background: #0c1219;
-            color: #f4f7fb;
-            padding: 11px 12px;
-            font: inherit;
-            outline: none;
-          }
-
-          .admin-create-field textarea {
-            min-height: 88px;
-            resize: vertical;
-          }
-
-          .admin-create-field input:focus,
-          .admin-create-field select:focus,
-          .admin-create-field textarea:focus {
-            border-color: #6d8cff;
-          }
-
-          .admin-create-help {
-            color: #7f8b98;
-            font-size: 12px;
-            line-height: 1.5;
-          }
-
-          .admin-create-switch {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            min-height: 44px;
-            color: #dbe2ea;
-            font-size: 14px;
-          }
-
-          .admin-create-switch input {
-            width: 20px;
-            height: 20px;
-          }
-
-          .admin-prize-list {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-          }
-
-          .admin-prize-row {
-            display: grid;
-            grid-template-columns: 72px minmax(0, 1fr);
-            gap: 10px;
-            align-items: center;
-          }
-
-          .admin-prize-rank {
-            color: #c7d0da;
-            font-size: 13px;
-          }
-
-          .admin-prize-row input {
-            width: 100%;
-            box-sizing: border-box;
-            border: 1px solid #293442;
-            border-radius: 10px;
-            background: #0c1219;
-            color: #f4f7fb;
-            padding: 10px 12px;
-            font: inherit;
-          }
-
-          .admin-create-summary {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 10px;
-            margin-top: 14px;
-          }
-
-          .admin-create-stat {
-            padding: 12px;
-            border-radius: 12px;
-            background: #0c1219;
-            border: 1px solid #202a35;
-          }
-
-          .admin-create-stat span {
-            display: block;
-            color: #7f8b98;
-            font-size: 11px;
-            margin-bottom: 5px;
-          }
-
-          .admin-create-stat strong {
-            font-size: 15px;
-          }
-
-          .admin-create-message {
-            margin-bottom: 14px;
-            padding: 12px 14px;
-            border-radius: 12px;
-            font-size: 13px;
-            line-height: 1.5;
-          }
-
-          .admin-create-error {
-            border: 1px solid #713b43;
-            background: #29151a;
-            color: #ffb8c1;
-          }
-
-          .admin-create-success {
-            border: 1px solid #315c48;
-            background: #12251c;
-            color: #a8e6c6;
-          }
-
-          .admin-create-submit {
-            width: 100%;
-            min-height: 48px;
-            border: 0;
-            border-radius: 12px;
-            background: #e7edf5;
-            color: #0b0f14;
-            font: inherit;
-            font-weight: 700;
-            cursor: pointer;
-          }
-
-          .admin-create-submit:disabled {
-            opacity: 0.55;
-            cursor: not-allowed;
-          }
-
-          @media (max-width: 560px) {
-            .admin-create-grid,
-            .admin-create-summary {
-              grid-template-columns: 1fr;
-            }
-
-            .admin-create-field.full {
-              grid-column: auto;
-            }
-
-            .admin-create-page {
-              padding-left: 12px;
-              padding-right: 12px;
-            }
-          }
-        `}
-      </style>
+      <style>{`
+        .admin-create-page {
+          min-height: 100%;
+          width: 100%;
+          max-width: 760px;
+          margin: 0 auto;
+          padding: 20px 16px 40px;
+          box-sizing: border-box;
+          color: #f4f7fb;
+          background: #0b0f14;
+        }
+        .admin-create-header { margin-bottom: 20px; }
+        .admin-create-header h1 { margin: 0; font-size: 25px; line-height: 1.25; }
+        .admin-create-header p { margin: 8px 0 0; color: #9aa7b5; font-size: 14px; line-height: 1.6; }
+        .admin-create-section { margin-bottom: 14px; padding: 16px; border: 1px solid #202a35; border-radius: 16px; background: #111720; }
+        .admin-create-section h2 { margin: 0 0 14px; font-size: 16px; }
+        .admin-create-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+        .admin-create-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+        .admin-create-field.full { grid-column: 1 / -1; }
+        .admin-create-field label { color: #b7c1cd; font-size: 13px; }
+        .admin-create-field input, .admin-create-field select, .admin-create-field textarea {
+          width: 100%; box-sizing: border-box; border: 1px solid #293442;
+          border-radius: 10px; background: #0c1219; color: #f4f7fb;
+          padding: 11px 12px; font: inherit; outline: none;
+        }
+        .admin-create-field textarea { min-height: 88px; resize: vertical; }
+        .admin-create-field input:focus, .admin-create-field select:focus, .admin-create-field textarea:focus { border-color: #6d8cff; }
+        .admin-create-help { color: #7f8b98; font-size: 12px; line-height: 1.5; }
+        .admin-create-switch { display: flex; align-items: center; gap: 10px; min-height: 44px; color: #dbe2ea; font-size: 14px; }
+        .admin-create-switch input { width: 20px; height: 20px; }
+        .admin-prize-list { display: flex; flex-direction: column; gap: 8px; }
+        .admin-prize-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px; align-items: center; }
+        .admin-prize-rank { color: #c7d0da; font-size: 13px; }
+        .admin-prize-row input { width: 100%; box-sizing: border-box; border: 1px solid #293442; border-radius: 10px; background: #0c1219; color: #f4f7fb; padding: 10px 12px; font: inherit; }
+        .admin-create-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+        .admin-create-stat { padding: 12px; border-radius: 12px; background: #0c1219; border: 1px solid #202a35; }
+        .admin-create-stat span { display: block; color: #7f8b98; font-size: 11px; margin-bottom: 5px; }
+        .admin-create-stat strong { font-size: 15px; }
+        .admin-create-message { margin-bottom: 14px; padding: 12px 14px; border-radius: 12px; font-size: 13px; line-height: 1.5; }
+        .admin-create-error { border: 1px solid #713b43; background: #29151a; color: #ffb8c1; }
+        .admin-create-success { border: 1px solid #315c48; background: #12251c; color: #a8e6c6; }
+        .admin-create-submit { width: 100%; min-height: 48px; border: 0; border-radius: 12px; background: #e7edf5; color: #0b0f14; font: inherit; font-weight: 700; cursor: pointer; }
+        .admin-create-submit:disabled { opacity: .55; cursor: not-allowed; }
+        .admin-image-preview { display: block; width: 100%; max-height: 240px; object-fit: contain; border-radius: 12px; background: #080c11; border: 1px solid #293442; }
+        .admin-image-remove { padding: 9px 12px; border: 1px solid #713b43; border-radius: 9px; background: #29151a; color: #ffb8c1; font: inherit; cursor: pointer; }
+        @media (max-width: 560px) {
+          .admin-create-grid, .admin-create-summary { grid-template-columns: 1fr; }
+          .admin-create-field.full { grid-column: auto; }
+          .admin-create-page { padding-left: 12px; padding-right: 12px; }
+        }
+      `}</style>
 
       <header className="admin-create-header">
         <h1>አዲስ ዕጣ ፍጠር</h1>
-        <p>
-          የዕጣውን ቁጥር፣ መግቢያ ክፍያ፣
-          ሽልማት እና አሸናፊዎች አዘጋጅ።
-        </p>
+        <p>የዕጣውን ቁጥር፣ መግቢያ ክፍያ፣ ሽልማት እና አሸናፊዎች አዘጋጅ።</p>
       </header>
 
-      {error && (
-        <div className="admin-create-message admin-create-error">
-          {error}
-        </div>
-      )}
-
-      {success && (
-        <div className="admin-create-message admin-create-success">
-          {success}
-        </div>
-      )}
+      {error && <div className="admin-create-message admin-create-error">{error}</div>}
+      {success && <div className="admin-create-message admin-create-success">{success}</div>}
 
       <form onSubmit={handleSubmit}>
         <section className="admin-create-section">
           <h2>ዋና መረጃ</h2>
-
           <div className="admin-create-grid">
             <div className="admin-create-field full">
               <label htmlFor="draw-name">የዕጣ ስም</label>
-              <input
-                id="draw-name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="ለምሳሌ Addis ዕጣ — የሳምንቱ ዕጣ"
-                required
-              />
+              <input id="draw-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="ለምሳሌ Addis ዕጣ — የሳምንቱ ዕጣ" required />
             </div>
-
             <div className="admin-create-field full">
               <label htmlFor="draw-description">መግለጫ</label>
-              <textarea
-                id="draw-description"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="ስለ ዕጣው አጭር መረጃ"
-              />
+              <textarea id="draw-description" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="ስለ ዕጣው አጭር መረጃ" />
             </div>
-
             <div className="admin-create-field">
               <label htmlFor="total-numbers">ጠቅላላ ቁጥሮች</label>
-              <input
-                id="total-numbers"
-                type="number"
-                min="5"
-                value={totalNumbers}
-                onChange={(event) => setTotalNumbers(event.target.value)}
-              />
+              <input id="total-numbers" type="number" min="5" value={totalNumbers} onChange={(event) => setTotalNumbers(event.target.value)} />
             </div>
-
             <div className="admin-create-field">
               <label htmlFor="entry-fee">የመግቢያ ክፍያ (ETB)</label>
-              <input
-                id="entry-fee"
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={entryFee}
-                onChange={(event) => setEntryFee(event.target.value)}
-              />
+              <input id="entry-fee" type="number" min="0.01" step="0.01" value={entryFee} onChange={(event) => setEntryFee(event.target.value)} />
             </div>
           </div>
         </section>
 
         <section className="admin-create-section">
           <h2>ሽልማት</h2>
-
           <div className="admin-create-grid">
             <div className="admin-create-field">
               <label htmlFor="prize-type">የሽልማት አይነት</label>
-              <select
-                id="prize-type"
-                value={prizeType}
-                onChange={(event) =>
-                  setPrizeType(
-                    event.target.value as "cash" | "physical",
-                  )
-                }
-              >
+              <select id="prize-type" value={prizeType} onChange={(event) => setPrizeType(event.target.value as "cash" | "physical")}>
                 <option value="cash">ገንዘብ</option>
                 <option value="physical">እቃ / ንብረት</option>
               </select>
             </div>
-
             <div className="admin-create-field">
               <label htmlFor="prize-name">የሽልማት ስም</label>
-              <input
-                id="prize-name"
-                value={prizeName}
-                onChange={(event) => setPrizeName(event.target.value)}
-                placeholder="ለምሳሌ የገንዘብ ሽልማት"
-                required
-              />
+              <input id="prize-name" value={prizeName} onChange={(event) => setPrizeName(event.target.value)} placeholder="ለምሳሌ የገንዘብ ሽልማት" required />
             </div>
 
             <div className="admin-create-field full">
-              <label htmlFor="prize-image">የሽልማት ምስል URL</label>
+              <label htmlFor="prize-image">የሽልማት ምስል Upload image</label>
               <input
                 id="prize-image"
-                type="url"
-                value={prizeImageUrl}
-                onChange={(event) => setPrizeImageUrl(event.target.value)}
-                placeholder="https://..."
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                disabled={readingPrizeImage || saving}
+                onChange={handlePrizeImageChange}
               />
+              <span className="admin-create-help">
+                {readingPrizeImage
+                  ? "ምስሉ በመጫን ላይ..."
+                  : prizeImageName
+                    ? `የተመረጠ፦ ${prizeImageName}`
+                    : "ከስልክዎ Gallery ምስል ይምረጡ። JPG/PNG/WEBP/GIF፣ ከ2 MB በታች።"}
+              </span>
+              {prizeImageUrl && (
+                <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                  <img className="admin-image-preview" src={prizeImageUrl} alt="የሽልማት ቅድመ እይታ" />
+                  <button type="button" className="admin-image-remove" onClick={removePrizeImage}>
+                    ምስሉን አስወግድ
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="admin-create-field full">
               <label htmlFor="prize-description">የሽልማት መግለጫ</label>
-              <textarea
-                id="prize-description"
-                value={prizeDescription}
-                onChange={(event) => setPrizeDescription(event.target.value)}
-                placeholder="ሽልማቱ ምን እንደሆነ ዝርዝር መረጃ"
-              />
+              <textarea id="prize-description" value={prizeDescription} onChange={(event) => setPrizeDescription(event.target.value)} placeholder="ሽልማቱ ምን እንደሆነ ዝርዝር መረጃ" />
             </div>
-
             <div className="admin-create-field">
               <label htmlFor="displayed-value">የሚታይ ዋጋ (ETB)</label>
-              <input
-                id="displayed-value"
-                type="number"
-                min="0"
-                step="0.01"
-                value={displayedPrizeValue}
-                onChange={(event) => setDisplayedPrizeValue(event.target.value)}
-              />
+              <input id="displayed-value" type="number" min="0" step="0.01" value={displayedPrizeValue} onChange={(event) => setDisplayedPrizeValue(event.target.value)} />
             </div>
-
             <div className="admin-create-field">
               <label htmlFor="actual-cost">ትክክለኛ የግዢ ዋጋ (ETB)</label>
-              <input
-                id="actual-cost"
-                type="number"
-                min="0"
-                step="0.01"
-                value={actualPrizeCost}
-                onChange={(event) => setActualPrizeCost(event.target.value)}
-              />
+              <input id="actual-cost" type="number" min="0" step="0.01" value={actualPrizeCost} onChange={(event) => setActualPrizeCost(event.target.value)} />
             </div>
           </div>
         </section>
 
         <section className="admin-create-section">
           <h2>አሸናፊዎች እና Prize Distribution</h2>
-
           <div className="admin-create-grid">
             <div className="admin-create-field">
               <label htmlFor="winner-count">የአሸናፊዎች ብዛት</label>
-              <input
-                id="winner-count"
-                type="number"
-                min="1"
-                max={totalNumbers || "1000000"}
-                value={winnerCount}
-                onChange={(event) => updateWinnerCount(event.target.value)}
-              />
+              <input id="winner-count" type="number" min="1" max={totalNumbers || "1000000"} value={winnerCount} onChange={(event) => updateWinnerCount(event.target.value)} />
             </div>
-
             <div className="admin-create-field">
               <label>ልዩ አሸናፊዎች</label>
               <label className="admin-create-switch">
-                <input
-                  type="checkbox"
-                  checked={uniqueWinners}
-                  onChange={(event) => setUniqueWinners(event.target.checked)}
-                />
+                <input type="checkbox" checked={uniqueWinners} onChange={(event) => setUniqueWinners(event.target.checked)} />
                 አንድ ተጠቃሚ ከአንድ በላይ አሸናፊ እንዳይሆን
               </label>
             </div>
@@ -596,87 +400,38 @@ export default function AdminDrawCreate({
 
           <div className="admin-prize-list">
             {prizes.map((prize) => (
-              <div
-                className="admin-prize-row"
-                key={prize.rank}
-              >
-                <div className="admin-prize-rank">
-                  #{prize.rank} አሸናፊ
-                </div>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={prize.amount}
-                  onChange={(event) =>
-                    updatePrizeAmount(prize.rank, event.target.value)
-                  }
-                  aria-label={`Prize ${prize.rank}`}
-                />
+              <div className="admin-prize-row" key={prize.rank}>
+                <div className="admin-prize-rank">#{prize.rank} አሸናፊ</div>
+                <input type="number" min="0" step="0.01" value={prize.amount} onChange={(event) => updatePrizeAmount(prize.rank, event.target.value)} aria-label={`Prize ${prize.rank}`} />
               </div>
             ))}
           </div>
 
           <div className="admin-create-summary">
-            <div className="admin-create-stat">
-              <span>Prize Pool</span>
-              <strong>
-                {formatAmount(totalPrize)} ETB
-              </strong>
-            </div>
-
-            <div className="admin-create-stat">
-              <span>100% ቢሞላ Collection</span>
-              <strong>
-                {formatAmount(estimatedCollection)} ETB
-              </strong>
-            </div>
-
-            <div className="admin-create-stat">
-              <span>ግምታዊ ልዩነት</span>
-              <strong>
-                {formatAmount(estimatedDifference)} ETB
-              </strong>
-            </div>
+            <div className="admin-create-stat"><span>Prize Pool</span><strong>{formatAmount(totalPrize)} ETB</strong></div>
+            <div className="admin-create-stat"><span>100% ቢሞላ Collection</span><strong>{formatAmount(estimatedCollection)} ETB</strong></div>
+            <div className="admin-create-stat"><span>ግምታዊ ልዩነት</span><strong>{formatAmount(estimatedDifference)} ETB</strong></div>
           </div>
         </section>
 
         <section className="admin-create-section">
           <h2>የዕጣ ጊዜ ማስተካከያ</h2>
-
           <div className="admin-create-grid">
             <div className="admin-create-field">
               <label htmlFor="starts-at">መጀመሪያ (አማራጭ)</label>
-              <input
-                id="starts-at"
-                type="datetime-local"
-                value={startsAt}
-                onChange={(event) => setStartsAt(event.target.value)}
-              />
+              <input id="starts-at" type="datetime-local" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} />
             </div>
-
             <div className="admin-create-field full">
               <label htmlFor="draw-at">ዕጣ የሚወጣበት ጊዜ (አማራጭ)</label>
-              <input
-                id="draw-at"
-                type="datetime-local"
-                value={drawAt}
-                onChange={(event) => setDrawAt(event.target.value)}
-              />
+              <input id="draw-at" type="datetime-local" value={drawAt} onChange={(event) => setDrawAt(event.target.value)} />
               <div className="admin-create-help">
-                ዕጣው ቁጥሮቹ ሲሞሉ
-                በራስ-ሰር ይዘጋል።
-                የመጨረሻ ጊዜ የለውም።
+                ዕጣው ቁጥሮቹ ሲሞሉ በራስ-ሰር ይዘጋል። የመጨረሻ ጊዜ የለውም።
               </div>
             </div>
           </div>
         </section>
 
-        <button
-          className="admin-create-submit"
-          type="submit"
-          disabled={saving}
-        >
+        <button className="admin-create-submit" type="submit" disabled={saving || readingPrizeImage}>
           {saving ? "በመፍጠር ላይ..." : "ዕጣውን Draft ፍጠር"}
         </button>
       </form>
