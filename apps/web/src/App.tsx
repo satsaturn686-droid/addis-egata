@@ -879,6 +879,7 @@ if (needsLogin) {
             </p>
           </div>
 <UserWalletButton />
+          <HelpGuide />
           <button
             className="profile-button"
             type="button"
