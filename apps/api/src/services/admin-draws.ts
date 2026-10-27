@@ -363,7 +363,7 @@ export async function createDraw(
     validateOptionalText(
       input.prizeImageUrl,
       "PRIZE_IMAGE_URL",
-      2000,
+      3_000_000,
     );
 
   const prizeDescription =
@@ -410,7 +410,7 @@ export async function createDraw(
     Math.round(input.entryFee * 100) /
     100;
 
-    if (
+  if (
     !Number.isInteger(
       input.winnerCount,
     ) ||
@@ -422,6 +422,7 @@ export async function createDraw(
       "INVALID_WINNER_COUNT",
     );
   }
+
   const startsAt = validateDate(
     input.startsAt,
     "STARTS_AT",
