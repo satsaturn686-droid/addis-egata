@@ -130,7 +130,8 @@ const [user, setUser] =
     const [draws, setDraws] = useState<Draw[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
 const [drawPrizes, setDrawPrizes] = useState<DrawPrize[]>([]);
-  
+  const [selectedDrawId, setSelectedDrawId] =
+  useState<string | null>(null);
   const [telebirrNumber, setTelebirrNumber] =
     useState("");
 
@@ -332,15 +333,20 @@ useEffect(() => {
       setPaymentSuccess(false);
     }
   }, [selectedEntry, now]);
-  const activeDraw = useMemo(() => {
+    const activeDraw = useMemo(() => {
+    if (!selectedDrawId) {
+      return null;
+    }
+
     return (
       draws.find(
         (draw) =>
-          draw.status === "open" ||
-          draw.status === "full",
+          draw.id === selectedDrawId &&
+          (draw.status === "open" ||
+            draw.status === "full"),
       ) ?? null
     );
-  }, [draws]);
+  }, [draws, selectedDrawId]);
 
     useEffect(() => {
     if (!activeDraw) {
@@ -904,7 +910,7 @@ if (needsLogin) {
           )}
         </header>
 
-        <section className="hero">
+                <section className="hero">
           <span className="status-badge">
             {telegramReady ? "ዝግጁ" : "Telegram"}
           </span>
@@ -912,21 +918,111 @@ if (needsLogin) {
           <h1>ሰላም {displayName} 👋</h1>
 
           <p className="hero-description">
-            በአሁኑ ጊዜ ክፍት የሆነ ዕጣ የለም።
-            አዲስ ዕጣ ሲከፈት እዚህ
-            ይመለከታሉ።
+            ለመሳተፍ የሚፈልጉትን ዕጣ ይምረጡ።
+            የቁጥር ዝርዝሩ የሚታየው ዕጣውን
+            ከመረጡ በኋላ ነው።
           </p>
         </section>
 
-        <section className="draw-card">
-          <div className="prize-placeholder">🎟️</div>
+        {draws.filter(
+          (draw) =>
+            draw.status === "open" ||
+            draw.status === "full",
+        ).length === 0 ? (
+          <section className="draw-card">
+            <div className="prize-placeholder">🎟️</div>
+            <div className="draw-info">
+              <p className="eyebrow">ADDIS ዕጣ</p>
+              <h2>አሁን ክፍት ዕጣ የለም</h2>
+              <p className="hero-description">
+                አዲስ ዕጣ ሲከፈት እዚህ ይታያል።
+              </p>
+            </div>
+          </section>
+        ) : (
+          draws
+            .filter(
+              (draw) =>
+                draw.status === "open" ||
+                draw.status === "full",
+            )
+            .map((draw) => (
+              <section className="draw-card" key={draw.id}>
+                {draw.prizeImageUrl ? (
+                  <img
+                    src={draw.prizeImageUrl}
+                    alt={draw.prizeName}
+                    className="prize-placeholder"
+                    style={{
+                      width: "100%",
+                      objectFit: "cover",
+                    }}
+                  />
+                ) : (
+                  <div className="prize-placeholder">🎁</div>
+                )}
 
-          <div className="draw-info">
-            <p className="eyebrow">ADDIS ዕጣ</p>
-            <h2>ቀጣዩን ዕጣ ይጠብቁ</h2>
-          </div>
-        </section>
+                <div className="draw-info">
+                  <p className="eyebrow">
+                    {draw.status === "full" ? "ሙሉ" : "ክፍት"}
+                  </p>
 
+                  <h2>{draw.name}</h2>
+                  <p className="hero-description">
+                    {draw.prizeName}
+                  </p>
+
+                  {draw.prizeDescription && (
+                    <p className="hero-description">
+                      {draw.prizeDescription}
+                    </p>
+                  )}
+
+                  <div className="stats">
+                    <div>
+                      <span>የመግቢያ ክፍያ</span>
+                      <strong>{formatMoney(draw.entryFee)}</strong>
+                    </div>
+                    <div>
+                      <span>አሸናፊዎች</span>
+                      <strong>{draw.winnerCount}</strong>
+                    </div>
+                    <div>
+                      <span>ቀሪ ቁጥሮች</span>
+                      <strong>
+                        {Math.max(
+                          0,
+                          draw.totalNumbers - draw.filledNumbers,
+                        )}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedEntry(null);
+                      setReservationError(null);
+                      setPaymentError(null);
+                      setPaymentSuccess(false);
+                      setSelectedDrawId(draw.id);
+                    }}
+                    style={{
+                      width: "100%",
+                      marginTop: "14px",
+                      padding: "12px",
+                      borderRadius: "12px",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {draw.status === "full"
+                      ? "ዕጣውን ይመልከቱ"
+                      : "ዕጣውን ይምረጡ"}
+                  </button>
+                </div>
+              </section>
+            ))
+        )}
         <PublicResults />
         {telegramReady && <ReferralPanel />}
       </main>
