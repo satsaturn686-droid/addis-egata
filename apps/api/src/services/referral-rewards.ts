@@ -200,7 +200,7 @@ export async function approveAndCreditReferralReward(
         reward.inviter_user_id,
         amount,
         newBalance,
-        \`referral-reward:\${reward.id}\`,
+      "referral-reward:" + reward.id,
         "ADDIS ዕጣ referral bonus",
       ],
     );
