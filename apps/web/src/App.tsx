@@ -914,18 +914,19 @@ if (needsLogin) {
           )}
         </header>
 {showProfile && (
-  <ProfilePanel
-    displayName={displayName}
-    entryCount={entries.length}
-    onClose={() => setShowProfile(false)}
-    onLogout={() => {
-      clearAppSessionToken();
-      sessionStorage.removeItem(
-        "addis-egata-telegram-init-data",
-      );
-      window.location.reload();
-    }}
-  />
+   <ProfilePanel
+   displayName={displayName}
+   entries={entries}
+   draws={draws}
+   onClose={() => setShowProfile(false)}
+   onLogout={() => {
+     clearAppSessionToken();
+     sessionStorage.removeItem(
+       "addis-egata-telegram-init-data",
+     );
+     window.location.reload();
+   }}
+ />
 )}
                 <section className="hero">
           <span className="status-badge">
@@ -1041,7 +1042,6 @@ if (needsLogin) {
             ))
         )}
         <PublicResults />
-        {telegramReady && <ReferralPanel />}
       </main>
     );
   }
@@ -1103,6 +1103,21 @@ if (needsLogin) {
           fontWeight: 700,
         }}
       >
+        {showProfile && (
+  <ProfilePanel
+    displayName={displayName}
+    entries={entries}
+    draws={draws}
+    onClose={() => setShowProfile(false)}
+    onLogout={() => {
+      clearAppSessionToken();
+      sessionStorage.removeItem(
+        "addis-egata-telegram-init-data",
+      );
+      window.location.reload();
+    }}
+  />
+)}
         ← ወደ ሁሉም ዕጣዎች ተመለስ
       </button>
       <section className="hero">
