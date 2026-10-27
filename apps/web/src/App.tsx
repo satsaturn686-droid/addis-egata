@@ -972,7 +972,25 @@ if (needsLogin) {
   </button>
 )}
       </header>
-
+      <button
+        type="button"
+        onClick={() => {
+          setSelectedDrawId(null);
+          setSelectedEntry(null);
+          setReservationError(null);
+          setPaymentError(null);
+          setPaymentSuccess(false);
+        }}
+        style={{
+          width: "100%",
+          marginBottom: "12px",
+          padding: "12px",
+          borderRadius: "12px",
+          fontWeight: 700,
+        }}
+      >
+        ← ወደ ሁሉም ዕጣዎች ተመለስ
+      </button>
       <section className="hero">
         <span className="status-badge">
           {activeDraw.status === "full"
