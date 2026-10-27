@@ -37,6 +37,7 @@ async function migrate() {
     await ensureReferralSchema(client);
     await ensureWinnerCountMinimum(client);
     await ensurePhysicalWinnerRecipient(client);
+    await ensurePrizeImageStorage(client);
     await removeLegacyEntryNumberConstraint(client);
 
     await client.query(`
@@ -231,10 +232,12 @@ async function ensureReferralSchema(
         CHECK (inviter_user_id <> invitee_user_id)
     )
   `);
+
   await client.query(`
     ALTER TABLE referrals
     ADD COLUMN IF NOT EXISTS rejection_reason TEXT
   `);
+
   await client.query(`
     CREATE INDEX IF NOT EXISTS referrals_inviter_status_idx
     ON referrals(inviter_user_id, status, qualified_at)
@@ -334,6 +337,18 @@ async function ensurePhysicalWinnerRecipient(
     ALTER TABLE winner_payouts
     ADD COLUMN IF NOT EXISTS recipient_phone TEXT
   `);
+}
+
+async function ensurePrizeImageStorage(
+  client: import("pg").PoolClient,
+): Promise<void> {
+  await client.query(`
+    ALTER TABLE draws
+    ALTER COLUMN prize_image_url TYPE TEXT
+    USING prize_image_url::text
+  `);
+
+  console.log("Prize image storage column is ready for uploaded images.");
 }
 
 async function removeLegacyEntryNumberConstraint(
