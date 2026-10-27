@@ -1761,7 +1761,6 @@ if (needsLogin) {
           <small>አሸናፊዎች</small>
         </button>
 
-        <HelpGuide />
       </section>
 
       <p className="development-note">
