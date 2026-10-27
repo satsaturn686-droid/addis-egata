@@ -28,6 +28,7 @@ import ReferralPanel from "./components/ReferralPanel";
 import HelpGuide from "./HelpGuide";
 import UserWalletButton from "./UserWalletButton";
 import WalletPanel from "./WalletPanel";
+import ProfilePanel from "./ProfilePanel";
 type TelegramWebApp = {
   ready: () => void;
   expand: () => void;
@@ -138,7 +139,7 @@ const [drawPrizes, setDrawPrizes] = useState<DrawPrize[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [loadingEntries, setLoadingEntries] = useState(false);
-
+  const [showProfile, setShowProfile] = useState(false);
   const [reservingNumber, setReservingNumber] =
     useState<number | null>(null);
 
@@ -881,12 +882,13 @@ if (needsLogin) {
 <UserWalletButton />
           <HelpGuide />
           <button
-            className="profile-button"
-            type="button"
-            aria-label="መገለጫ"
-          >
-            👤
-          </button>
+  className="profile-button"
+  type="button"
+  aria-label="የእኔ መለያ"
+  onClick={() => setShowProfile(true)}
+>
+  👤
+</button>
 
           {user?.isAdmin && (
             <button
@@ -911,7 +913,20 @@ if (needsLogin) {
             </button>
           )}
         </header>
-
+{showProfile && (
+  <ProfilePanel
+    displayName={displayName}
+    entryCount={entries.length}
+    onClose={() => setShowProfile(false)}
+    onLogout={() => {
+      clearAppSessionToken();
+      sessionStorage.removeItem(
+        "addis-egata-telegram-init-data",
+      );
+      window.location.reload();
+    }}
+  />
+)}
                 <section className="hero">
           <span className="status-badge">
             {telegramReady ? "ዝግጁ" : "Telegram"}
@@ -1041,12 +1056,13 @@ if (needsLogin) {
         </div>
 <UserWalletButton />
         <button
-          className="profile-button"
-          type="button"
-          aria-label="መገለጫ"
-        >
-          👤
-        </button>
+  className="profile-button"
+  type="button"
+  aria-label="የእኔ መለያ"
+  onClick={() => setShowProfile(true)}
+>
+  👤
+</button>
         {user?.isAdmin && (
   <button
     type="button"
