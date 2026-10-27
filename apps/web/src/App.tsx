@@ -25,6 +25,7 @@ import {
 } from "./api";
 import PublicResults from "./PublicResults";
 import ReferralPanel from "./components/ReferralPanel";
+import HelpGuide from "./HelpGuide";
 import UserWalletButton from "./UserWalletButton";
 import WalletPanel from "./WalletPanel";
 type TelegramWebApp = {
@@ -1759,10 +1760,7 @@ if (needsLogin) {
           <small>አሸናፊዎች</small>
         </button>
 
-        <button type="button">
-          <span>ℹ️</span>
-          <small>እንዴት ይሰራል?</small>
-        </button>
+        <HelpGuide />
       </section>
 
       <p className="development-note">
