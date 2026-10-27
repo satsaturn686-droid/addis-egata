@@ -1,19 +1,56 @@
 
+import { useMemo } from "react";
 import ReferralPanel from "./components/ReferralPanel";
+import type { Draw, Entry } from "./api";
 
 type ProfilePanelProps = {
   displayName: string;
-  entryCount: number;
+  entries: Entry[];
+  draws: Draw[];
   onClose: () => void;
   onLogout: () => void;
 };
 
 export default function ProfilePanel({
   displayName,
-  entryCount,
+  entries,
+  draws,
   onClose,
   onLogout,
 }: ProfilePanelProps) {
+  const myEntries = useMemo(
+    () =>
+      entries.filter((entry) =>
+        ["paid", "pending_payment", "reserved"].includes(
+          entry.status,
+        ),
+      ),
+    [entries],
+  );
+
+  const groupedEntries = useMemo(() => {
+    const groups = new Map<
+      string,
+      { name: string; numbers: number[] }
+    >();
+
+    for (const entry of myEntries) {
+      const draw = draws.find((item) => item.id === entry.drawId);
+      const name = draw?.name || "ዕጣው አልተገኘም";
+
+      if (!groups.has(entry.drawId)) {
+        groups.set(entry.drawId, { name, numbers: [] });
+      }
+
+      groups.get(entry.drawId)!.numbers.push(entry.number);
+    }
+
+    return Array.from(groups.values()).map((group) => ({
+      ...group,
+      numbers: [...new Set(group.numbers)].sort((a, b) => a - b),
+    }));
+  }, [myEntries, draws]);
+
   return (
     <div
       role="dialog"
@@ -42,12 +79,12 @@ export default function ProfilePanel({
           aria-label="ዝጋ"
           style={{
             position: "absolute",
-            top: "12px",
-            right: "12px",
-            width: "40px",
-            height: "40px",
+            top: 12,
+            right: 12,
+            width: 40,
+            height: 40,
             borderRadius: "50%",
-            fontSize: "20px",
+            fontSize: 20,
           }}
         >
           ✕
@@ -63,16 +100,61 @@ export default function ProfilePanel({
 
         <div className="stats">
           <div>
-            <span>የእኔ ዕጣዎች</span>
-            <strong>{entryCount}</strong>
+            <span>የተሳተፍኳቸው ዕጣዎች</span>
+            <strong>{groupedEntries.length}</strong>
           </div>
           <div>
-            <span>የመለያ ሁኔታ</span>
-            <strong>ንቁ</strong>
+            <span>የያዝኳቸው ቁጥሮች</span>
+            <strong>{myEntries.length}</strong>
           </div>
         </div>
 
-        <div style={{ marginTop: "16px" }}>
+        <section style={{ marginTop: 20 }}>
+          <h3>🎟️ የእኔ ዕጣዎች</h3>
+
+          {groupedEntries.length === 0 ? (
+            <p className="hero-description">
+              እስካሁን የያዝካቸው የዕጣ ቁጥሮች የሉም።
+            </p>
+          ) : (
+            groupedEntries.map((group) => (
+              <div
+                key={group.name}
+                className="draw-card"
+                style={{ marginTop: 12, padding: 14 }}
+              >
+                <strong>{group.name}</strong>
+                <p className="hero-description">
+                  የያዝካቸው ቁጥሮች ({group.numbers.length})
+                </p>
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 8,
+                  }}
+                >
+                  {group.numbers.map((number) => (
+                    <span
+                      key={number}
+                      style={{
+                        padding: "7px 10px",
+                        borderRadius: 8,
+                        background: "#f0f2f5",
+                        color: "#171717",
+                        fontWeight: 700,
+                      }}
+                    >
+                      #{number}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+        </section>
+
+        <div style={{ marginTop: 20 }}>
           <ReferralPanel />
         </div>
 
@@ -81,9 +163,9 @@ export default function ProfilePanel({
           onClick={onLogout}
           style={{
             width: "100%",
-            marginTop: "16px",
-            padding: "12px",
-            borderRadius: "12px",
+            marginTop: 16,
+            padding: 12,
+            borderRadius: 12,
             fontWeight: 700,
           }}
         >
@@ -95,9 +177,9 @@ export default function ProfilePanel({
           onClick={onClose}
           style={{
             width: "100%",
-            marginTop: "10px",
-            padding: "12px",
-            borderRadius: "12px",
+            marginTop: 10,
+            padding: 12,
+            borderRadius: 12,
           }}
         >
           ወደ ዕጣው ተመለስ
