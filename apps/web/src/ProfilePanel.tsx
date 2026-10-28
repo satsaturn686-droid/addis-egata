@@ -169,6 +169,26 @@ export default function ProfilePanel({
             fontWeight: 700,
           }}
         >
+                  <a
+          href="https://t.me/ADDIS_draw_help"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: "block",
+            width: "100%",
+            boxSizing: "border-box",
+            marginTop: 16,
+            padding: 13,
+            borderRadius: 12,
+            background: "#229ED9",
+            color: "#fff",
+            textAlign: "center",
+            textDecoration: "none",
+            fontWeight: 700,
+          }}
+        >
+          💬 ጥያቄና ቅሬታ
+        </a>
           🚪 ከመለያ ውጣ
         </button>
 
