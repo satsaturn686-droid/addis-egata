@@ -51,6 +51,26 @@ export default function ProfilePanel({
     }));
   }, [myEntries, draws]);
 
+  const openSupport = () => {
+    const supportUrl = "https://t.me/ADDIS_draw_help";
+
+    const telegram = (
+      window as Window & {
+        Telegram?: {
+          WebApp?: {
+            openTelegramLink?: (url: string) => void;
+          };
+        };
+      }
+    ).Telegram?.WebApp;
+
+    if (telegram?.openTelegramLink) {
+      telegram.openTelegramLink(supportUrl);
+    } else {
+      window.open(supportUrl, "_blank", "noopener,noreferrer");
+    }
+  };
+
   return (
     <div
       role="dialog"
@@ -158,26 +178,28 @@ export default function ProfilePanel({
           <ReferralPanel />
         </div>
 
-                  <a
-          href="https://t.me/ADDIS_draw_help"
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          type="button"
+          onClick={openSupport}
           style={{
             display: "block",
             width: "100%",
             boxSizing: "border-box",
             marginTop: 16,
             padding: 13,
+            border: "none",
             borderRadius: 12,
             background: "#229ED9",
             color: "#fff",
             textAlign: "center",
-            textDecoration: "none",
             fontWeight: 700,
+            fontSize: 16,
+            cursor: "pointer",
           }}
         >
           💬 ጥያቄና ቅሬታ
-        </a>
+        </button>
+
         <button
           type="button"
           onClick={onLogout}
@@ -190,7 +212,7 @@ export default function ProfilePanel({
           }}
         >
           🚪 ከመለያ ውጣ
-        </button>| 
+        </button>
 
         <button
           type="button"
