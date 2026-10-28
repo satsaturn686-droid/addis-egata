@@ -158,17 +158,6 @@ export default function ProfilePanel({
           <ReferralPanel />
         </div>
 
-        <button
-          type="button"
-          onClick={onLogout}
-          style={{
-            width: "100%",
-            marginTop: 16,
-            padding: 12,
-            borderRadius: 12,
-            fontWeight: 700,
-          }}
-        >
                   <a
           href="https://t.me/ADDIS_draw_help"
           target="_blank"
@@ -189,8 +178,19 @@ export default function ProfilePanel({
         >
           💬 ጥያቄና ቅሬታ
         </a>
+        <button
+          type="button"
+          onClick={onLogout}
+          style={{
+            width: "100%",
+            marginTop: 16,
+            padding: 12,
+            borderRadius: 12,
+            fontWeight: 700,
+          }}
+        >
           🚪 ከመለያ ውጣ
-        </button>
+        </button>| 
 
         <button
           type="button"
