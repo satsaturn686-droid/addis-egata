@@ -36,7 +36,7 @@ services:
     name: addis-egata-scheduled-draws
     runtime: node
     region: oregon
-    plan: free
+    plan: starter
 
     schedule: "*/1 * * * *"
 
