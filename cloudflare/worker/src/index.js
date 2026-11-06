@@ -706,48 +706,80 @@ async function releaseUpdate(db, updateId, leaseToken) {
 ‎}
 ‎
 ‎async function walletChange(
-‎  db, userId, amountCents, type, reference, description
-‎) {
-‎  if (!Number.isSafeInteger(amountCents) || amountCents === 0) {
-‎    throw new Error("Invalid wallet amount");
-‎  }
-‎
-‎  const timestamp = now();
-‎
-‎  const wallet = await db.prepare(`
-‎    SELECT balance_cents FROM wallets WHERE user_id = ?
-‎  `).bind(userId).first();
-‎
-‎  if (!wallet) throw new Error("Wallet not found");
-‎
-‎  const current = Number(wallet.balance_cents);
-‎  const next = current + amountCents;
-‎
-‎  if (next < 0) throw new Error("Insufficient wallet balance");
-‎
-‎  await db.batch([
-‎    db.prepare(`
-‎      UPDATE wallets SET balance_cents = ?, updated_at = ?
-‎      WHERE user_id = ? AND balance_cents = ?
-‎    `).bind(next, timestamp, userId, current),
-‎
-‎    db.prepare(`
-‎      INSERT INTO wallet_transactions (
-‎        id, user_id, type, amount_cents,
-‎        balance_after_cents, reference, description, created_at
-‎      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-‎    `).bind(
-‎      newId(), userId, type, amountCents,
-‎      next, reference, description, timestamp
-‎    )
-‎  ]);
-‎
-‎  const verified = await walletBalance(db, userId);
-‎  if (verified !== next) {
-‎    throw new Error("Wallet balance update conflict");
-‎  }
-‎  return next;
-‎}
+  db, userId, amountCents, type, reference, description
+) {
+  if (!Number.isSafeInteger(amountCents) || amountCents === 0) {
+    throw new Error("Invalid wallet amount");
+  }
+
+  const timestamp = now();
+  const operationId = newId();
+  const transactionId = newId();
+
+  const results = await db.batch([
+    db.prepare(`
+      UPDATE wallets
+      SET balance_cents = balance_cents + ?,
+          updated_at = ?,
+          last_operation_id = ?
+      WHERE user_id = ?
+        AND balance_cents + ? >= 0
+        AND balance_cents + ? <= 9007199254740991
+    `).bind(
+      amountCents,
+      timestamp,
+      operationId,
+      userId,
+      amountCents,
+      amountCents
+    ),
+
+    db.prepare(`
+      INSERT INTO wallet_transactions (
+        id,
+        user_id,
+        type,
+        amount_cents,
+        balance_after_cents,
+        reference,
+        description,
+        created_at
+      )
+      SELECT
+        ?,
+        user_id,
+        ?,
+        ?,
+        balance_cents,
+        ?,
+        ?,
+        ?
+      FROM wallets
+      WHERE user_id = ?
+        AND last_operation_id = ?
+    `).bind(
+      transactionId,
+      type,
+      amountCents,
+      reference,
+      description,
+      timestamp,
+      userId,
+      operationId
+    )
+  ]);
+
+  if (
+    !results ||
+    results.length !== 2 ||
+    results[0]?.meta?.changes !== 1 ||
+    results[1]?.meta?.changes !== 1
+  ) {
+    throw new Error("Atomic wallet operation failed");
+  }
+
+  return true;
+}
 ‎
 ‎async function showWallet(env, db, chatId, user) {
 ‎  const balance = await walletBalance(db, user.id);
@@ -955,133 +987,333 @@ async function releaseUpdate(db, updateId, leaseToken) {
 ‎}
 ‎
 ‎async function submitWithdrawalNumber(env, db, chatId, user, phone) {
-‎  const state = await getState(db, user.id);
-‎  if (!state || state.state !== "withdraw_number") return false;
-‎
-‎  const clean = String(phone || "").replace(/\s+/g, "");
-‎  if (!/^[0-9+]{9,16}$/.test(clean)) {
-‎    await send(env, chatId, "ትክክለኛ የTelebirr ቁጥር ያስገቡ።");
-‎    return true;
-‎  }
-‎
-‎  const timestamp = now();
-‎  const withdrawalId = newId();
-‎  const amountCents = Number(state.data.amountCents);
-‎
-‎  try {
-‎    await db.batch([
-‎      db.prepare(`
-‎        INSERT INTO withdrawals (
-‎          id, user_id, amount_cents, telebirr_number,
-‎          status, created_at
-‎        ) VALUES (?, ?, ?, ?, 'pending', ?)
-‎      `).bind(withdrawalId, user.id, amountCents, clean, timestamp),
-‎
-‎      db.prepare(`
-‎        UPDATE wallets SET balance_cents = balance_cents - ?,
-‎          updated_at = ?
-‎        WHERE user_id = ? AND balance_cents >= ?
-‎      `).bind(amountCents, timestamp, user.id, amountCents),
-‎
-‎      db.prepare(`
-‎        INSERT INTO wallet_transactions (
-‎          id, user_id, type, amount_cents,
-‎          balance_after_cents, reference, description, created_at
-‎        )
-‎        SELECT ?, ?, 'withdrawal', ?, balance_cents,
-‎          ?, 'Withdrawal request reserved', ?
-‎        FROM wallets WHERE user_id = ?
-‎      `).bind(
-‎        newId(), user.id, -amountCents,
-‎        `withdrawal:${withdrawalId}`, timestamp, user.id
-‎      )
-‎    ]);
-‎  } catch (error) {
-‎    console.error("Withdrawal request failed", error);
-‎    await send(env, chatId, "Withdrawal ጥያቄው አልተመዘገበም። ደግመው ይሞክሩ።");
-‎    return true;
-‎  }
-‎
-‎  const check = await db.prepare(`
-‎    SELECT status FROM withdrawals WHERE id = ?
-‎  `).bind(withdrawalId).first();
-‎
-‎  if (!check) {
-‎    await send(env, chatId, "Withdrawal ጥያቄው አልተመዘገበም።");
-‎    return true;
-‎  }
-‎
-‎  await clearState(db, user.id);
-‎  await send(env, chatId, "📨 Withdrawal ጥያቄዎ ተልኳል። Admin እስኪያጸድቅ ይጠብቁ።");
-‎
-‎  for (const adminId of admins(env)) {
-‎    await send(
-‎      env, adminId,
-‎      `📤 <b>አዲስ Withdrawal</b>\n` +
-‎      `User: <code>${escapeHtml(user.telegram_id)}</code>\n` +
-‎      `Amount: ${(amountCents / 100).toFixed(2)} ETB\n` +
-‎      `Telebirr: <code>${escapeHtml(clean)}</code>`,
-‎      { inline_keyboard: [[
-‎        { text: "✅ Paid", callback_data: `withdraw_paid:${withdrawalId}` },
-‎        { text: "❌ Reject", callback_data: `withdraw_reject:${withdrawalId}` }
-‎      ]] }
-‎    );
-‎  }
-‎  return true;
-‎}
-‎
+  const state = await getState(db, user.id);
+
+  if (!state || state.state !== "withdraw_number") {
+    return false;
+  }
+
+  const clean = String(phone || "").replace(/\s+/g, "");
+
+  if (!/^[0-9+]{9,16}$/.test(clean)) {
+    await send(env, chatId, "ትክክለኛ የTelebirr ቁጥር ያስገቡ።");
+    return true;
+  }
+
+  const amountCents = Number(state.data.amountCents);
+
+  if (!Number.isSafeInteger(amountCents) || amountCents < 10000) {
+    await send(env, chatId, "የWithdrawal መጠኑ ትክክል አይደለም። እንደገና ይሞክሩ።");
+    return true;
+  }
+
+  const timestamp = now();
+  const withdrawalId = newId();
+  const operationId = newId();
+  const transactionId = newId();
+
+  try {
+    const results = await db.batch([
+      db.prepare(`
+        UPDATE wallets
+        SET balance_cents = balance_cents - ?,
+            updated_at = ?,
+            last_operation_id = ?
+        WHERE user_id = ?
+          AND balance_cents >= ?
+      `).bind(
+        amountCents,
+        timestamp,
+        operationId,
+        user.id,
+        amountCents
+      ),
+
+      db.prepare(`
+        INSERT INTO withdrawals (
+          id,
+          user_id,
+          amount_cents,
+          telebirr_number,
+          status,
+          created_at,
+          updated_at
+        )
+        SELECT
+          ?,
+          user_id,
+          ?,
+          ?,
+          'pending',
+          ?,
+          ?
+        FROM wallets
+        WHERE user_id = ?
+          AND last_operation_id = ?
+      `).bind(
+        withdrawalId,
+        amountCents,
+        clean,
+        timestamp,
+        timestamp,
+        user.id,
+        operationId
+      ),
+
+      db.prepare(`
+        INSERT INTO wallet_transactions (
+          id,
+          user_id,
+          type,
+          amount_cents,
+          balance_after_cents,
+          reference,
+          description,
+          created_at
+        )
+        SELECT
+          ?,
+          user_id,
+          'withdrawal',
+          ?,
+          balance_cents,
+          ?,
+          'Withdrawal request reserved',
+          ?
+        FROM wallets
+        WHERE user_id = ?
+          AND last_operation_id = ?
+      `).bind(
+        transactionId,
+        -amountCents,
+        `withdrawal:${withdrawalId}`,
+        timestamp,
+        user.id,
+        operationId
+      )
+    ]);
+
+    if (
+      !results ||
+      results.length !== 3 ||
+      results[0]?.meta?.changes !== 1 ||
+      results[1]?.meta?.changes !== 1 ||
+      results[2]?.meta?.changes !== 1
+    ) {
+      throw new Error("Withdrawal transaction was not completed");
+    }
+  } catch (error) {
+    console.error("Withdrawal request failed:", error);
+
+    await send(
+      env,
+      chatId,
+      "⚠️ የWallet ሂሳብዎ ተቀይሯል ወይም ሌላ Withdrawal በመጠባበቅ ላይ ነው። ሂሳብዎን ያረጋግጡና እንደገና ይሞክሩ።"
+    );
+
+    return true;
+  }
+
+  await clearState(db, user.id);
+
+  await send(
+    env,
+    chatId,
+    "📨 Withdrawal ጥያቄዎ ተልኳል። Admin እስኪያጸድቅ ይጠብቁ።"
+  );
+
+  for (const adminId of admins(env)) {
+    try {
+      await send(
+        env,
+        adminId,
+        `📤 <b>አዲስ Withdrawal</b>\n` +
+        `User: <code>${escapeHtml(user.telegram_id)}</code>\n` +
+        `Amount: ${(amountCents / 100).toFixed(2)} ETB\n` +
+        `Telebirr: <code>${escapeHtml(clean)}</code>`,
+        {
+          inline_keyboard: [[
+            {
+              text: "✅ Paid",
+              callback_data: `withdraw_paid:${withdrawalId}`
+            },
+            {
+              text: "❌ Reject",
+              callback_data: `withdraw_reject:${withdrawalId}`
+            }
+          ]]
+        }
+      );
+    } catch (error) {
+      console.error("Withdrawal admin notification failed:", error);
+    }
+  }
+
+  return true;
+}
 ‎async function reviewWithdrawal(env, db, admin, withdrawalId, action) {
-‎  if (!isAdmin(env, admin.id)) return;
-‎
-‎  const adminUser = await userByTelegram(db, admin.id);
-‎  const withdrawal = await db.prepare(`
-‎    SELECT w.*, u.telegram_id FROM withdrawals w
-‎    JOIN users u ON u.id = w.user_id WHERE w.id = ?
-‎  `).bind(withdrawalId).first();
-‎
-‎  if (!withdrawal || withdrawal.status !== "pending") return;
-‎
-‎  const timestamp = now();
-‎
-‎  if (action === "paid") {
-‎    const result = await db.prepare(`
-‎      UPDATE withdrawals SET status = 'paid',
-‎        processed_by = ?, processed_at = ?
-‎      WHERE id = ? AND status = 'pending'
-‎    `).bind(adminUser.id, timestamp, withdrawalId).run();
-‎
-‎    if (!result.meta?.changes) return;
-‎
-‎    await send(
-‎      env, withdrawal.telegram_id,
-‎      `✅ Withdrawal ተከፍሏል።\n${(withdrawal.amount_cents / 100).toFixed(2)} ብር`
-‎    );
-‎  } else {
-‎    const result = await db.prepare(`
-‎      UPDATE withdrawals SET status = 'rejected',
-‎        rejection_reason = 'Admin rejected',
-‎        processed_by = ?, processed_at = ?
-‎      WHERE id = ? AND status = 'pending'
-‎    `).bind(adminUser.id, timestamp, withdrawalId).run();
-‎
-‎    if (!result.meta?.changes) return;
-‎
-‎    await walletChange(
-‎      db, withdrawal.user_id, Number(withdrawal.amount_cents),
-‎      "refund", `withdrawal-refund:${withdrawalId}`,
-‎      "Rejected withdrawal refunded"
-‎    );
-‎
-‎    await send(
-‎      env, withdrawal.telegram_id,
-‎      `❌ Withdrawal ውድቅ ተደርጓል።\n` +
-‎      `${(withdrawal.amount_cents / 100).toFixed(2)} ብር ወደ Wallet ተመልሷል።`
-‎    );
-‎  }
-‎
-‎  await audit(db, adminUser.id, `withdrawal_${action}`,
-‎    "withdrawal", withdrawalId, { amountCents: withdrawal.amount_cents });
-‎}
+  if (!isAdmin(env, admin.id)) return;
+
+  const adminUser = await userByTelegram(db, admin.id);
+  if (!adminUser) return;
+
+  const withdrawal = await db.prepare(`
+    SELECT w.*, u.telegram_id
+    FROM withdrawals w
+    JOIN users u ON u.id = w.user_id
+    WHERE w.id = ?
+  `).bind(withdrawalId).first();
+
+  if (!withdrawal || withdrawal.status !== "pending") return;
+
+  const timestamp = now();
+
+  if (action === "paid") {
+    const result = await db.prepare(`
+      UPDATE withdrawals
+      SET status = 'paid',
+          processed_by = ?,
+          processed_at = ?,
+          updated_at = ?
+      WHERE id = ?
+        AND status = 'pending'
+    `).bind(
+      adminUser.id,
+      timestamp,
+      timestamp,
+      withdrawalId
+    ).run();
+
+    if (result.meta?.changes !== 1) return;
+
+    await send(
+      env,
+      withdrawal.telegram_id,
+      `✅ Withdrawal ተከፍሏል።\n` +
+      `${(withdrawal.amount_cents / 100).toFixed(2)} ብር`
+    );
+  } else if (action === "reject") {
+    const operationId = newId();
+    const transactionId = newId();
+
+    const results = await db.batch([
+      db.prepare(`
+        UPDATE wallets
+        SET balance_cents = balance_cents + ?,
+            updated_at = ?,
+            last_operation_id = ?
+        WHERE user_id = ?
+          AND EXISTS (
+            SELECT 1
+            FROM withdrawals
+            WHERE id = ?
+              AND status = 'pending'
+          )
+      `).bind(
+        Number(withdrawal.amount_cents),
+        timestamp,
+        operationId,
+        withdrawal.user_id,
+        withdrawalId
+      ),
+
+      db.prepare(`
+        UPDATE withdrawals
+        SET status = 'rejected',
+            rejection_reason = 'Admin rejected',
+            processed_by = ?,
+            processed_at = ?,
+            updated_at = ?
+        WHERE id = ?
+          AND status = 'pending'
+          AND EXISTS (
+            SELECT 1
+            FROM wallets
+            WHERE wallets.user_id = withdrawals.user_id
+              AND wallets.last_operation_id = ?
+          )
+      `).bind(
+        adminUser.id,
+        timestamp,
+        timestamp,
+        withdrawalId,
+        operationId
+      ),
+
+      db.prepare(`
+        INSERT INTO wallet_transactions (
+          id,
+          user_id,
+          type,
+          amount_cents,
+          balance_after_cents,
+          reference,
+          description,
+          created_at
+        )
+        SELECT
+          ?,
+          user_id,
+          'refund',
+          ?,
+          balance_cents,
+          ?,
+          'Rejected withdrawal refunded',
+          ?
+        FROM wallets
+        WHERE user_id = ?
+          AND last_operation_id = ?
+          AND EXISTS (
+            SELECT 1
+            FROM withdrawals
+            WHERE id = ?
+              AND status = 'rejected'
+          )
+      `).bind(
+        transactionId,
+        Number(withdrawal.amount_cents),
+        `withdrawal-refund:${withdrawalId}`,
+        timestamp,
+        withdrawal.user_id,
+        operationId,
+        withdrawalId
+      )
+    ]);
+
+    if (
+      !results ||
+      results.length !== 3 ||
+      results[0]?.meta?.changes !== 1 ||
+      results[1]?.meta?.changes !== 1 ||
+      results[2]?.meta?.changes !== 1
+    ) {
+      await send(
+        env,
+        admin.id,
+        "⚠️ Withdrawal Refund ሙሉ በሙሉ አልተረጋገጠም። የDatabase ሁኔታን ይፈትሹ።"
+      );
+      return;
+    }
+
+    await send(
+      env,
+      withdrawal.telegram_id,
+      `❌ Withdrawal ውድቅ ተደርጓል።\n` +
+      `${(withdrawal.amount_cents / 100).toFixed(2)} ብር ወደ Wallet ተመልሷል።`
+    );
+  } else {
+    return;
+  }
+
+  await audit(
+    db,
+    adminUser.id,
+    `withdrawal_${action}`,
+    "withdrawal",
+    withdrawalId,
+    { amountCents: withdrawal.amount_cents }
+  );
+}
 ‎
 ‎// -------------------- USER ENTRIES AND PUBLIC RESULTS --------------------
 ‎
