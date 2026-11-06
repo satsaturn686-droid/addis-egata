@@ -1811,123 +1811,248 @@ async function reviewPayment(env, db, admin, paymentId, approve) {
     }
   }
 }
-‎async function submitWinnerDetails(env, db, chatId, user, value) {
-‎  const state = await getState(db, user.id);
-‎  if (!state) return false;
 ‎
-‎  if (state.state === "winner_telebirr") {
-‎    const phone = String(value || "").replace(/\s+/g, "");
-‎    if (!/^[0-9+]{9,16}$/.test(phone)) {
-‎      await send(env, chatId, "ትክክለኛ የTelebirr ቁጥር ያስገቡ።");
-‎      return true;
-‎    }
-‎
-‎    await db.prepare(`
-‎      UPDATE winner_payouts SET telebirr_number = ?,
-‎        status = 'submitted', updated_at = ?
-‎      WHERE winner_id = ? AND user_id = ?
-‎    `).bind(phone, now(), state.data.winnerId, user.id).run();
-‎
-‎    await clearState(db, user.id);
-‎    await send(env, chatId, "✅ የሽልማት የTelebirr ቁጥርዎ ተመዝግቧል። Admin ያረጋግጣል።");
-‎
-‎    for (const adminId of admins(env)) {
-‎      await send(env, adminId,
-‎        `💵 የCash Winner መረጃ ደርሷል።\n` +
-‎        `Winner ID: <code>${escapeHtml(state.data.winnerId)}</code>\n` +
-‎        `Telebirr: <code>${escapeHtml(phone)}</code>`);
-‎    }
-‎    return true;
-‎  }
-‎
-‎  if (state.state === "winner_name") {
-‎    const fullName = String(value || "").trim();
-‎    if (fullName.length < 3 || fullName.length > 100) {
-‎      await send(env, chatId, "ሙሉ ስምዎን በትክክል ያስገቡ።");
-‎      return true;
-‎    }
-‎
-‎    await setState(db, user.id, "winner_phone", {
-‎      ...state.data, fullName
-‎    });
-‎    await send(env, chatId, "📱 የስልክ ቁጥርዎን ያስገቡ።");
-‎    return true;
-‎  }
-‎
-‎  if (state.state === "winner_phone") {
-‎    const phone = String(value || "").replace(/\s+/g, "");
-‎    if (!/^[0-9+]{9,16}$/.test(phone)) {
-‎      await send(env, chatId, "ትክክለኛ የስልክ ቁጥር ያስገቡ።");
-‎      return true;
-‎    }
-‎
-‎    await db.prepare(`
-‎      UPDATE winner_payouts SET recipient_full_name = ?,
-‎        recipient_phone = ?, status = 'submitted', updated_at = ?
-‎      WHERE winner_id = ? AND user_id = ?
-‎    `).bind(
-‎      state.data.fullName, phone, now(),
-‎      state.data.winnerId, user.id
-‎    ).run();
-‎
-‎    await clearState(db, user.id);
-‎    await send(env, chatId, "✅ ሙሉ ስምዎና ስልክ ቁጥርዎ ተመዝግቧል። Admin ያረጋግጣል።");
-‎
-‎    for (const adminId of admins(env)) {
-‎      await send(env, adminId,
-‎        `🎁 የPhysical Winner መረጃ ደርሷል።\n` +
-‎        `Winner ID: <code>${escapeHtml(state.data.winnerId)}</code>\n` +
-‎        `ስም: ${escapeHtml(state.data.fullName)}\nስልክ: ${escapeHtml(phone)}`);
-‎    }
-‎    return true;
-‎  }
-‎
-‎  return false;
-‎}
-‎
-‎async function approvePayout(env, db, admin, winnerId) {
-‎  if (!isAdmin(env, admin.id)) return;
-‎
-‎  const adminUser = await userByTelegram(db, admin.id);
-‎  const payout = await db.prepare(`
-‎    SELECT wp.*, u.telegram_id FROM winner_payouts wp
-‎    JOIN users u ON u.id = wp.user_id
-‎    WHERE wp.winner_id = ?
-‎  `).bind(winnerId).first();
-‎
-‎  if (!payout || payout.status !== "submitted") return;
-‎
-‎  await db.prepare(`
-‎    UPDATE winner_payouts SET status = 'approved', updated_at = ?
-‎    WHERE winner_id = ? AND status = 'submitted'
-‎  `).bind(now(), winnerId).run();
-‎
-‎  await audit(db, adminUser.id, "winner_payout_approved",
-‎    "winner_payout", winnerId);
-‎  await send(env, payout.telegram_id, "✅ የሽልማት መረጃዎ ተረጋግጧል። የክፍያ/ርክክብ ሂደቱ ይቀጥላል።");
-‎}
-‎
-‎async function markPayoutPaid(env, db, admin, winnerId) {
-‎  if (!isAdmin(env, admin.id)) return;
-‎
-‎  const adminUser = await userByTelegram(db, admin.id);
-‎  const payout = await db.prepare(`
-‎    SELECT wp.*, u.telegram_id FROM winner_payouts wp
-‎    JOIN users u ON u.id = wp.user_id
-‎    WHERE wp.winner_id = ?
-‎  `).bind(winnerId).first();
-‎
-‎  if (!payout || payout.status !== "approved") return;
-‎
-‎  await db.prepare(`
-‎    UPDATE winner_payouts SET status = 'paid', updated_at = ?
-‎    WHERE winner_id = ? AND status = 'approved'
-‎  `).bind(now(), winnerId).run();
-‎
-‎  await audit(db, adminUser.id, "winner_payout_paid",
-‎    "winner_payout", winnerId);
-‎  await send(env, payout.telegram_id, "🎉 ሽልማትዎ ተከፍሏል/ተረክበዋል። እንኳን ደስ አለዎት!");
-‎}
+async function submitWinnerDetails(env, db, chatId, user, value) {
+  const state = await getState(db, user.id);
+  if (!state) return false;
+
+  if (state.state === "winner_telebirr") {
+    const phone = String(value || "").replace(/\s+/g, "");
+
+    if (!/^[0-9+]{9,16}$/.test(phone)) {
+      await send(env, chatId, "ትክክለኛ የTelebirr ቁጥር ያስገቡ።");
+      return true;
+    }
+
+    const result = await db.prepare(`
+      UPDATE winner_payouts
+      SET telebirr_number = ?,
+          status = 'submitted',
+          updated_at = ?
+      WHERE winner_id = ?
+        AND user_id = ?
+        AND status = 'pending'
+    `).bind(
+      phone,
+      now(),
+      state.data.winnerId,
+      user.id
+    ).run();
+
+    if (Number(result?.meta?.changes || 0) !== 1) {
+      await send(
+        env,
+        chatId,
+        "⚠️ መረጃው አልተመዘገበም። እባክዎ Adminን ያነጋግሩ።"
+      );
+      return true;
+    }
+
+    await clearState(db, user.id);
+
+    await send(
+      env,
+      chatId,
+      "✅ የሽልማት የTelebirr ቁጥርዎ ተመዝግቧል። Admin ያረጋግጣል።"
+    );
+
+    for (const adminId of admins(env)) {
+      try {
+        await send(
+          env,
+          adminId,
+          `💵 የCash Winner መረጃ ደርሷል።\n` +
+          `Winner ID: <code>${escapeHtml(state.data.winnerId)}</code>\n` +
+          `Telebirr: <code>${escapeHtml(phone)}</code>`
+        );
+      } catch (error) {
+        console.error("Winner admin notification failed", error);
+      }
+    }
+
+    return true;
+  }
+
+  if (state.state === "winner_name") {
+    const fullName = String(value || "").trim();
+
+    if (fullName.length < 3 || fullName.length > 100) {
+      await send(env, chatId, "ሙሉ ስምዎን በትክክል ያስገቡ።");
+      return true;
+    }
+
+    await setState(db, user.id, "winner_phone", {
+      ...state.data,
+      fullName
+    });
+
+    await send(env, chatId, "📱 የስልክ ቁጥርዎን ያስገቡ።");
+    return true;
+  }
+
+  if (state.state === "winner_phone") {
+    const phone = String(value || "").replace(/\s+/g, "");
+
+    if (!/^[0-9+]{9,16}$/.test(phone)) {
+      await send(env, chatId, "ትክክለኛ የስልክ ቁጥር ያስገቡ።");
+      return true;
+    }
+
+    const result = await db.prepare(`
+      UPDATE winner_payouts
+      SET recipient_full_name = ?,
+          recipient_phone = ?,
+          status = 'submitted',
+          updated_at = ?
+      WHERE winner_id = ?
+        AND user_id = ?
+        AND status = 'pending'
+    `).bind(
+      state.data.fullName,
+      phone,
+      now(),
+      state.data.winnerId,
+      user.id
+    ).run();
+
+    if (Number(result?.meta?.changes || 0) !== 1) {
+      await send(
+        env,
+        chatId,
+        "⚠️ መረጃው አልተመዘገበም። እባክዎ Adminን ያነጋግሩ።"
+      );
+      return true;
+    }
+
+    await clearState(db, user.id);
+
+    await send(
+      env,
+      chatId,
+      "✅ ሙሉ ስምዎና ስልክ ቁጥርዎ ተመዝግቧል። Admin ያረጋግጣል።"
+    );
+
+    for (const adminId of admins(env)) {
+      try {
+        await send(
+          env,
+          adminId,
+          `🎁 የPhysical Winner መረጃ ደርሷል።\n` +
+          `Winner ID: <code>${escapeHtml(state.data.winnerId)}</code>\n` +
+          `ስም: ${escapeHtml(state.data.fullName)}\n` +
+          `ስልክ: <code>${escapeHtml(phone)}</code>`
+        );
+      } catch (error) {
+        console.error("Winner admin notification failed", error);
+      }
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
+async function approvePayout(env, db, admin, winnerId) {
+  if (!isAdmin(env, admin.id)) return;
+
+  const adminUser = await userByTelegram(db, admin.id);
+
+  const payout = await db.prepare(`
+    SELECT wp.*, u.telegram_id
+    FROM winner_payouts wp
+    JOIN users u ON u.id = wp.user_id
+    WHERE wp.winner_id = ?
+  `).bind(winnerId).first();
+
+  if (!payout || payout.status !== "submitted") return;
+
+  const result = await db.prepare(`
+    UPDATE winner_payouts
+    SET status = 'approved',
+        updated_at = ?
+    WHERE winner_id = ?
+      AND status = 'submitted'
+  `).bind(now(), winnerId).run();
+
+  if (Number(result?.meta?.changes || 0) !== 1) {
+    await send(
+      env,
+      admin.id,
+      "⚠️ የሽልማት ማጽደቅ አልተሳካም። እባክዎ ደግመው ያረጋግጡ።"
+    );
+    return;
+  }
+
+  await audit(
+    db,
+    adminUser.id,
+    "winner_payout_approved",
+    "winner_payout",
+    winnerId
+  );
+
+  try {
+    await send(
+      env,
+      payout.telegram_id,
+      "✅ የሽልማት መረጃዎ ተረጋግጧል። የክፍያ/ርክክብ ሂደቱ ይቀጥላል።"
+    );
+  } catch (error) {
+    console.error("Winner approval notification failed", winnerId, error);
+  }
+}
+
+async function markPayoutPaid(env, db, admin, winnerId) {
+  if (!isAdmin(env, admin.id)) return;
+
+  const adminUser = await userByTelegram(db, admin.id);
+
+  const payout = await db.prepare(`
+    SELECT wp.*, u.telegram_id
+    FROM winner_payouts wp
+    JOIN users u ON u.id = wp.user_id
+    WHERE wp.winner_id = ?
+  `).bind(winnerId).first();
+
+  if (!payout || payout.status !== "approved") return;
+
+  const result = await db.prepare(`
+    UPDATE winner_payouts
+    SET status = 'paid',
+        updated_at = ?
+    WHERE winner_id = ?
+      AND status = 'approved'
+  `).bind(now(), winnerId).run();
+
+  if (Number(result?.meta?.changes || 0) !== 1) {
+    await send(
+      env,
+      admin.id,
+      "⚠️ የክፍያ ማረጋገጫው አልተሳካም። እባክዎ ደግመው ያረጋግጡ።"
+    );
+    return;
+  }
+
+  await audit(
+    db,
+    adminUser.id,
+    "winner_payout_paid",
+    "winner_payout",
+    winnerId
+  );
+
+  try {
+    await send(
+      env,
+      payout.telegram_id,
+      "🎉 ሽልማትዎ ተከፍሏል/ተረክበዋል። እንኳን ደስ አለዎት!"
+    );
+  } catch (error) {
+    console.error("Winner paid notification failed", winnerId, error);
+  }
+}
+
 ‎‎// -------------------- ADMIN PANEL AND DRAW MANAGEMENT --------------------
 ‎
 ‎async function adminPanel(env, db, chatId) {
