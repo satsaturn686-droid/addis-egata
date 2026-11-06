@@ -1,0 +1,14 @@
+
+# Example only — never put real secrets in this file.
+
+# Telegram Bot token
+TELEGRAM_BOT_TOKEN=PASTE_TOKEN_IN_LOCAL_DEV_VARS_ONLY
+
+# Telegram webhook secret
+TELEGRAM_WEBHOOK_SECRET=REPLACE_WITH_RANDOM_SECRET
+
+# Admin Telegram numeric IDs, comma-separated
+ADMIN_TELEGRAM_IDS=YOUR_TELEGRAM_ID
+
+# Optional Telebirr account number
+TELEBIRR_NUMBER=YOUR_TELEBIRR_NUMBER
