@@ -1,5 +1,7 @@
+const TELEGRAM_API = "https://api.telegram.org";
 
-const API = "https://api.telegram.org";
+const now = () => new Date().toISOString();
+const newId = () => crypto.randomUUID();
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -7,12 +9,17 @@ const json = (data, status = 200) =>
     headers: { "content-type": "application/json; charset=utf-8" }
   });
 
-const now = () => new Date().toISOString();
-const id = () => crypto.randomUUID();
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
 
-function adminIds(env) {
+function admins(env) {
   return new Set(
-    (env.ADMIN_TELEGRAM_IDS || "")
+    String(env.ADMIN_TELEGRAM_IDS || "")
       .split(",")
       .map(x => x.trim())
       .filter(Boolean)
@@ -20,16 +27,16 @@ function adminIds(env) {
 }
 
 function isAdmin(env, telegramId) {
-  return adminIds(env).has(String(telegramId));
+  return admins(env).has(String(telegramId));
 }
 
-async function telegram(env, method, body) {
+async function tg(env, method, body) {
   if (!env.TELEGRAM_BOT_TOKEN) {
-    throw new Error("TELEGRAM_BOT_TOKEN is not configured");
+    throw new Error("TELEGRAM_BOT_TOKEN is missing");
   }
 
   const response = await fetch(
-    `${API}/bot${env.TELEGRAM_BOT_TOKEN}/${method}`,
+    `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/${method}`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -40,38 +47,37 @@ async function telegram(env, method, body) {
   const result = await response.json();
 
   if (!response.ok || !result.ok) {
-    throw new Error(result.description || "Telegram API request failed");
+    throw new Error(result.description || "Telegram API error");
   }
 
   return result.result;
 }
 
-async function sendMessage(env, chatId, text, replyMarkup) {
-  return telegram(env, "sendMessage", {
+async function send(env, chatId, text, keyboard) {
+  return tg(env, "sendMessage", {
     chat_id: chatId,
     text,
     parse_mode: "HTML",
-    ...(replyMarkup ? { reply_markup: replyMarkup } : {})
+    ...(keyboard ? { reply_markup: keyboard } : {})
   });
 }
 
-async function answerCallback(env, callbackId, text = "") {
-  return telegram(env, "answerCallbackQuery", {
+async function callbackAnswer(env, callbackId, text = "") {
+  return tg(env, "answerCallbackQuery", {
     callback_query_id: callbackId,
     text
   });
 }
 
-async function getUser(db, telegramId) {
+async function userByTelegram(db, telegramId) {
   return db.prepare(
     "SELECT * FROM users WHERE telegram_id = ?"
   ).bind(String(telegramId)).first();
 }
 
-async function registerUser(db, env, from) {
+async function register(db, env, from) {
   const timestamp = now();
-  const userId = id();
-  const admin = isAdmin(env, from.id) ? 1 : 0;
+  const userId = newId();
 
   await db.prepare(`
     INSERT INTO users (
@@ -91,18 +97,18 @@ async function registerUser(db, env, from) {
     from.username || null,
     from.first_name || null,
     from.last_name || null,
-    admin,
+    isAdmin(env, from.id) ? 1 : 0,
     timestamp,
     timestamp
   ).run();
 
-  const user = await getUser(db, from.id);
+  const user = await userByTelegram(db, from.id);
 
   await db.prepare(`
     INSERT OR IGNORE INTO wallets (
       id, user_id, balance_cents, created_at, updated_at
     ) VALUES (?, ?, 0, ?, ?)
-  `).bind(id(), user.id, timestamp, timestamp).run();
+  `).bind(newId(), user.id, timestamp, timestamp).run();
 
   return user;
 }
@@ -119,20 +125,22 @@ async function setState(db, userId, state, data = {}) {
 }
 
 async function getState(db, userId) {
-  const row = await db.prepare(
-    "SELECT state, data_json FROM user_states WHERE user_id = ?"
-  ).bind(userId).first();
+  const row = await db.prepare(`
+    SELECT state, data_json
+    FROM user_states
+    WHERE user_id = ?
+  `).bind(userId).first();
 
   if (!row) return null;
 
-  let data = {};
   try {
-    data = JSON.parse(row.data_json || "{}");
+    return {
+      state: row.state,
+      data: JSON.parse(row.data_json || "{}")
+    };
   } catch {
-    data = {};
+    return null;
   }
-
-  return { state: row.state, data };
 }
 
 async function clearState(db, userId) {
@@ -141,7 +149,7 @@ async function clearState(db, userId) {
   ).bind(userId).run();
 }
 
-function mainKeyboard() {
+function homeKeyboard() {
   return {
     keyboard: [
       [{ text: "🎟️ ዕጣዎች" }, { text: "💰 Wallet" }],
@@ -152,27 +160,24 @@ function mainKeyboard() {
   };
 }
 
-async function showHome(env, chatId, firstName) {
-  await sendMessage(
+async function home(env, chatId, firstName) {
+  await send(
     env,
     chatId,
-    `ሰላም ${escapeHtml(firstName || "ደንበኛ")}! 👋\n\nወደ <b>ADDIS ዕጣ</b> በደህና መጡ።\n\nከታች ካሉት አማራጮች ይምረጡ።`,
-    mainKeyboard()
+    `ሰላም ${escapeHtml(firstName || "ደንበኛ")}! 👋\n\n` +
+    `<b>ADDIS ዕጣ</b> እንኳን ደህና መጡ።\n\n` +
+    "ከታች ያሉትን አማራጮች ይጠቀሙ።",
+    homeKeyboard()
   );
 }
 
-function escapeHtml(value) {
-  return String(value || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
+// -----------------------------
+// DRAW LIST
+// -----------------------------
 
 async function showDraws(env, db, chatId) {
   const result = await db.prepare(`
-    SELECT id, name, prize_type, prize_name,
-           total_numbers, entry_fee_cents, winner_count
+    SELECT id, name, prize_name, entry_fee_cents
     FROM draws
     WHERE status = 'open'
     ORDER BY created_at DESC
@@ -182,30 +187,32 @@ async function showDraws(env, db, chatId) {
   const draws = result.results || [];
 
   if (!draws.length) {
-    await sendMessage(env, chatId, "አሁን ክፍት የሆነ ዕጣ የለም።");
+    await send(env, chatId, "አሁን ክፍት የሆነ ዕጣ የለም።");
     return;
   }
 
-  const buttons = draws.map(draw => [{
-    text: `🎟️ ${draw.name} — ${draw.entry_fee_cents / 100} ብር`,
-    callback_data: `d|${draw.id}`
+  const keyboard = draws.map(draw => [{
+    text: `${draw.name} — ${(draw.entry_fee_cents / 100).toFixed(2)} ብር`,
+    callback_data: `draw:${draw.id}`
   }]);
 
-  await sendMessage(
+  await send(
     env,
     chatId,
-    "🎟️ <b>ክፍት የሆኑ ዕጣዎች</b>\n\nለመመልከት ዕጣውን ይምረጡ።",
-    { inline_keyboard: buttons }
+    "🎟️ <b>ክፍት የሆኑ ዕጣዎች</b>\n\nዕጣ ይምረጡ።",
+    { inline_keyboard: keyboard }
   );
 }
 
 async function showDraw(env, db, chatId, drawId) {
   const draw = await db.prepare(`
-    SELECT * FROM draws WHERE id = ? AND status = 'open'
+    SELECT *
+    FROM draws
+    WHERE id = ? AND status = 'open'
   `).bind(drawId).first();
 
   if (!draw) {
-    await sendMessage(env, chatId, "ይህ ዕጣ አሁን ክፍት አይደለም።");
+    await send(env, chatId, "ይህ ዕጣ አሁን ክፍት አይደለም።");
     return;
   }
 
@@ -217,31 +224,35 @@ async function showDraw(env, db, chatId, drawId) {
         status IN ('pending_payment', 'paid')
         OR (status = 'reserved' AND reserved_until > ?)
       )
-  `).bind(draw.id, now()).first();
+  `).bind(drawId, now()).first();
 
-  const sold = Number(occupied?.total || 0);
-  const remaining = Math.max(0, draw.total_numbers - sold);
+  const remaining = Math.max(
+    0,
+    Number(draw.total_numbers) - Number(occupied?.total || 0)
+  );
 
-  await sendMessage(
+  await send(
     env,
     chatId,
     `🎟️ <b>${escapeHtml(draw.name)}</b>\n\n` +
     `🏆 ሽልማት፦ ${escapeHtml(draw.prize_name)}\n` +
-    `💵 የአንድ ቁጥር ዋጋ፦ ${(draw.entry_fee_cents / 100).toFixed(2)} ብር\n` +
+    `💵 የቁጥር ዋጋ፦ ${(draw.entry_fee_cents / 100).toFixed(2)} ብር\n` +
     `🔢 ጠቅላላ ቁጥሮች፦ ${draw.total_numbers}\n` +
     `✅ የቀሩ ቁጥሮች፦ ${remaining}\n` +
     `🏆 አሸናፊዎች፦ ${draw.winner_count}\n\n` +
     `${escapeHtml(draw.description || "")}`,
     {
-      inline_keyboard: [[
-        {
-          text: "🔢 ቁጥር ምረጥ",
-          callback_data: `n|${draw.id}|0`
-        }
-      ]]
+      inline_keyboard: [[{
+        text: "🔢 ቁጥር ምረጥ",
+        callback_data: `numbers:${draw.id}:0`
+      }]]
     }
   );
 }
+
+// -----------------------------
+// NUMBER SELECTION
+// -----------------------------
 
 async function showNumbers(env, db, chatId, drawId, page) {
   const draw = await db.prepare(`
@@ -250,7 +261,7 @@ async function showNumbers(env, db, chatId, drawId, page) {
   `).bind(drawId).first();
 
   if (!draw || draw.status !== "open") {
-    await sendMessage(env, chatId, "ይህ ዕጣ አሁን ክፍት አይደለም።");
+    await send(env, chatId, "ይህ ዕጣ ክፍት አይደለም።");
     return;
   }
 
@@ -259,11 +270,11 @@ async function showNumbers(env, db, chatId, drawId, page) {
   const end = Math.min(draw.total_numbers, start + pageSize - 1);
 
   if (start > draw.total_numbers) {
-    await sendMessage(env, chatId, "የቁጥር ገጹ አልተገኘም።");
+    await send(env, chatId, "ይህ የቁጥር ገጽ የለም።");
     return;
   }
 
-  const rows = await db.prepare(`
+  const result = await db.prepare(`
     SELECT number
     FROM entries
     WHERE draw_id = ?
@@ -274,21 +285,18 @@ async function showNumbers(env, db, chatId, drawId, page) {
   `).bind(drawId, now()).all();
 
   const occupied = new Set(
-    (rows.results || []).map(row => Number(row.number))
+    (result.results || []).map(row => Number(row.number))
   );
 
   const keyboard = [];
   let row = [];
 
   for (let number = start; number <= end; number++) {
-    if (occupied.has(number)) {
-      row.push({ text: `❌ ${number}`, callback_data: "x" });
-    } else {
-      row.push({
-        text: String(number),
-        callback_data: `r|${drawId}|${number}`
-      });
-    }
+    row.push(
+      occupied.has(number)
+        ? { text: `❌ ${number}`, callback_data: "occupied" }
+        : { text: String(number), callback_data: `reserve:${drawId}:${number}` }
+    );
 
     if (row.length === 5) {
       keyboard.push(row);
@@ -298,45 +306,52 @@ async function showNumbers(env, db, chatId, drawId, page) {
 
   if (row.length) keyboard.push(row);
 
-  const navigation = [];
-  if (page > 0) {
-    navigation.push({
-      text: "⬅️ ቀዳሚ",
-      callback_data: `n|${drawId}|${page - 1}`
-    });
-  }
-  if (end < draw.total_numbers) {
-    navigation.push({
-      text: "ቀጣይ ➡️",
-      callback_data: `n|${drawId}|${page + 1}`
-    });
-  }
-  if (navigation.length) keyboard.push(navigation);
+  const nav = [];
 
-  await sendMessage(
+  if (page > 0) {
+    nav.push({
+      text: "⬅️ ቀዳሚ",
+      callback_data: `numbers:${drawId}:${page - 1}`
+    });
+  }
+
+  if (end < draw.total_numbers) {
+    nav.push({
+      text: "ቀጣይ ➡️",
+      callback_data: `numbers:${drawId}:${page + 1}`
+    });
+  }
+
+  if (nav.length) keyboard.push(nav);
+
+  await send(
     env,
     chatId,
-    `🔢 <b>${escapeHtml(draw.name)}</b>\n` +
-    `ቁጥር ይምረጡ። ❌ የተያዙ ቁጥሮች አይመረጡም።\n` +
-    `ገጽ ${page + 1}`,
+    `🔢 <b>${escapeHtml(draw.name)}</b>\nቁጥር ይምረጡ።\nገጽ ${page + 1}`,
     { inline_keyboard: keyboard }
   );
 }
 
 async function reserveNumber(env, db, chatId, user, drawId, number) {
+  if (!Number.isInteger(number) || number < 1) {
+    await send(env, chatId, "የቁጥር ምርጫው ትክክል አይደለም።");
+    return;
+  }
+
   const draw = await db.prepare(`
-    SELECT * FROM draws WHERE id = ? AND status = 'open'
+    SELECT *
+    FROM draws
+    WHERE id = ? AND status = 'open'
   `).bind(drawId).first();
 
-  if (!draw || number < 1 || number > draw.total_numbers) {
-    await sendMessage(env, chatId, "የመረጡት ዕጣ ወይም ቁጥር ትክክል አይደለም።");
+  if (!draw || number > draw.total_numbers) {
+    await send(env, chatId, "ዕጣው ወይም ቁጥሩ አልተገኘም።");
     return;
   }
 
   const timestamp = now();
   const expiry = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
-  // Release only expired temporary reservations.
   await db.prepare(`
     UPDATE entries
     SET status = 'expired', updated_at = ?
@@ -346,117 +361,106 @@ async function reserveNumber(env, db, chatId, user, drawId, number) {
       AND reserved_until <= ?
   `).bind(timestamp, drawId, number, timestamp).run();
 
-  const existing = await db.prepare(`
-    SELECT id, status, user_id, reserved_until
-    FROM entries
-    WHERE draw_id = ? AND number = ?
-      AND status IN ('reserved', 'pending_payment', 'paid')
-    LIMIT 1
-  `).bind(drawId, number).first();
-
-  if (existing) {
-    await sendMessage(env, chatId, "ይቅርታ፣ ይህ ቁጥር ቀድሞ ተይዟል። ሌላ ቁጥር ይምረጡ።");
-    return;
-  }
-
-  const entryId = id();
+  const entryId = newId();
 
   try {
     await db.prepare(`
       INSERT INTO entries (
-        id, draw_id, user_id, number, status,
-        reserved_until, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, 'reserved', ?, ?, ?)
+        id, draw_id, user_id, number,
+        status, reserved_until, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, 'reserved', ?, ?, ?)
     `).bind(
-      entryId, drawId, user.id, number,
-      expiry, timestamp, timestamp
+      entryId,
+      drawId,
+      user.id,
+      number,
+      expiry,
+      timestamp,
+      timestamp
     ).run();
   } catch {
-    await sendMessage(env, chatId, "ይህ ቁጥር በሌላ ተጠቃሚ ተይዟል። ሌላ ይምረጡ።");
+    await send(env, chatId, "ይቅርታ፣ ይህ ቁጥር ተይዟል። ሌላ ይምረጡ።");
     return;
   }
 
-  await setState(db, user.id, "awaiting_reference", {
+  await setState(db, user.id, "entry_reference", {
     entryId,
     drawId,
     number
   });
 
-  const settings = await db.prepare(
-    "SELECT telebirr_number FROM payment_settings WHERE id = 1"
-  ).first();
+  const settings = await db.prepare(`
+    SELECT telebirr_number
+    FROM payment_settings
+    WHERE id = 1
+  `).first();
 
-  const telebirrNumber =
-    env.TELEBIRR_NUMBER ||
+  const telebirr = env.TELEBIRR_NUMBER ||
     settings?.telebirr_number ||
-    "";
+    "Admin ገና አላስገባም";
 
-  await sendMessage(
+  await send(
     env,
     chatId,
-    `✅ <b>ቁጥር ${number} ለ30 ደቂቃ ተይዟል።</b>\n\n` +
-    `💵 የሚከፍሉት፦ ${(draw.entry_fee_cents / 100).toFixed(2)} ብር\n` +
-    `📱 Telebirr፦ <code>${escapeHtml(telebirrNumber || "Admin ገና አላስገባም")}</code>\n\n` +
-    `ክፍያውን ካደረጉ በኋላ የTelebirr Transaction Reference ይላኩ።\n\n` +
-    `⚠️ ክፍያው Admin እስኪያረጋግጥ ቁጥሩ በጊዜያዊ ሁኔታ ይቆያል።`
+    `✅ <b>ቁጥር ${number} ተይዟል።</b>\n\n` +
+    `💵 ክፍያ፦ ${(draw.entry_fee_cents / 100).toFixed(2)} ብር\n` +
+    `📱 Telebirr፦ <code>${escapeHtml(telebirr)}</code>\n\n` +
+    "ክፍያውን ከፈጸሙ በኋላ Transaction Reference ይላኩ።\n\n" +
+    "⚠️ ቁጥሩ ለ30 ደቂቃ ብቻ ይያዛል።"
   );
 }
+
+// -----------------------------
+// PAYMENT PROOF
+// -----------------------------
 
 async function submitReference(env, db, chatId, user, reference) {
   const state = await getState(db, user.id);
 
-  if (!state || state.state !== "awaiting_reference") {
-    return false;
-  }
+  if (!state || state.state !== "entry_reference") return false;
 
   const clean = reference.trim();
 
   if (clean.length < 5 || clean.length > 100) {
-    await sendMessage(env, chatId, "የTransaction Reference ትክክለኛ አይመስልም። እንደገና ይላኩ።");
+    await send(env, chatId, "Transaction Reference ትክክል አይደለም።");
     return true;
   }
 
-  await setState(db, user.id, "awaiting_receipt", {
+  await setState(db, user.id, "entry_receipt", {
     ...state.data,
-    transactionReference: clean
+    reference: clean
   });
 
-  await sendMessage(
-    env,
-    chatId,
-    "📷 አሁን የTelebirr ክፍያ Screenshot ይላኩ።\n\n" +
-    "የክፍያ ማስረጃ ፎቶ ከተላከ በኋላ Admin ያረጋግጠዋል።"
-  );
-
+  await send(env, chatId, "📷 እባክዎ የTelebirr ክፍያ Screenshot ይላኩ።");
   return true;
 }
 
-async function submitReceipt(env, db, chatId, user, photoFileId) {
+async function submitReceipt(env, db, chatId, user, fileId) {
   const state = await getState(db, user.id);
 
-  if (!state || state.state !== "awaiting_receipt") {
-    return false;
-  }
+  if (!state || state.state !== "entry_receipt") return false;
 
-  const { entryId, transactionReference } = state.data;
+  const { entryId, reference } = state.data;
   const timestamp = now();
 
   const entry = await db.prepare(`
     SELECT e.*, d.entry_fee_cents, d.name AS draw_name
     FROM entries e
     JOIN draws d ON d.id = e.draw_id
-    WHERE e.id = ? AND e.user_id = ?
+    WHERE e.id = ?
+      AND e.user_id = ?
       AND e.status = 'reserved'
       AND e.reserved_until > ?
   `).bind(entryId, user.id, timestamp).first();
 
   if (!entry) {
     await clearState(db, user.id);
-    await sendMessage(env, chatId, "የቁጥር መያዣዎ ጊዜ አልፏል። እባክዎ እንደገና ቁጥር ይምረጡ።");
+    await send(env, chatId, "የቁጥር መያዣዎ ጊዜ አልፏል። እንደገና ይምረጡ።");
     return true;
   }
 
-  const paymentId = id();
+  const paymentId = newId();
 
   try {
     await db.batch([
@@ -465,11 +469,19 @@ async function submitReceipt(env, db, chatId, user, photoFileId) {
           id, entry_id, user_id, amount_cents,
           transaction_reference, receipt_file_id,
           status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+        )
+        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `).bind(
-        paymentId, entryId, user.id, entry.entry_fee_cents,
-        transactionReference, photoFileId, timestamp, timestamp
+        paymentId,
+        entryId,
+        user.id,
+        entry.entry_fee_cents,
+        reference,
+        fileId,
+        timestamp,
+        timestamp
       ),
+
       db.prepare(`
         UPDATE entries
         SET status = 'pending_payment', updated_at = ?
@@ -477,60 +489,64 @@ async function submitReceipt(env, db, chatId, user, photoFileId) {
       `).bind(timestamp, entryId)
     ]);
   } catch {
-    await sendMessage(
+    await send(
       env,
       chatId,
-      "ይህ የክፍያ ማስረጃ ቀድሞ ተመዝግቧል ወይም የቁጥር መያዣው ተቀይሯል። Admin ያነጋግሩ።"
+      "ይህ Reference ቀድሞ ተጠቅሟል ወይም የክፍያ ማስረጃው አልተመዘገበም። Admin ያነጋግሩ።"
     );
     return true;
   }
 
   await clearState(db, user.id);
 
-  await sendMessage(
-    env,
-    chatId,
-    "📨 የክፍያ ማስረጃዎ ተቀብሏል።\n\n" +
-    "Admin እስኪያረጋግጥ ድረስ ይጠብቁ። ማረጋገጫ ከደረሰዎት በኋላ ቁጥርዎ ይረጋገጣል።"
-  );
+  await send(env, chatId, "📨 ማስረጃዎ ደርሷል። Admin እስኪያረጋግጥ ይጠብቁ።");
 
-  for (const adminId of adminIds(env)) {
-    await sendMessage(
-      env,
-      adminId,
-      `🔔 <b>አዲስ የክፍያ ማስረጃ</b>\n\n` +
-      `👤 User ID: <code>${escapeHtml(user.telegram_id)}</code>\n` +
-      `🎟️ Draw: ${escapeHtml(entry.draw_name)}\n` +
-      `🔢 Number: ${entry.number}\n` +
-      `💵 Amount: ${(entry.entry_fee_cents / 100).toFixed(2)} ETB\n` +
-      `🧾 Reference: <code>${escapeHtml(transactionReference)}</code>`,
-      {
-        inline_keyboard: [[
-          { text: "✅ Approve", callback_data: `a|${paymentId}` },
-          { text: "❌ Reject", callback_data: `j|${paymentId}` }
-        ]]
-      }
-    );
+  for (const adminId of admins(env)) {
+    try {
+      await send(
+        env,
+        adminId,
+        `🔔 <b>አዲስ ክፍያ</b>\n\n` +
+        `User: <code>${escapeHtml(user.telegram_id)}</code>\n` +
+        `ዕጣ: ${escapeHtml(entry.draw_name)}\n` +
+        `ቁጥር: ${entry.number}\n` +
+        `መጠን: ${(entry.entry_fee_cents / 100).toFixed(2)} ETB\n` +
+        `Reference: <code>${escapeHtml(reference)}</code>`,
+        {
+          inline_keyboard: [[
+            { text: "✅ Approve", callback_data: `approve:${paymentId}` },
+            { text: "❌ Reject", callback_data: `reject:${paymentId}` }
+          ]]
+        }
+      );
+    } catch (error) {
+      console.error("Admin notification failed:", error);
+    }
   }
 
   return true;
 }
 
+// -----------------------------
+// ADMIN PAYMENT REVIEW
+// -----------------------------
+
 async function reviewPayment(env, db, admin, paymentId, approve) {
   if (!isAdmin(env, admin.id)) return;
 
+  const adminUser = await userByTelegram(db, admin.id);
+  if (!adminUser) return;
+
   const payment = await db.prepare(`
-    SELECT p.*, e.id AS entry_id, e.status AS entry_status,
-           e.draw_id, e.number, u.telegram_id
+    SELECT p.*, e.number, e.id AS entry_id,
+           u.telegram_id
     FROM payments p
     JOIN entries e ON e.id = p.entry_id
     JOIN users u ON u.id = p.user_id
     WHERE p.id = ?
   `).bind(paymentId).first();
 
-  if (!payment || payment.status !== "pending") {
-    return;
-  }
+  if (!payment || payment.status !== "pending") return;
 
   const timestamp = now();
 
@@ -538,23 +554,26 @@ async function reviewPayment(env, db, admin, paymentId, approve) {
     await db.batch([
       db.prepare(`
         UPDATE payments
-        SET status = 'approved', verified_by = ?, verified_at = ?, updated_at = ?
-        WHERE id = ? AND status = 'pending'
+        SET status = 'approved',
+            verified_by = ?,
+            verified_at = ?,
+            updated_at = ?
+        WHERE id = ?
+          AND status = 'pending'
           AND EXISTS (
             SELECT 1 FROM entries
             WHERE entries.id = payments.entry_id
               AND entries.status = 'pending_payment'
           )
-      `).bind(
-        (await getUser(db, admin.id)).id,
-        timestamp,
-        timestamp,
-        paymentId
-      ),
+      `).bind(adminUser.id, timestamp, timestamp, paymentId),
+
       db.prepare(`
         UPDATE entries
-        SET status = 'paid', paid_at = ?, updated_at = ?
-        WHERE id = ? AND status = 'pending_payment'
+        SET status = 'paid',
+            paid_at = ?,
+            updated_at = ?
+        WHERE id = ?
+          AND status = 'pending_payment'
           AND EXISTS (
             SELECT 1 FROM payments
             WHERE payments.entry_id = entries.id
@@ -563,25 +582,30 @@ async function reviewPayment(env, db, admin, paymentId, approve) {
       `).bind(timestamp, timestamp, payment.entry_id)
     ]);
 
-    await sendMessage(
-      env,
-      payment.telegram_id,
-      `🎉 <b>ክፍያዎ ተረጋግጧል!</b>\n\n` +
-      `የዕጣ ቁጥርዎ፦ ${payment.number}\n` +
-      `የክፍያ ማረጋገጫዎ ተሳክቷል። መልካም ዕድል!`
-    );
+    const confirmed = await db.prepare(`
+      SELECT status FROM payments WHERE id = ?
+    `).bind(paymentId).first();
+
+    if (confirmed?.status === "approved") {
+      await send(
+        env,
+        payment.telegram_id,
+        `🎉 <b>ክፍያዎ ተረጋግጧል!</b>\n\n` +
+        `የዕጣ ቁጥርዎ፦ ${payment.number}\n` +
+        "መልካም ዕድል!"
+      );
+    }
   } else {
     await db.batch([
       db.prepare(`
         UPDATE payments
-        SET status = 'rejected', verified_by = ?, verified_at = ?, updated_at = ?
+        SET status = 'rejected',
+            verified_by = ?,
+            verified_at = ?,
+            updated_at = ?
         WHERE id = ? AND status = 'pending'
-      `).bind(
-        (await getUser(db, admin.id)).id,
-        timestamp,
-        timestamp,
-        paymentId
-      ),
+      `).bind(adminUser.id, timestamp, timestamp, paymentId),
+
       db.prepare(`
         UPDATE entries
         SET status = 'rejected', updated_at = ?
@@ -589,23 +613,23 @@ async function reviewPayment(env, db, admin, paymentId, approve) {
       `).bind(timestamp, payment.entry_id)
     ]);
 
-    await sendMessage(
+    await send(
       env,
       payment.telegram_id,
-      `❌ የክፍያ ማስረጃዎ አልተረጋገጠም።\n\n` +
-      `የዕጣ ቁጥር፦ ${payment.number}\n` +
-      `እባክዎ Admin ያነጋግሩ።`
+      `❌ የክፍያ ማስረጃዎ ውድቅ ተደርጓል።\n\n` +
+      `ቁጥር፦ ${payment.number}\nAdmin ያነጋግሩ።`
     );
   }
 
   await db.prepare(`
     INSERT INTO audit_logs (
-      id, user_id, action, entity_type, entity_id,
-      details_json, created_at
-    ) VALUES (?, ?, ?, 'payment', ?, ?, ?)
+      id, user_id, action, entity_type,
+      entity_id, details_json, created_at
+    )
+    VALUES (?, ?, ?, 'payment', ?, ?, ?)
   `).bind(
-    id(),
-    (await getUser(db, admin.id)).id,
+    newId(),
+    adminUser.id,
     approve ? "payment_approved" : "payment_rejected",
     paymentId,
     JSON.stringify({ entryId: payment.entry_id }),
@@ -613,19 +637,44 @@ async function reviewPayment(env, db, admin, paymentId, approve) {
   ).run();
 }
 
+// -----------------------------
+// WALLET
+// -----------------------------
+
 async function showWallet(env, db, chatId, user) {
   const wallet = await db.prepare(`
-    SELECT balance_cents FROM wallets WHERE user_id = ?
+    SELECT balance_cents
+    FROM wallets WHERE user_id = ?
   `).bind(user.id).first();
 
-  await sendMessage(
+  const balance = Number(wallet?.balance_cents || 0) / 100;
+
+  const history = await db.prepare(`
+    SELECT type, amount_cents, description, created_at
+    FROM wallet_transactions
+    WHERE user_id = ?
+    ORDER BY created_at DESC
+    LIMIT 5
+  `).bind(user.id).all();
+
+  const lines = (history.results || []).map(item =>
+    `• ${escapeHtml(item.type)}: ${(item.amount_cents / 100).toFixed(2)} ብር`
+  );
+
+  await send(
     env,
     chatId,
     `💰 <b>የእኔ Wallet</b>\n\n` +
-    `ቀሪ ሂሳብ፦ <b>${((wallet?.balance_cents || 0) / 100).toFixed(2)} ብር</b>\n\n` +
-    `የWallet ገቢ፣ ወጪ እና የገንዘብ ማውጣት አማራጮች በቀጣይ የሥራ ደረጃ ይጨመራሉ።`
+    `ቀሪ ሂሳብ፦ <b>${balance.toFixed(2)} ብር</b>\n\n` +
+    `<b>የቅርብ ጊዜ እንቅስቃሴ</b>\n` +
+    (lines.length ? lines.join("\n") : "ገና የWallet እንቅስቃሴ የለም።") +
+    "\n\nየገንዘብ ገቢና ማውጣት ሂደት በሙከራ ደረጃ ላይ ነው።"
   );
 }
+
+// -----------------------------
+// USER ENTRIES AND RESULTS
+// -----------------------------
 
 async function showMyEntries(env, db, chatId, user) {
   const result = await db.prepare(`
@@ -640,11 +689,11 @@ async function showMyEntries(env, db, chatId, user) {
   const entries = result.results || [];
 
   if (!entries.length) {
-    await sendMessage(env, chatId, "እስካሁን የያዙት ቁጥር የለም።");
+    await send(env, chatId, "እስካሁን የያዙት ቁጥር የለም።");
     return;
   }
 
-  const statusText = {
+  const labels = {
     reserved: "ጊዜያዊ ተይዟል",
     pending_payment: "ክፍያ በማረጋገጥ ላይ",
     paid: "ክፍያ ተረጋግጧል",
@@ -653,98 +702,545 @@ async function showMyEntries(env, db, chatId, user) {
   };
 
   const lines = entries.map(entry =>
-    `• ${escapeHtml(entry.draw_name)} — #${entry.number}: ${statusText[entry.status] || entry.status}`
+    `• ${escapeHtml(entry.draw_name)} — #${entry.number}: ` +
+    `${labels[entry.status] || entry.status}`
   );
 
-  await sendMessage(
+  await send(
     env,
     chatId,
     `📜 <b>የእኔ ቁጥሮች</b>\n\n${lines.join("\n")}`
   );
 }
 
-async function handleCallback(env, db, callback) {
-  const data = String(callback.data || "");
-  const chatId = callback.message?.chat?.id;
-  const from = callback.from;
+async function showResults(env, db, chatId) {
+  const result = await db.prepare(`
+    SELECT d.name, w.rank, w.prize_amount_cents,
+           w.user_id, e.number, u.first_name
+    FROM winners w
+    JOIN draws d ON d.id = w.draw_id
+    JOIN entries e ON e.id = w.entry_id
+    JOIN users u ON u.id = w.user_id
+    JOIN draw_results r ON r.draw_id = w.draw_id
+    WHERE r.published_at IS NOT NULL
+    ORDER BY r.published_at DESC, w.rank ASC
+    LIMIT 30
+  `).all();
 
-  if (data === "x") {
-    await answerCallback(env, callback.id, "ይህ ቁጥር ተይዟል።");
+  const winners = result.results || [];
+
+  if (!winners.length) {
+    await send(env, chatId, "ገና የታተመ የዕጣ ውጤት የለም።");
     return;
   }
 
-  const user = await registerUser(db, env, from);
-  const parts = data.split("|");
-  const action = parts[0];
+  const lines = winners.map(w =>
+    `🏆 ${escapeHtml(w.name)}\n` +
+    `ደረጃ ${w.rank} — ${escapeHtml(w.first_name || "ተሳታፊ")}\n` +
+    `ቁጥር #${w.number} — ${(w.prize_amount_cents / 100).toFixed(2)} ብር`
+  );
 
-  if (action === "d") {
-    await answerCallback(env, callback.id);
-    await showDraw(env, db, chatId, parts[1]);
-    return;
-  }
-
-  if (action === "n") {
-    await answerCallback(env, callback.id);
-    const page = Math.max(0, Number(parts[2]) || 0);
-    await showNumbers(env, db, chatId, parts[1], page);
-    return;
-  }
-
-  if (action === "r") {
-    await answerCallback(env, callback.id);
-    const number = Number(parts[2]);
-    await reserveNumber(env, db, chatId, user, parts[1], number);
-    return;
-  }
-
-  if (action === "a" || action === "j") {
-    if (!isAdmin(env, from.id)) {
-      await answerCallback(env, callback.id, "ይህን ለማድረግ ፈቃድ የለዎትም።");
-      return;
-    }
-
-    await answerCallback(env, callback.id, "ጥያቄው ተቀብሏል።");
-    await reviewPayment(env, db, from, parts[1], action === "a");
-    return;
-  }
-
-  await answerCallback(env, callback.id);
+  await send(env, chatId, `🏆 <b>የዕጣ ውጤቶች</b>\n\n${lines.join("\n\n")}`);
 }
 
-async function handleMessage(env, db, message) {
-  const from = message.from;
-  const chatId = message.chat.id;
-  const text = String(message.text || "").trim();
+// -----------------------------
+// ADMIN COMMANDS
+// -----------------------------
 
-  if (!from || from.is_bot) return;
+async function adminPanel(env, db, chatId) {
+  const payments = await db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM payments WHERE status = 'pending'
+  `).first();
 
-  const user = await registerUser(db, env, from);
+  const deposits = await db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM wallet_deposits WHERE status = 'pending'
+  `).first();
 
-  if (text === "/start" || text.startsWith("/start ")) {
-    await clearState(db, user.id);
-    await showHome(env, chatId, from.first_name);
+  const withdrawals = await db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM withdrawals WHERE status = 'pending'
+  `).first();
+
+  await send(
+    env,
+    chatId,
+    `🛡️ <b>ADDIS ዕጣ Admin</b>\n\n` +
+    `⏳ የክፍያ ማረጋገጫ፦ ${payments?.total || 0}\n` +
+    `💰 የWallet Deposit፦ ${deposits?.total || 0}\n` +
+    `📤 የWithdrawal ጥያቄ፦ ${withdrawals?.total || 0}\n\n` +
+    `<b>የሚገኙ ትዕዛዞች</b>\n` +
+    `/set_telebirr 09XXXXXXXX\n` +
+    `/pending\n` +
+    `/draw_create NAME|TYPE|PRIZE|TOTAL|FEE_ETB|WINNERS\n` +
+    `/prize_set DRAW_ID RANK AMOUNT_ETB\n` +
+    `/draw_open DRAW_ID\n` +
+    `/draw_close DRAW_ID\n` +
+    `/draw_run DRAW_ID\n` +
+    `/draw_publish DRAW_ID`
+  );
+}
+
+async function setTelebirr(env, db, admin, chatId, number) {
+  if (!isAdmin(env, admin.id)) return;
+
+  const clean = String(number || "").trim();
+
+  if (!/^[0-9+]{9,16}$/.test(clean)) {
+    await send(env, chatId, "ትክክለኛ Telebirr ቁጥር ያስገቡ።");
     return;
   }
 
-  if (text === "/help" || text === "ℹ️ እገዛ") {
-    await sendMessage(
+  const user = await userByTelegram(db, admin.id);
+
+  await db.prepare(`
+    UPDATE payment_settings
+    SET telebirr_number = ?, updated_by = ?, updated_at = ?
+    WHERE id = 1
+  `).bind(clean, user.id, now()).run();
+
+  await send(env, chatId, "✅ Telebirr ቁጥር ተቀይሯል።");
+}
+
+async function createDraw(env, db, admin, chatId, raw) {
+  if (!isAdmin(env, admin.id)) return;
+
+  const parts = raw.split("|").map(x => x.trim());
+
+  if (parts.length !== 6) {
+    await send(
       env,
       chatId,
-      "ℹ️ <b>ADDIS ዕጣ እገዛ</b>\n\n" +
-      "🎟️ ዕጣዎች — ክፍት ዕጣዎችን ለማየት\n" +
-      "💰 Wallet — የWallet ሂሳብዎን ለማየት\n" +
-      "📜 የእኔ ቁጥሮች — የያዙትን ቁጥሮች ለማየት\n\n" +
-      "ክፍያ ከፈጸሙ በኋላ ማስረጃውን በBot ውስጥ ይላኩ።"
+      "አጠቃቀም፦\n/draw_create NAME|TYPE|PRIZE|TOTAL|FEE_ETB|WINNERS\n\nTYPE: cash ወይም physical"
     );
     return;
   }
 
-  if (text === "/draws" || text === "🎟️ ዕጣዎች") {
+  const [name, type, prize, totalText, feeText, winnersText] = parts;
+
+  const total = Number(totalText);
+  const fee = Number(feeText);
+  const winnerCount = Number(winnersText);
+
+  if (
+    !name ||
+    !prize ||
+    !["cash", "physical"].includes(type) ||
+    !Number.isInteger(total) ||
+    total < 1 ||
+    total > 100000 ||
+    !Number.isFinite(fee) ||
+    fee <= 0 ||
+    !Number.isInteger(winnerCount) ||
+    winnerCount < 1 ||
+    winnerCount > total
+  ) {
+    await send(env, chatId, "የDraw መረጃው ትክክል አይደለም።");
+    return;
+  }
+
+  const adminUser = await userByTelegram(db, admin.id);
+  const timestamp = now();
+  const drawId = newId();
+
+  await db.prepare(`
+    INSERT INTO draws (
+      id, name, prize_type, prize_name,
+      total_numbers, entry_fee_cents,
+      winner_count, unique_winners,
+      status, created_by, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'draft', ?, ?, ?)
+  `).bind(
+    drawId,
+    name,
+    type,
+    prize,
+    total,
+    Math.round(fee * 100),
+    winnerCount,
+    adminUser.id,
+    timestamp,
+    timestamp
+  ).run();
+
+  await send(
+    env,
+    chatId,
+    `✅ Draw ተፈጥሯል።\n\n` +
+    `ID: <code>${drawId}</code>\n` +
+    `ስም: ${escapeHtml(name)}\n` +
+    `የቁጥር ብዛት: ${total}\n\n` +
+    `ከመክፈት በፊት የሽልማት ደረጃዎችን /prize_set በመጠቀም ያስገቡ።`
+  );
+}
+
+async function setPrize(env, db, admin, chatId, args) {
+  if (!isAdmin(env, admin.id)) return;
+
+  const [drawId, rankText, amountText] = args.trim().split(/\s+/);
+  const rank = Number(rankText);
+  const amount = Number(amountText);
+
+  if (
+    !drawId ||
+    !Number.isInteger(rank) ||
+    rank < 1 ||
+    !Number.isFinite(amount) ||
+    amount < 0
+  ) {
+    await send(env, chatId, "አጠቃቀም፦ /prize_set DRAW_ID RANK AMOUNT_ETB");
+    return;
+  }
+
+  const draw = await db.prepare(`
+    SELECT id, winner_count, status
+    FROM draws WHERE id = ?
+  `).bind(drawId).first();
+
+  if (!draw || draw.status !== "draft" || rank > draw.winner_count) {
+    await send(env, chatId, "Draw ID ወይም የPrize ደረጃው ትክክል አይደለም።");
+    return;
+  }
+
+  await db.prepare(`
+    INSERT INTO draw_prizes (id, draw_id, rank, amount_cents, created_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(draw_id, rank) DO UPDATE SET
+      amount_cents = excluded.amount_cents
+  `).bind(
+    newId(),
+    drawId,
+    rank,
+    Math.round(amount * 100),
+    now()
+  ).run();
+
+  await send(env, chatId, "✅ የሽልማት ደረጃው ተመዝግቧል።");
+}
+
+async function openDraw(env, db, admin, chatId, drawId) {
+  if (!isAdmin(env, admin.id)) return;
+
+  const draw = await db.prepare(`
+    SELECT * FROM draws WHERE id = ?
+  `).bind(drawId).first();
+
+  if (!draw || draw.status !== "draft") {
+    await send(env, chatId, "ይህ Draw ሊከፈት አይችልም።");
+    return;
+  }
+
+  const prizes = await db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM draw_prizes WHERE draw_id = ?
+  `).bind(drawId).first();
+
+  if (Number(prizes?.total || 0) !== Number(draw.winner_count)) {
+    await send(
+      env,
+      chatId,
+      `ዕጣውን ለመክፈት ${draw.winner_count} የሽልማት ደረጃዎች ማስገባት አለብዎት።`
+    );
+    return;
+  }
+
+  await db.prepare(`
+    UPDATE draws
+    SET status = 'open', updated_at = ?
+    WHERE id = ? AND status = 'draft'
+  `).bind(now(), drawId).run();
+
+  await send(env, chatId, "✅ Draw ተከፍቷል።");
+}
+
+async function closeDraw(env, db, admin, chatId, drawId) {
+  if (!isAdmin(env, admin.id)) return;
+
+  const result = await db.prepare(`
+    UPDATE draws
+    SET status = 'closed', updated_at = ?
+    WHERE id = ? AND status IN ('open', 'full')
+  `).bind(now(), drawId).run();
+
+  if (!result.meta?.changes) {
+    await send(env, chatId, "Draw መዝጋት አልተቻለም።");
+    return;
+  }
+
+  await send(env, chatId, "🔒 Draw ተዘግቷል።");
+}
+
+async function runDraw(env, db, admin, chatId, drawId) {
+  if (!isAdmin(env, admin.id)) return;
+
+  const draw = await db.prepare(`
+    SELECT * FROM draws WHERE id = ?
+  `).bind(drawId).first();
+
+  if (!draw || !["closed", "full"].includes(draw.status)) {
+    await send(env, chatId, "Draw መጀመሪያ መዘጋት አለበት።");
+    return;
+  }
+
+  const existing = await db.prepare(`
+    SELECT id FROM draw_results WHERE draw_id = ?
+  `).bind(drawId).first();
+
+  if (existing) {
+    await send(env, chatId, "ይህ Draw ውጤት ቀድሞ ተፈጥሯል።");
+    return;
+  }
+
+  const entries = await db.prepare(`
+    SELECT e.id, e.user_id, e.number
+    FROM entries e
+    WHERE e.draw_id = ? AND e.status = 'paid'
+    ORDER BY e.id
+  `).bind(drawId).all();
+
+  const eligible = entries.results || [];
+
+  if (eligible.length < draw.winner_count) {
+    await send(env, chatId, "በቂ የተከፈሉ ተሳታፊዎች የሉም።");
+    return;
+  }
+
+  const prizes = await db.prepare(`
+    SELECT rank, amount_cents
+    FROM draw_prizes
+    WHERE draw_id = ?
+    ORDER BY rank
+  `).bind(drawId).all();
+
+  if ((prizes.results || []).length !== draw.winner_count) {
+    await send(env, chatId, "የሽልማት ደረጃዎች አልተሟሉም።");
+    return;
+  }
+
+  // Fisher-Yates shuffle using cryptographically secure random bytes.
+  const pool = [...eligible];
+
+  for (let i = pool.length - 1; i > 0; i--) {
+    const bytes = new Uint32Array(1);
+    crypto.getRandomValues(bytes);
+    const j = bytes[0] % (i + 1);
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+
+  const timestamp = now();
+  const resultId = newId();
+  const adminUser = await userByTelegram(db, admin.id);
+  const seed = new Uint8Array(32);
+  crypto.getRandomValues(seed);
+
+  const seedHex = Array.from(seed)
+    .map(x => x.toString(16).padStart(2, "0"))
+    .join("");
+
+  const seedHash = await crypto.subtle.digest("SHA-256", seed);
+  const hashHex = Array.from(new Uint8Array(seedHash))
+    .map(x => x.toString(16).padStart(2, "0"))
+    .join("");
+
+  const statements = [
+    db.prepare(`
+      INSERT INTO draw_results (
+        id, draw_id, eligible_entry_count,
+        eligible_entry_snapshot, random_seed_hash,
+        executed_at, executed_by
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      resultId,
+      drawId,
+      eligible.length,
+      JSON.stringify(eligible),
+      hashHex,
+      timestamp,
+      adminUser.id
+    )
+  ];
+
+  for (let i = 0; i < draw.winner_count; i++) {
+    const entry = pool[i];
+    const prize = prizes.results[i];
+
+    statements.push(
+      db.prepare(`
+        INSERT INTO winners (
+          id, draw_id, entry_id, user_id,
+          rank, prize_amount_cents, selected_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        newId(),
+        drawId,
+        entry.id,
+        entry.user_id,
+        prize.rank,
+        prize.amount_cents,
+        timestamp
+      )
+    );
+
+    statements.push(
+      db.prepare(`
+        INSERT INTO winner_payouts (
+          id, winner_id, user_id, prize_type,
+          status, created_at, updated_at
+        )
+        VALUES (
+          ?, (SELECT id FROM winners WHERE draw_id = ? AND rank = ?),
+          ?, ?, 'pending', ?, ?
+        )
+      `).bind(
+        newId(),
+        drawId,
+        prize.rank,
+        entry.user_id,
+        draw.prize_type,
+        timestamp,
+        timestamp
+      )
+    );
+  }
+
+  statements.push(
+    db.prepare(`
+      UPDATE draws
+      SET status = 'completed', updated_at = ?
+      WHERE id = ? AND status IN ('closed', 'full')
+    `).bind(timestamp, drawId)
+  );
+
+  try {
+    await db.batch(statements);
+  } catch (error) {
+    console.error("Draw execution failed:", error);
+    await send(env, chatId, "የዕጣ ውጤት ማውጣት አልተሳካም። ዳግም ከመሞከር በፊት Admin ያረጋግጥ።");
+    return;
+  }
+
+  // Keep the random seed private until the result is independently reviewed.
+  console.log("Draw seed (private audit record):", drawId, seedHex);
+
+  await send(
+    env,
+    chatId,
+    `✅ የዕጣ ውጤት ተፈጥሯል።\n\n` +
+    `Draw: ${escapeHtml(draw.name)}\n` +
+    `የተሳታፊ ብዛት: ${eligible.length}\n` +
+    `የSeed Hash: <code>${hashHex}</code>\n\n` +
+    `ውጤቱ ለተጠቃሚዎች ከመታየቱ በፊት /draw_publish ${drawId} ይጠቀሙ።`
+  );
+}
+
+async function publishDraw(env, db, admin, chatId, drawId) {
+  if (!isAdmin(env, admin.id)) return;
+
+  const result = await db.prepare(`
+    UPDATE draw_results
+    SET published_at = ?
+    WHERE draw_id = ? AND published_at IS NULL
+  `).bind(now(), drawId).run();
+
+  if (!result.meta?.changes) {
+    await send(env, chatId, "ውጤቱ አልተገኘም ወይም ቀድሞ ታትሟል።");
+    return;
+  }
+
+  await send(env, chatId, "🏆 የዕጣ ውጤቱ ለተጠቃሚዎች ታትሟል።");
+}
+
+// -----------------------------
+// TELEGRAM CALLBACKS
+// -----------------------------
+
+async function handleCallback(env, db, query) {
+  const data = String(query.data || "");
+  const chatId = query.message?.chat?.id;
+  const from = query.from;
+
+  if (data === "occupied") {
+    await callbackAnswer(env, query.id, "ይህ ቁጥር ተይዟል።");
+    return;
+  }
+
+  const user = await register(db, env, from);
+  const parts = data.split(":");
+  const action = parts[0];
+
+  await callbackAnswer(env, query.id);
+
+  if (action === "draw") {
+    await showDraw(env, db, chatId, parts[1]);
+  } else if (action === "numbers") {
+    const page = Math.max(0, Number(parts[2]) || 0);
+    await showNumbers(env, db, chatId, parts[1], page);
+  } else if (action === "reserve") {
+    await reserveNumber(
+      env,
+      db,
+      chatId,
+      user,
+      parts[1],
+      Number(parts[2])
+    );
+  } else if (action === "approve" || action === "reject") {
+    if (!isAdmin(env, from.id)) {
+      await callbackAnswer(env, query.id, "ፈቃድ የለዎትም።");
+      return;
+    }
+
+    await reviewPayment(
+      env,
+      db,
+      from,
+      parts[1],
+      action === "approve"
+    );
+  }
+}
+
+// -----------------------------
+// TELEGRAM MESSAGES
+// -----------------------------
+
+async function handleMessage(env, db, message) {
+  const from = message.from;
+  if (!from || from.is_bot) return;
+
+  const chatId = message.chat.id;
+  const text = String(message.text || "").trim();
+  const user = await register(db, env, from);
+
+  if (text === "/start" || text.startsWith("/start ")) {
+    await clearState(db, user.id);
+    await home(env, chatId, from.first_name);
+    return;
+  }
+
+  if (text === "/help" || text === "ℹ️ እገዛ") {
+    await send(
+      env,
+      chatId,
+      "ℹ️ <b>ADDIS ዕጣ እገዛ</b>\n\n" +
+      "🎟️ ዕጣዎች — ክፍት ዕጣዎችን ለማየት\n" +
+      "💰 Wallet — ቀሪ ሂሳብን ለማየት\n" +
+      "📜 የእኔ ቁጥሮች — የገዙትን ቁጥሮች ለማየት\n" +
+      "🏆 ውጤቶች — የታተሙ ውጤቶችን ለማየት"
+    );
+    return;
+  }
+
+  if (text === "🎟️ ዕጣዎች" || text === "/draws") {
     await showDraws(env, db, chatId);
     return;
   }
 
-  if (text === "/wallet" || text === "💰 Wallet") {
+  if (text === "💰 Wallet" || text === "/wallet") {
     await showWallet(env, db, chatId, user);
     return;
   }
@@ -755,51 +1251,79 @@ async function handleMessage(env, db, message) {
   }
 
   if (text === "🏆 ውጤቶች") {
-    await sendMessage(env, chatId, "🏆 የዕጣ ውጤቶች ክፍል በቀጣይ የሥራ ደረጃ ይጨመራል።");
+    await showResults(env, db, chatId);
+    return;
+  }
+
+  if (text === "/admin" && isAdmin(env, from.id)) {
+    await adminPanel(env, db, chatId);
+    return;
+  }
+
+  if (text.startsWith("/set_telebirr ")) {
+    await setTelebirr(env, db, from, chatId, text.slice(14));
+    return;
+  }
+
+  if (text.startsWith("/draw_create ")) {
+    await createDraw(env, db, from, chatId, text.slice(13));
+    return;
+  }
+
+  if (text.startsWith("/prize_set ")) {
+    await setPrize(env, db, from, chatId, text.slice(11));
+    return;
+  }
+
+  if (text.startsWith("/draw_open ")) {
+    await openDraw(env, db, from, chatId, text.slice(11).trim());
+    return;
+  }
+
+  if (text.startsWith("/draw_close ")) {
+    await closeDraw(env, db, from, chatId, text.slice(12).trim());
+    return;
+  }
+
+  if (text.startsWith("/draw_run ")) {
+    await runDraw(env, db, from, chatId, text.slice(10).trim());
+    return;
+  }
+
+  if (text.startsWith("/draw_publish ")) {
+    await publishDraw(env, db, from, chatId, text.slice(14).trim());
     return;
   }
 
   const state = await getState(db, user.id);
 
-  if (state?.state === "awaiting_reference" && text) {
+  if (state?.state === "entry_reference" && text) {
     await submitReference(env, db, chatId, user, text);
     return;
   }
 
-  if (state?.state === "awaiting_receipt" && message.photo?.length) {
+  if (state?.state === "entry_receipt" && message.photo?.length) {
     const photo = message.photo[message.photo.length - 1];
     await submitReceipt(env, db, chatId, user, photo.file_id);
     return;
   }
 
-  if (message.photo?.length && state?.state === "awaiting_receipt") {
-    const photo = message.photo[message.photo.length - 1];
-    await submitReceipt(env, db, chatId, user, photo.file_id);
+  if (state?.state === "entry_receipt" && message.document) {
+    await submitReceipt(env, db, chatId, user, message.document.file_id);
     return;
   }
 
-  if (text === "/admin" && isAdmin(env, from.id)) {
-    const pending = await db.prepare(`
-      SELECT COUNT(*) AS total FROM payments WHERE status = 'pending'
-    `).first();
-
-    await sendMessage(
-      env,
-      chatId,
-      `🛡️ <b>Admin Panel</b>\n\n` +
-      `⏳ Pending Payments: ${pending?.total || 0}\n\n` +
-      `የክፍያ ማረጋገጫ ጥያቄዎች በዚህ ቻት ይደርሳሉ።`
-    );
-    return;
-  }
-
-  await sendMessage(
+  await send(
     env,
     chatId,
     "እባክዎ ከታች ካሉት አማራጮች ይምረጡ።",
-    mainKeyboard()
+    homeKeyboard()
   );
 }
+
+// -----------------------------
+// WORKER ENTRY POINT
+// -----------------------------
 
 export default {
   async fetch(request, env) {
@@ -809,25 +1333,39 @@ export default {
       return json({
         ok: true,
         service: "addis-egata-bot-api",
-        database_binding: Boolean(env.DB)
+        database_binding: Boolean(env.DB),
+        telegram_configured: Boolean(env.TELEGRAM_BOT_TOKEN)
       });
     }
 
-    if (request.method !== "POST" || url.pathname !== "/telegram/webhook") {
+    if (
+      request.method !== "POST" ||
+      url.pathname !== "/telegram/webhook"
+    ) {
       return json({ ok: false, error: "Not found" }, 404);
     }
 
-    const secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
+    const suppliedSecret = request.headers.get(
+      "X-Telegram-Bot-Api-Secret-Token"
+    );
 
     if (
       !env.TELEGRAM_WEBHOOK_SECRET ||
-      secret !== env.TELEGRAM_WEBHOOK_SECRET
+      suppliedSecret !== env.TELEGRAM_WEBHOOK_SECRET
     ) {
       return json({ ok: false, error: "Unauthorized" }, 401);
     }
 
     if (!env.DB) {
       return json({ ok: false, error: "D1 binding DB is missing" }, 500);
+    }
+
+    const contentLength = Number(
+      request.headers.get("content-length") || 0
+    );
+
+    if (contentLength > 1024 * 1024) {
+      return json({ ok: false, error: "Request too large" }, 413);
     }
 
     let update;
@@ -847,8 +1385,15 @@ export default {
 
       return json({ ok: true });
     } catch (error) {
-      console.error("Telegram update failed:", error?.stack || error);
-      return json({ ok: false, error: "Update processing failed" }, 500);
+      console.error(
+        "Telegram update failed:",
+        error?.stack || error
+      );
+
+      return json({
+        ok: false,
+        error: "Update processing failed"
+      }, 500);
     }
   }
 };
