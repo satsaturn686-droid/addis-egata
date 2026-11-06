@@ -4,10 +4,13 @@ node_modules/
 
 # Cloudflare Wrangler
 .wrangler/
+
+# Local secrets — never commit these
 .dev.vars
 .dev.vars.*
+!.dev.vars.example
 
-# Environment variables and secrets
+# Environment files
 .env
 .env.*
 !.env.example
