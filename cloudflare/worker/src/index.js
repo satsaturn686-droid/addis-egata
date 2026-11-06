@@ -718,94 +718,186 @@ async function releaseUpdate(db, updateId, leaseToken) {
 }
 ‎‎// -------------------- PAYMENT REVIEW AND WALLET LEDGER --------------------
 ‎
-‎async function reviewPayment(env, db, admin, paymentId, approve) {
-‎  if (!isAdmin(env, admin.id)) return;
 ‎
-‎  const adminUser = await userByTelegram(db, admin.id);
-‎  if (!adminUser) return;
-‎
-‎  const payment = await db.prepare(`
-‎    SELECT p.*, e.number, e.id AS entry_id, u.telegram_id
-‎    FROM payments p
-‎    JOIN entries e ON e.id = p.entry_id
-‎    JOIN users u ON u.id = p.user_id
-‎    WHERE p.id = ?
-‎  `).bind(paymentId).first();
-‎
-‎  if (!payment || payment.status !== "pending") return;
-‎
-‎  const timestamp = now();
-‎
-‎  if (approve) {
-‎    await db.batch([
-‎      db.prepare(`
-‎        UPDATE payments
-‎        SET status = 'approved', verified_by = ?,
-‎            verified_at = ?, updated_at = ?
-‎        WHERE id = ? AND status = 'pending'
-‎          AND EXISTS (
-‎            SELECT 1 FROM entries
-‎            WHERE entries.id = payments.entry_id
-‎              AND entries.status = 'pending_payment'
-‎          )
-‎      `).bind(adminUser.id, timestamp, timestamp, paymentId),
-‎
-‎      db.prepare(`
-‎        UPDATE entries SET status = 'paid', paid_at = ?, updated_at = ?
-‎        WHERE id = ? AND status = 'pending_payment'
-‎          AND EXISTS (
-‎            SELECT 1 FROM payments
-‎            WHERE payments.entry_id = entries.id
-‎              AND payments.status = 'approved'
-‎          )
-‎      `).bind(timestamp, timestamp, payment.entry_id)
-‎    ]);
-‎
-‎    const confirmed = await db.prepare(`
-‎      SELECT p.status AS payment_status, e.status AS entry_status
-‎      FROM payments p JOIN entries e ON e.id = p.entry_id
-‎      WHERE p.id = ?
-‎    `).bind(paymentId).first();
-‎
-‎    if (
-‎      confirmed?.payment_status === "approved" &&
-‎      confirmed?.entry_status === "paid"
-‎    ) {
-‎      await send(
-‎        env, payment.telegram_id,
-‎        `🎉 <b>ክፍያዎ ተረጋግጧል!</b>\n\n` +
-‎        `የዕጣ ቁጥርዎ፦ ${payment.number}\nመልካም ዕድል!`
-‎      );
-‎    } else {
-‎      await send(env, admin.id, "⚠️ ክፍያው እና ቁጥሩ አንድ ላይ አልተረጋገጡም። DB ይፈትሹ።");
-‎      return;
-‎    }
-‎  } else {
-‎    await db.batch([
-‎      db.prepare(`
-‎        UPDATE payments SET status = 'rejected',
-‎          verified_by = ?, verified_at = ?, updated_at = ?
-‎        WHERE id = ? AND status = 'pending'
-‎      `).bind(adminUser.id, timestamp, timestamp, paymentId),
-‎
-‎      db.prepare(`
-‎        UPDATE entries SET status = 'rejected', updated_at = ?
-‎        WHERE id = ? AND status = 'pending_payment'
-‎      `).bind(timestamp, payment.entry_id)
-‎    ]);
-‎
-‎    await send(
-‎      env, payment.telegram_id,
-‎      `❌ የክፍያ ማስረጃዎ ውድቅ ተደርጓል።\nቁጥር፦ ${payment.number}\nAdmin ያነጋግሩ።`
-‎    );
-‎  }
-‎
-‎  await audit(
-‎    db, adminUser.id,
-‎    approve ? "payment_approved" : "payment_rejected",
-‎    "payment", paymentId, { entryId: payment.entry_id }
-‎  );
-‎}
+async function reviewPayment(env, db, admin, paymentId, approve) {
+  if (!isAdmin(env, admin.id)) return;
+
+  const adminUser = await userByTelegram(db, admin.id);
+  if (!adminUser) return;
+
+  const payment = await db.prepare(`
+    SELECT p.*, e.number, e.id AS entry_id, u.telegram_id
+    FROM payments p
+    JOIN entries e ON e.id = p.entry_id
+    JOIN users u ON u.id = p.user_id
+    WHERE p.id = ?
+  `).bind(paymentId).first();
+
+  if (!payment || payment.status !== "pending") return;
+
+  const timestamp = now();
+
+  let results;
+
+  if (approve) {
+    results = await db.batch([
+      db.prepare(`
+        UPDATE payments
+        SET status = 'approved',
+            verified_by = ?,
+            verified_at = ?,
+            updated_at = ?
+        WHERE id = ?
+          AND status = 'pending'
+          AND EXISTS (
+            SELECT 1
+            FROM entries
+            WHERE entries.id = payments.entry_id
+              AND entries.status = 'pending_payment'
+          )
+      `).bind(
+        adminUser.id,
+        timestamp,
+        timestamp,
+        paymentId
+      ),
+
+      db.prepare(`
+        UPDATE entries
+        SET status = 'paid',
+            paid_at = ?,
+            updated_at = ?
+        WHERE id = ?
+          AND status = 'pending_payment'
+          AND EXISTS (
+            SELECT 1
+            FROM payments
+            WHERE payments.entry_id = entries.id
+              AND payments.status = 'approved'
+          )
+      `).bind(
+        timestamp,
+        timestamp,
+        payment.entry_id
+      )
+    ]);
+  } else {
+    results = await db.batch([
+      db.prepare(`
+        UPDATE payments
+        SET status = 'rejected',
+            verified_by = ?,
+            verified_at = ?,
+            updated_at = ?
+        WHERE id = ?
+          AND status = 'pending'
+          AND EXISTS (
+            SELECT 1
+            FROM entries
+            WHERE entries.id = payments.entry_id
+              AND entries.status = 'pending_payment'
+          )
+      `).bind(
+        adminUser.id,
+        timestamp,
+        timestamp,
+        paymentId
+      ),
+
+      db.prepare(`
+        UPDATE entries
+        SET status = 'rejected',
+            updated_at = ?
+        WHERE id = ?
+          AND status = 'pending_payment'
+          AND EXISTS (
+            SELECT 1
+            FROM payments
+            WHERE payments.entry_id = entries.id
+              AND payments.status = 'rejected'
+          )
+      `).bind(
+        timestamp,
+        payment.entry_id
+      )
+    ]);
+  }
+
+  const paymentChanges = Number(
+    results?.[0]?.meta?.changes || 0
+  );
+
+  const entryChanges = Number(
+    results?.[1]?.meta?.changes || 0
+  );
+
+  if (
+    !results ||
+    results.length !== 2 ||
+    paymentChanges !== 1 ||
+    entryChanges !== 1
+  ) {
+    const current = await db.prepare(`
+      SELECT
+        p.status AS payment_status,
+        e.status AS entry_status
+      FROM payments p
+      JOIN entries e ON e.id = p.entry_id
+      WHERE p.id = ?
+    `).bind(paymentId).first();
+
+    const alreadyCompleted = approve
+      ? current?.payment_status === "approved" &&
+        current?.entry_status === "paid"
+      : current?.payment_status === "rejected" &&
+        current?.entry_status === "rejected";
+
+    if (alreadyCompleted) return;
+
+    await send(
+      env,
+      admin.id,
+      "⚠️ የPayment እና Entry ሁኔታ በትክክል አልተቀየረም። ለዚህ Payment ሌላ እርምጃ ከመውሰድዎ በፊት DB ይፈትሹ።"
+    );
+
+    console.error("Payment review mismatch:", {
+      paymentId,
+      paymentChanges,
+      entryChanges,
+      current
+    });
+
+    return;
+  }
+
+  if (approve) {
+    await send(
+      env,
+      payment.telegram_id,
+      `🎉 <b>ክፍያዎ ተረጋግጧል!</b>\n\n` +
+      `የዕጣ ቁጥርዎ፦ ${payment.number}\n` +
+      `መልካም ዕድል!`
+    );
+  } else {
+    await send(
+      env,
+      payment.telegram_id,
+      `❌ የክፍያ ማስረጃዎ ውድቅ ተደርጓል።\n` +
+      `ቁጥር፦ ${payment.number}\n` +
+      `Admin ያነጋግሩ።`
+    );
+  }
+
+  await audit(
+    db,
+    adminUser.id,
+    approve ? "payment_approved" : "payment_rejected",
+    "payment",
+    paymentId,
+    { entryId: payment.entry_id }
+  );
+}
+
 ‎
 ‎async function walletBalance(db, userId) {
 ‎  const row = await db.prepare(`
