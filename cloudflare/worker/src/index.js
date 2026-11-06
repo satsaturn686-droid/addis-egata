@@ -133,81 +133,88 @@
 ‎  ).bind(userId).run();
 ‎}
 ‎
-‎/* Telegram update deduplication.
-‎   Failed updates are released so Telegram can retry them. */
-‎async function claimUpdate(db, updateId) {
-‎
-/* Telegram update processing with a 120-second lease.
-   Requires migration 0004_update_processing.sql. */
+/* Telegram update processing with lease tokens. */
 
 async function claimUpdate(db, updateId) {
   if (!Number.isSafeInteger(updateId) || updateId < 0) {
     throw new Error("Invalid Telegram update_id");
   }
 
-  const timestamp = new Date().toISOString();
-  const leaseUntil = new Date(Date.now() + 120_000).toISOString();
+  const timestamp = now();
+  const leaseToken = crypto.randomUUID();
+  const leaseUntil = new Date(Date.now() + 120000).toISOString();
 
   const result = await db.prepare(`
     INSERT INTO processed_telegram_updates (
-      update_id, processed_at, status, lease_until, attempts
+      update_id, processed_at, status,
+      lease_until, lease_token, attempts
     )
-    VALUES (?, ?, 'processing', ?, 1)
+    VALUES (?, ?, 'processing', ?, ?, 1)
     ON CONFLICT(update_id) DO UPDATE SET
       status = 'processing',
       processed_at = excluded.processed_at,
       lease_until = excluded.lease_until,
+      lease_token = excluded.lease_token,
       attempts = processed_telegram_updates.attempts + 1
     WHERE processed_telegram_updates.status = 'processing'
       AND (
         processed_telegram_updates.lease_until IS NULL
         OR processed_telegram_updates.lease_until <= excluded.processed_at
       )
-  `).bind(updateId, timestamp, leaseUntil).run();
+  `).bind(
+    updateId, timestamp, leaseUntil, leaseToken
+  ).run();
 
   if (Number(result.meta?.changes || 0) === 1) {
-    return "claimed";
+    return { status: "claimed", leaseToken };
   }
 
   const existing = await db.prepare(`
-    SELECT status, lease_until
+    SELECT status
     FROM processed_telegram_updates
     WHERE update_id = ?
   `).bind(updateId).first();
 
   if (existing?.status === "processed") {
-    return "processed";
+    return { status: "processed" };
   }
 
-  return "busy";
+  return { status: "busy" };
 }
 
-async function finishUpdate(db, updateId) {
+async function finishUpdate(db, updateId, leaseToken) {
   const result = await db.prepare(`
     UPDATE processed_telegram_updates
     SET status = 'processed',
         processed_at = ?,
-        lease_until = NULL
+        lease_until = NULL,
+        lease_token = NULL
     WHERE update_id = ?
       AND status = 'processing'
-  `).bind(new Date().toISOString(), updateId).run();
+      AND lease_token = ?
+  `).bind(now(), updateId, leaseToken).run();
 
   if (Number(result.meta?.changes || 0) !== 1) {
-    throw new Error("Could not mark Telegram update as processed");
+    throw new Error("Telegram update lease was lost");
   }
 }
 
-async function releaseUpdate(db, updateId) {
-  const timestamp = new Date().toISOString();
+async function releaseUpdate(db, updateId, leaseToken) {
+  const timestamp = now();
 
   await db.prepare(`
     UPDATE processed_telegram_updates
     SET lease_until = ?,
+        lease_token = NULL,
         processed_at = ?
     WHERE update_id = ?
       AND status = 'processing'
-  `).bind(timestamp, timestamp, updateId).run();
+      AND lease_token = ?
+  `).bind(
+    timestamp, timestamp, updateId, leaseToken
+  ).run();
 }
+
 ‎
 ‎function secureRandomInt(maxExclusive) {
 ‎  const RANGE = 0x100000000;
@@ -2074,44 +2081,58 @@ async function releaseUpdate(db, updateId) {
 ‎    }
 ‎
 ‎
-let claimed = false;
+
+let claim = null;
 
 try {
-  const claimStatus = await claimUpdate(env.DB, update.update_id);
+  claim = await claimUpdate(env.DB, update.update_id);
 
-  if (claimStatus === "processed") {
+  if (claim.status === "processed") {
     return json({ ok: true, duplicate: true });
   }
 
-  if (claimStatus === "busy") {
-    // Telegram should retry instead of treating an active update
-    // as successfully processed.
-    return json({ ok: false, error: "Update is being processed" }, 503);
+  if (claim.status === "busy") {
+    return json(
+      { ok: false, error: "Update is being processed" },
+      503
+    );
   }
 
-  claimed = true;
+  if (update.callback_query) {
+    await handleCallback(env, env.DB, update.callback_query);
+  } else if (update.message) {
+    await handleMessage(env, env.DB, update.message);
+  }
 
-‎      if (update.callback_query) {
-‎        await handleCallback(env, env.DB, update.callback_query);
-‎      } else if (update.message) {
-‎        await handleMessage(env, env.DB, update.message);
-‎      }
-‎
-‎      await finishUpdate(env.DB, update.update_id);
-‎      return json({ ok: true });
-‎    } catch (error) {
-‎      console.error("Telegram update failed:", error?.stack || error);
-‎
-‎      if (claimed) {
-‎        try {
-‎          await releaseUpdate(env.DB, update.update_id);
-‎        } catch (releaseError) {
-‎          console.error("Update release failed:", releaseError);
-‎        }
-‎      }
-‎
-‎      return json({ ok: false, error: "Update processing failed" }, 500);
-‎    }
-‎  }
+  await finishUpdate(
+    env.DB,
+    update.update_id,
+    claim.leaseToken
+  );
+
+  return json({ ok: true });
+} catch (error) {
+  console.error(
+    "Telegram update failed:",
+    error?.stack || error
+  );
+
+  if (claim?.status === "claimed") {
+    try {
+      await releaseUpdate(
+        env.DB,
+        update.update_id,
+        claim.leaseToken
+      );
+    } catch (releaseError) {
+      console.error("Update release failed:", releaseError);
+    }
+  }
+
+  return json(
+    { ok: false, error: "Update processing failed" },
+    500
+  );
+}
 ‎};
 ‎
