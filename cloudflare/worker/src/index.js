@@ -1751,45 +1751,66 @@ async function reviewPayment(env, db, admin, paymentId, approve) {
 ‎
 ‎// -------------------- WINNER PAYOUT WORKFLOW --------------------
 ‎
-‎async function notifyWinners(env, db, drawId) {
-‎  const winners = await db.prepare(`
-‎    SELECT w.id AS winner_id, w.rank, w.prize_amount_cents,
-‎      u.telegram_id, d.prize_type, d.prize_name
-‎    FROM winners w
-‎    JOIN users u ON u.id = w.user_id
-‎    JOIN draws d ON d.id = w.draw_id
-‎    WHERE w.draw_id = ?
-‎  `).bind(drawId).all();
-‎
-‎  for (const winner of winners.results || []) {
-‎    try {
-‎      const message = winner.prize_type === "cash"
-‎        ? `🏆 <b>እንኳን ደስ አለዎት!</b>\n\n` +
-‎          `የዕጣ አሸናፊ ሆነዋል።\n` +
-‎          `ደረጃ፦ ${winner.rank}\n` +
-‎          `ሽልማት፦ ${(winner.prize_amount_cents / 100).toFixed(2)} ብር\n\n` +
-‎          "የሽልማት ሂደቱን ለመጀመር የTelebirr ቁጥርዎን ይላኩ።"
-‎        : `🏆 <b>እንኳን ደስ አለዎት!</b>\n\n` +
-‎          `የ${escapeHtml(winner.prize_name)} አሸናፊ ሆነዋል።\n` +
-‎          "ሙሉ ስምዎን እና ስልክ ቁጥርዎን ይላኩ።";
-‎
-‎      await send(env, winner.telegram_id, message);
-‎
-‎      if (winner.prize_type === "cash") {
-‎        await setState(db, winner.telegram_id, "winner_telebirr", {
-‎          winnerId: winner.winner_id
-‎        });
-‎      } else {
-‎        await setState(db, winner.telegram_id, "winner_name", {
-‎          winnerId: winner.winner_id
-‎        });
-‎      }
-‎    } catch (error) {
-‎      console.error("Winner notification failed", winner.telegram_id, error);
-‎    }
-‎  }
-‎}
-‎
+‎‎async function notifyWinners(env, db, drawId) {
+  const winners = await db.prepare(`
+    SELECT
+      w.id AS winner_id,
+      w.user_id,
+      w.rank,
+      w.prize_amount_cents,
+      u.telegram_id,
+      d.prize_type,
+      d.prize_name
+    FROM winners w
+    JOIN users u ON u.id = w.user_id
+    JOIN draws d ON d.id = w.draw_id
+    WHERE w.draw_id = ?
+  `).bind(drawId).all();
+
+  for (const winner of winners.results || []) {
+    try {
+      let message;
+
+      if (winner.prize_type === "cash") {
+        message =
+          `🏆 <b>እንኳን ደስ አለዎት!</b>\n\n` +
+          `የዕጣ አሸናፊ ሆነዋል።\n` +
+          `ደረጃ፦ ${winner.rank}\n` +
+          `ሽልማት፦ ${(winner.prize_amount_cents / 100).toFixed(2)} ብር\n\n` +
+          "የሽልማት ሂደቱን ለመጀመር የTelebirr ቁጥርዎን ይላኩ።";
+
+        await setState(
+          db,
+          winner.user_id,
+          "winner_telebirr",
+          { winnerId: winner.winner_id }
+        );
+
+      } else {
+        message =
+          `🏆 <b>እንኳን ደስ አለዎት!</b>\n\n` +
+          `የ${escapeHtml(winner.prize_name)} አሸናፊ ሆነዋል።\n` +
+          "ሙሉ ስምዎን እና ስልክ ቁጥርዎን ይላኩ።";
+
+        await setState(
+          db,
+          winner.user_id,
+          "winner_name",
+          { winnerId: winner.winner_id }
+        );
+      }
+
+      await send(env, winner.telegram_id, message);
+
+    } catch (error) {
+      console.error(
+        "Winner notification failed:",
+        winner.winner_id,
+        error
+      );
+    }
+  }
+}
 ‎async function submitWinnerDetails(env, db, chatId, user, value) {
 ‎  const state = await getState(db, user.id);
 ‎  if (!state) return false;
