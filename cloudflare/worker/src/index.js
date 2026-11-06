@@ -1107,64 +1107,235 @@ async function reviewPayment(env, db, admin, paymentId, approve) {
 ‎  return true;
 ‎}
 ‎
+‎
 ‎async function reviewDeposit(env, db, admin, depositId, approve) {
-‎  if (!isAdmin(env, admin.id)) return;
-‎
-‎  const adminUser = await userByTelegram(db, admin.id);
-‎  const deposit = await db.prepare(`
-‎    SELECT wd.*, u.telegram_id
-‎    FROM wallet_deposits wd JOIN users u ON u.id = wd.user_id
-‎    WHERE wd.id = ?
-‎  `).bind(depositId).first();
-‎
-‎  if (!deposit || deposit.status !== "pending") return;
-‎
-‎  const timestamp = now();
-‎
-‎  if (approve) {
-‎    const changed = await db.prepare(`
-‎      UPDATE wallet_deposits
-‎      SET status = 'approved', verified_by = ?,
-‎          verified_at = ?, updated_at = ?
-‎      WHERE id = ? AND status = 'pending'
-‎    `).bind(adminUser.id, timestamp, timestamp, depositId).run();
-‎
-‎    if (!changed.meta?.changes) return;
-‎
-‎    try {
-‎      await walletChange(
-‎        db, deposit.user_id, Number(deposit.amount_cents),
-‎        "deposit", `deposit:${depositId}`, "Wallet deposit approved"
-‎      );
-‎    } catch (error) {
-‎      await db.prepare(`
-‎        UPDATE wallet_deposits SET status = 'pending',
-‎          verified_by = NULL, verified_at = NULL, updated_at = ?
-‎        WHERE id = ? AND status = 'approved'
-‎      `).bind(now(), depositId).run();
-‎      throw error;
-‎    }
-‎
-‎    await send(
-‎      env, deposit.telegram_id,
-‎      `✅ Wallet Deposit ተረጋግጧል።\n` +
-‎      `የገባው፦ ${(deposit.amount_cents / 100).toFixed(2)} ብር`
-‎    );
-‎  } else {
-‎    await db.prepare(`
-‎      UPDATE wallet_deposits
-‎      SET status = 'rejected', verified_by = ?,
-‎          verified_at = ?, updated_at = ?
-‎      WHERE id = ? AND status = 'pending'
-‎    `).bind(adminUser.id, timestamp, timestamp, depositId).run();
-‎
-‎    await send(env, deposit.telegram_id, "❌ Wallet Deposit ጥያቄዎ ውድቅ ተደርጓል። Admin ያነጋግሩ።");
-‎  }
-‎
-‎  await audit(db, adminUser.id, approve ? "deposit_approved" : "deposit_rejected",
-‎    "wallet_deposit", depositId, { amountCents: deposit.amount_cents });
-‎}
-‎
+  if (!isAdmin(env, admin.id)) return;
+
+  const adminUser = await userByTelegram(db, admin.id);
+  if (!adminUser) return;
+
+  const deposit = await db.prepare(`
+    SELECT wd.*, u.telegram_id
+    FROM wallet_deposits wd
+    JOIN users u ON u.id = wd.user_id
+    WHERE wd.id = ?
+  `).bind(depositId).first();
+
+  if (!deposit || deposit.status !== "pending") return;
+
+  const timestamp = now();
+
+  if (approve) {
+    const amountCents = Number(deposit.amount_cents);
+
+    if (
+      !Number.isSafeInteger(amountCents) ||
+      amountCents <= 0
+    ) {
+      throw new Error("Invalid deposit amount");
+    }
+
+    const operationId = newId();
+    const transactionId = newId();
+    const reference = `deposit:${depositId}`;
+
+    const results = await db.batch([
+      db.prepare(`
+        UPDATE wallets
+        SET balance_cents = balance_cents + ?,
+            updated_at = ?,
+            last_operation_id = ?
+        WHERE user_id = ?
+          AND balance_cents + ? <= 9007199254740991
+          AND EXISTS (
+            SELECT 1
+            FROM wallet_deposits
+            WHERE id = ?
+              AND status = 'pending'
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM wallet_transactions
+            WHERE reference = ?
+          )
+      `).bind(
+        amountCents,
+        timestamp,
+        operationId,
+        deposit.user_id,
+        amountCents,
+        depositId,
+        reference
+      ),
+
+      db.prepare(`
+        INSERT INTO wallet_transactions (
+          id,
+          user_id,
+          type,
+          amount_cents,
+          balance_after_cents,
+          reference,
+          description,
+          created_at
+        )
+        SELECT
+          ?,
+          user_id,
+          'deposit',
+          ?,
+          balance_cents,
+          ?,
+          'Wallet deposit approved',
+          ?
+        FROM wallets
+        WHERE user_id = ?
+          AND last_operation_id = ?
+      `).bind(
+        transactionId,
+        amountCents,
+        reference,
+        timestamp,
+        deposit.user_id,
+        operationId
+      ),
+
+      db.prepare(`
+        UPDATE wallet_deposits
+        SET status = 'approved',
+            verified_by = ?,
+            verified_at = ?,
+            updated_at = ?
+        WHERE id = ?
+          AND status = 'pending'
+          AND EXISTS (
+            SELECT 1
+            FROM wallet_transactions
+            WHERE reference = ?
+          )
+      `).bind(
+        adminUser.id,
+        timestamp,
+        timestamp,
+        depositId,
+        reference
+      )
+    ]);
+
+    const walletChanges = Number(
+      results?.[0]?.meta?.changes || 0
+    );
+
+    const ledgerChanges = Number(
+      results?.[1]?.meta?.changes || 0
+    );
+
+    const depositChanges = Number(
+      results?.[2]?.meta?.changes || 0
+    );
+
+    if (
+      walletChanges !== 1 ||
+      ledgerChanges !== 1 ||
+      depositChanges !== 1
+    ) {
+      const current = await db.prepare(`
+        SELECT
+          wd.status,
+          EXISTS (
+            SELECT 1
+            FROM wallet_transactions
+            WHERE reference = ?
+          ) AS credited
+        FROM wallet_deposits wd
+        WHERE wd.id = ?
+      `).bind(reference, depositId).first();
+
+      if (
+        current?.status === "approved" &&
+        Number(current?.credited) === 1
+      ) {
+        return;
+      }
+
+      console.error("Deposit approval mismatch:", {
+        depositId,
+        walletChanges,
+        ledgerChanges,
+        depositChanges,
+        current
+      });
+
+      await send(
+        env,
+        admin.id,
+        "⚠️ Deposit ማጽደቅ በትክክል አልተጠናቀቀም። " +
+        "ተጨማሪ እርምጃ ከመውሰድዎ በፊት Wallet እና Deposit DB ይፈትሹ።"
+      );
+
+      return;
+    }
+
+    await audit(
+      db,
+      adminUser.id,
+      "deposit_approved",
+      "wallet_deposit",
+      depositId,
+      { amountCents }
+    );
+
+    try {
+      await send(
+        env,
+        deposit.telegram_id,
+        `✅ Wallet Deposit ተረጋግጧል።\n` +
+        `የገባው፦ ${(amountCents / 100).toFixed(2)} ብር`
+      );
+    } catch (error) {
+      console.error("Deposit notification failed:", error);
+    }
+
+  } else {
+    const result = await db.prepare(`
+      UPDATE wallet_deposits
+      SET status = 'rejected',
+          verified_by = ?,
+          verified_at = ?,
+          updated_at = ?
+      WHERE id = ?
+        AND status = 'pending'
+    `).bind(
+      adminUser.id,
+      timestamp,
+      timestamp,
+      depositId
+    ).run();
+
+    if (Number(result?.meta?.changes || 0) !== 1) {
+      return;
+    }
+
+    await audit(
+      db,
+      adminUser.id,
+      "deposit_rejected",
+      "wallet_deposit",
+      depositId,
+      { amountCents: deposit.amount_cents }
+    );
+
+    try {
+      await send(
+        env,
+        deposit.telegram_id,
+        "❌ Wallet Deposit ጥያቄዎ ውድቅ ተደርጓል። Admin ያነጋግሩ።"
+      );
+    } catch (error) {
+      console.error("Deposit rejection notification failed:", error);
+    }
+  }
+}
 ‎// -------------------- WITHDRAWAL REQUESTS --------------------
 ‎
 ‎async function submitWithdrawalAmount(env, db, chatId, user, amountText) {
