@@ -526,87 +526,196 @@ async function releaseUpdate(db, updateId, leaseToken) {
 ‎  await send(env, chatId, "📷 እባክዎ የTelebirr ክፍያ Screenshot ይላኩ።");
 ‎  return true;
 ‎}
-‎
 ‎async function submitReceipt(env, db, chatId, user, fileId) {
-‎  const state = await getState(db, user.id);
-‎  if (!state || state.state !== "entry_receipt") return false;
-‎
-‎  const { entryId, reference } = state.data;
-‎  const timestamp = now();
-‎
-‎  const entry = await db.prepare(`
-‎    SELECT e.*, d.entry_fee_cents, d.name AS draw_name
-‎    FROM entries e JOIN draws d ON d.id = e.draw_id
-‎    WHERE e.id = ? AND e.user_id = ?
-‎      AND e.status = 'reserved' AND e.reserved_until > ?
-‎  `).bind(entryId, user.id, timestamp).first();
-‎
-‎  if (!entry) {
-‎    await clearState(db, user.id);
-‎    await send(env, chatId, "የቁጥር መያዣዎ ጊዜ አልፏል። እንደገና ይምረጡ።");
-‎    return true;
-‎  }
-‎
-‎  const paymentId = newId();
-‎
-‎  try {
-‎    await db.batch([
-‎      db.prepare(`
-‎        INSERT INTO payment_references
-‎          (reference, kind, entity_id, created_at)
-‎        VALUES (?, 'entry', ?, ?)
-‎      `).bind(reference, paymentId, timestamp),
-‎
-‎      db.prepare(`
-‎        INSERT INTO payments (
-‎          id, entry_id, user_id, amount_cents,
-‎          transaction_reference, receipt_file_id,
-‎          status, created_at, updated_at
-‎        ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
-‎      `).bind(
-‎        paymentId, entryId, user.id, entry.entry_fee_cents,
-‎        reference, fileId, timestamp, timestamp
-‎      ),
-‎
-‎      db.prepare(`
-‎        UPDATE entries SET status = 'pending_payment', updated_at = ?
-‎        WHERE id = ? AND user_id = ? AND status = 'reserved'
-‎          AND reserved_until > ?
-‎      `).bind(timestamp, entryId, user.id, timestamp)
-‎    ]);
-‎  } catch (error) {
-‎    console.error("Entry payment submission failed:", error);
-‎    await send(
-‎      env, chatId,
-‎      "ይህ Reference ቀድሞ ተጠቅሟል ወይም ማስረጃው አልተመዘገበም። Admin ያነጋግሩ።"
-‎    );
-‎    return true;
-‎  }
-‎
-‎  await clearState(db, user.id);
-‎  await send(env, chatId, "📨 ማስረጃዎ ደርሷል። Admin እስኪያረጋግጥ ይጠብቁ።");
-‎
-‎  for (const adminId of admins(env)) {
-‎    try {
-‎      await send(
-‎        env, adminId,
-‎        `🔔 <b>አዲስ ክፍያ</b>\n\n` +
-‎        `User: <code>${escapeHtml(user.telegram_id)}</code>\n` +
-‎        `ዕጣ: ${escapeHtml(entry.draw_name)}\n` +
-‎        `ቁጥር: ${entry.number}\n` +
-‎        `መጠን: ${(entry.entry_fee_cents / 100).toFixed(2)} ETB\n` +
-‎        `Reference: <code>${escapeHtml(reference)}</code>`,
-‎        { inline_keyboard: [[
-‎          { text: "✅ Approve", callback_data: `approve:${paymentId}` },
-‎          { text: "❌ Reject", callback_data: `reject:${paymentId}` }
-‎        ]] }
-‎      );
-‎    } catch (error) {
-‎      console.error("Payment admin notification failed", error);
-‎    }
-‎  }
-‎  return true;
-‎}
+  const state = await getState(db, user.id);
+  if (!state || state.state !== "entry_receipt") return false;
+
+  const { entryId, reference } = state.data;
+  const cleanReference = String(reference || "").trim();
+
+  if (
+    cleanReference.length < 5 ||
+    cleanReference.length > 100 ||
+    !fileId
+  ) {
+    await send(
+      env,
+      chatId,
+      "የPayment Reference ወይም Screenshot መረጃ ትክክል አይደለም።"
+    );
+    return true;
+  }
+
+  const timestamp = now();
+
+  const entry = await db.prepare(`
+    SELECT e.*, d.entry_fee_cents, d.name AS draw_name
+    FROM entries e
+    JOIN draws d ON d.id = e.draw_id
+    WHERE e.id = ?
+      AND e.user_id = ?
+      AND e.status = 'reserved'
+      AND e.reserved_until > ?
+  `).bind(entryId, user.id, timestamp).first();
+
+  if (!entry) {
+    await clearState(db, user.id);
+    await send(
+      env,
+      chatId,
+      "የቁጥር መያዣዎ ጊዜ አልፏል። እንደገና ይምረጡ።"
+    );
+    return true;
+  }
+
+  const paymentId = newId();
+
+  try {
+    const results = await db.batch([
+      db.prepare(`
+        UPDATE entries
+        SET status = 'pending_payment',
+            updated_at = ?
+        WHERE id = ?
+          AND user_id = ?
+          AND status = 'reserved'
+          AND reserved_until > ?
+      `).bind(
+        timestamp,
+        entryId,
+        user.id,
+        timestamp
+      ),
+
+      db.prepare(`
+        INSERT INTO payments (
+          id,
+          entry_id,
+          user_id,
+          amount_cents,
+          transaction_reference,
+          receipt_file_id,
+          status,
+          created_at,
+          updated_at
+        )
+        SELECT
+          ?,
+          e.id,
+          e.user_id,
+          ?,
+          ?,
+          ?,
+          'pending',
+          ?,
+          ?
+        FROM entries e
+        WHERE e.id = ?
+          AND e.user_id = ?
+          AND e.status = 'pending_payment'
+          AND e.updated_at = ?
+          AND NOT EXISTS (
+            SELECT 1
+            FROM payments p
+            WHERE p.entry_id = e.id
+              AND p.status IN ('pending', 'approved')
+          )
+      `).bind(
+        paymentId,
+        entry.entry_fee_cents,
+        cleanReference,
+        fileId,
+        timestamp,
+        timestamp,
+        entryId,
+        user.id,
+        timestamp
+      ),
+
+      db.prepare(`
+        INSERT INTO payment_references (
+          reference,
+          kind,
+          entity_id,
+          created_at
+        )
+        SELECT
+          ?,
+          'entry',
+          p.id,
+          ?
+        FROM payments p
+        WHERE p.id = ?
+          AND p.user_id = ?
+          AND p.status = 'pending'
+      `).bind(
+        cleanReference,
+        timestamp,
+        paymentId,
+        user.id
+      )
+    ]);
+
+    if (
+      !results ||
+      results.length !== 3 ||
+      results[0]?.meta?.changes !== 1 ||
+      results[1]?.meta?.changes !== 1 ||
+      results[2]?.meta?.changes !== 1
+    ) {
+      throw new Error("Payment submission was not completed");
+    }
+  } catch (error) {
+    console.error("Entry payment submission failed:", error);
+
+    await send(
+      env,
+      chatId,
+      "⚠️ Reference ቀድሞ ተጠቅሟል ወይም የPayment ማስረጃው አልተመዘገበም። እባክዎ እንደገና ይሞክሩ ወይም Admin ያነጋግሩ።"
+    );
+
+    return true;
+  }
+
+  await clearState(db, user.id);
+
+  await send(
+    env,
+    chatId,
+    "📨 ማስረጃዎ ደርሷል። Admin እስኪያረጋግጥ ይጠብቁ።"
+  );
+
+  for (const adminId of admins(env)) {
+    try {
+      await send(
+        env,
+        adminId,
+        `🔔 <b>አዲስ ክፍያ</b>\n\n` +
+        `User: <code>${escapeHtml(user.telegram_id)}</code>\n` +
+        `ዕጣ: ${escapeHtml(entry.draw_name)}\n` +
+        `ቁጥር: ${entry.number}\n` +
+        `መጠን: ${(entry.entry_fee_cents / 100).toFixed(2)} ETB\n` +
+        `Reference: <code>${escapeHtml(cleanReference)}</code>`,
+        {
+          inline_keyboard: [[
+            {
+              text: "✅ Approve",
+              callback_data: `approve:${paymentId}`
+            },
+            {
+              text: "❌ Reject",
+              callback_data: `reject:${paymentId}`
+            }
+          ]]
+        }
+      );
+    } catch (error) {
+      console.error("Payment admin notification failed:", error);
+    }
+  }
+
+  return true;
+}
 ‎‎// -------------------- PAYMENT REVIEW AND WALLET LEDGER --------------------
 ‎
 ‎async function reviewPayment(env, db, admin, paymentId, approve) {
