@@ -1751,7 +1751,8 @@ async function reviewPayment(env, db, admin, paymentId, approve) {
 ‎
 ‎// -------------------- WINNER PAYOUT WORKFLOW --------------------
 ‎
-‎‎async function notifyWinners(env, db, drawId) {
+‎‎
+async function notifyWinners(env, db, drawId) {
   const winners = await db.prepare(`
     SELECT
       w.id AS winner_id,
@@ -1776,21 +1777,15 @@ async function reviewPayment(env, db, admin, paymentId, approve) {
           `🏆 <b>እንኳን ደስ አለዎት!</b>\n\n` +
           `የዕጣ አሸናፊ ሆነዋል።\n` +
           `ደረጃ፦ ${winner.rank}\n` +
-          `ሽልማት፦ ${(winner.prize_amount_cents / 100).toFixed(2)} ብር\n\n` +
-          "የሽልማት ሂደቱን ለመጀመር የTelebirr ቁጥርዎን ይላኩ።";
-
-        await setState(
-          db,
-          winner.user_id,
-          "winner_telebirr",
-          { winnerId: winner.winner_id }
-        );
+          `የሽልማት መጠን፦ ${(winner.prize_amount_cents / 100).toFixed(2)} ብር\n\n` +
+          `💰 የሽልማት ገንዘብዎ ወደ Wallet ሂሳብዎ ገብቷል።\n` +
+          `Wallet እና History ይመልከቱ።`;
 
       } else {
         message =
           `🏆 <b>እንኳን ደስ አለዎት!</b>\n\n` +
           `የ${escapeHtml(winner.prize_name)} አሸናፊ ሆነዋል።\n` +
-          "ሙሉ ስምዎን እና ስልክ ቁጥርዎን ይላኩ።";
+          `ሙሉ ስምዎን እና ስልክ ቁጥርዎን ይላኩ።`;
 
         await setState(
           db,
@@ -1811,6 +1806,7 @@ async function reviewPayment(env, db, admin, paymentId, approve) {
     }
   }
 }
+
 ‎
 async function submitWinnerDetails(env, db, chatId, user, value) {
   const state = await getState(db, user.id);
@@ -2278,162 +2274,332 @@ async function markPayoutPaid(env, db, admin, winnerId) {
 ‎  return result;
 ‎}
 ‎
-‎async function runDraw(env, db, admin, chatId, drawId) {
-‎  if (!isAdmin(env, admin.id)) return;
-‎
-‎  const draw = await db.prepare(
-‎    "SELECT * FROM draws WHERE id = ?"
-‎  ).bind(drawId).first();
-‎
-‎  if (!draw || !["closed", "full"].includes(draw.status)) {
-‎    await send(env, chatId, "Draw መጀመሪያ መዘጋት አለበት።");
-‎    return;
-‎  }
-‎
-‎  const existing = await db.prepare(
-‎    "SELECT id FROM draw_results WHERE draw_id = ?"
-‎  ).bind(drawId).first();
-‎
-‎  if (existing) {
-‎    await send(env, chatId, "ይህ Draw ውጤት ቀድሞ ተፈጥሯል።");
-‎    return;
-‎  }
-‎
-‎  const entryResult = await db.prepare(`
-‎    SELECT e.id, e.user_id, e.number
-‎    FROM entries e
-‎    WHERE e.draw_id = ? AND e.status = 'paid'
-‎    ORDER BY e.id
-‎  `).bind(drawId).all();
-‎
-‎  const eligible = entryResult.results || [];
-‎  if (eligible.length < Number(draw.winner_count)) {
-‎    await send(env, chatId, "በቂ የተከፈሉ ተሳታፊዎች የሉም።");
-‎    return;
-‎  }
-‎
-‎  const prizeResult = await db.prepare(`
-‎    SELECT rank, amount_cents FROM draw_prizes
-‎    WHERE draw_id = ? ORDER BY rank
-‎  `).bind(drawId).all();
-‎
-‎  const prizes = prizeResult.results || [];
-‎  if (prizes.length !== Number(draw.winner_count)) {
-‎    await send(env, chatId, "የሽልማት ደረጃዎች አልተሟሉም።");
-‎    return;
-‎  }
-‎
-‎  const seed = new Uint8Array(32);
-‎  crypto.getRandomValues(seed);
-‎  const seedHex = Array.from(seed)
-‎    .map(x => x.toString(16).padStart(2, "0")).join("");
-‎  const seedHash = await sha256Hex(seedHex);
-‎
-‎  const pool = await seededShuffle(eligible, seedHex);
-‎  const timestamp = now();
-‎  const adminUser = await userByTelegram(db, admin.id);
-‎  const resultId = newId();
-‎  const snapshot = JSON.stringify(eligible);
-‎
-‎  const statements = [
-‎    db.prepare(`
-‎      INSERT INTO draw_results (
-‎        id, draw_id, eligible_entry_count,
-‎        eligible_entry_snapshot, random_seed_hash,
-‎        executed_at, executed_by
-‎      ) VALUES (?, ?, ?, ?, ?, ?, ?)
-‎    `).bind(
-‎      resultId, drawId, eligible.length,
-‎      snapshot, seedHash, timestamp, adminUser.id
-‎    ),
-‎
-‎    db.prepare(`
-‎      INSERT INTO draw_seed_commits (
-‎        draw_id, seed_hex, seed_hash, committed_at, revealed_at
-‎      ) VALUES (?, ?, ?, ?, ?)
-‎    `).bind(drawId, seedHex, seedHash, timestamp, timestamp),
-‎
-‎    db.prepare(`
-‎      INSERT INTO draw_result_audits (
-‎        id, draw_id, algorithm, seed_hash, revealed_seed,
-‎        eligible_count, winner_snapshot_json, created_at, revealed_at
-‎      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-‎    `).bind(
-‎      newId(), drawId, "sha256-seeded-fisher-yates-v1",
-‎      seedHash, seedHex, eligible.length, "[]", timestamp, timestamp
-‎    )
-‎  ];
-‎
-‎  const selected = [];
-‎
-‎  for (let i = 0; i < Number(draw.winner_count); i++) {
-‎    const entry = pool[i];
-‎    const prize = prizes[i];
-‎    const winnerId = newId();
-‎    selected.push({
-‎      winnerId,
-‎      userId: entry.user_id,
-‎      entryId: entry.id,
-‎      number: entry.number,
-‎      rank: prize.rank,
-‎      prizeAmountCents: prize.amount_cents
-‎    });
-‎
-‎    statements.push(db.prepare(`
-‎      INSERT INTO winners (
-‎        id, draw_id, entry_id, user_id,
-‎        rank, prize_amount_cents, selected_at
-‎      ) VALUES (?, ?, ?, ?, ?, ?, ?)
-‎    `).bind(
-‎      winnerId, drawId, entry.id, entry.user_id,
-‎      prize.rank, prize.amount_cents, timestamp
-‎    ));
-‎
-‎    statements.push(db.prepare(`
-‎      INSERT INTO winner_payouts (
-‎        id, winner_id, user_id, prize_type,
-‎        status, created_at, updated_at
-‎      ) VALUES (?, ?, ?, ?, 'pending', ?, ?)
-‎    `).bind(
-‎      newId(), winnerId, entry.user_id,
-‎      draw.prize_type, timestamp, timestamp
-‎    ));
-‎  }
-‎
-‎  statements.push(db.prepare(`
-‎    UPDATE draw_result_audits
-‎    SET winner_snapshot_json = ?
-‎    WHERE draw_id = ?
-‎  `).bind(JSON.stringify(selected), drawId));
-‎
-‎  statements.push(db.prepare(`
-‎    UPDATE draws SET status = 'completed', updated_at = ?
-‎    WHERE id = ? AND status IN ('closed', 'full')
-‎  `).bind(timestamp, drawId));
-‎
-‎  try {
-‎    await db.batch(statements);
-‎  } catch (error) {
-‎    console.error("Draw execution failed", error);
-‎    await send(env, chatId, "የዕጣ ውጤት ማውጣት አልተሳካም። DB ይፈትሹ።");
-‎    return;
-‎  }
-‎
-‎  await audit(db, adminUser.id, "draw_executed", "draw", drawId, {
-‎    eligibleCount: eligible.length,
-‎    seedHash
-‎  });
-‎
-‎  await send(
-‎    env, chatId,
-‎    `✅ <b>የዕጣ ውጤት ተፈጥሯል።</b>\n\n` +
-‎    `Draw: ${escapeHtml(draw.name)}\n` +
-‎    `ተሳታፊዎች: ${eligible.length}\n` +
-‎    `Seed Hash: <code>${seedHash}</code>\n\n` +
-‎    `Seed Reveal: <code>${seedHex}</code>\n\n` +
-‎    `ውጤቱን ለማተም፦\n/draw_publish ${drawId}`
-‎  );
-‎}
+
+async function runDraw(env, db, admin, chatId, drawId) {
+  if (!isAdmin(env, admin.id)) return;
+
+  const draw = await db.prepare(
+    "SELECT * FROM draws WHERE id = ?"
+  ).bind(drawId).first();
+
+  if (
+    !draw ||
+    !["closed", "full"].includes(draw.status) ||
+    !["cash", "physical"].includes(draw.prize_type)
+  ) {
+    await send(env, chatId, "Draw መዘጋትና ትክክለኛ የሽልማት አይነት መኖር አለበት።");
+    return;
+  }
+
+  const existing = await db.prepare(
+    "SELECT id FROM draw_results WHERE draw_id = ?"
+  ).bind(drawId).first();
+
+  if (existing) {
+    await send(env, chatId, "ይህ Draw ውጤት ቀድሞ ተፈጥሯል።");
+    return;
+  }
+
+  const entryResult = await db.prepare(`
+    SELECT e.id, e.user_id, e.number
+    FROM entries e
+    WHERE e.draw_id = ? AND e.status = 'paid'
+    ORDER BY e.id
+  `).bind(drawId).all();
+
+  const eligible = entryResult.results || [];
+
+  if (eligible.length < Number(draw.winner_count)) {
+    await send(env, chatId, "በቂ የተከፈሉ ተሳታፊዎች የሉም።");
+    return;
+  }
+
+  const prizeResult = await db.prepare(`
+    SELECT rank, amount_cents
+    FROM draw_prizes
+    WHERE draw_id = ?
+    ORDER BY rank
+  `).bind(drawId).all();
+
+  const prizes = prizeResult.results || [];
+
+  if (prizes.length !== Number(draw.winner_count)) {
+    await send(env, chatId, "የሽልማት ደረጃዎች አልተሟሉም።");
+    return;
+  }
+
+  for (const prize of prizes) {
+    const amount = Number(prize.amount_cents);
+
+    if (
+      !Number.isSafeInteger(amount) ||
+      amount < 0 ||
+      (draw.prize_type === "cash" && amount <= 0)
+    ) {
+      await send(env, chatId, "የሽልማት መጠኑ ትክክል አይደለም።");
+      return;
+    }
+  }
+
+  const seed = new Uint8Array(32);
+  crypto.getRandomValues(seed);
+
+  const seedHex = Array.from(seed)
+    .map(x => x.toString(16).padStart(2, "0"))
+    .join("");
+
+  const seedHash = await sha256Hex(seedHex);
+  const pool = await seededShuffle(eligible, seedHex);
+
+  const timestamp = now();
+  const adminUser = await userByTelegram(db, admin.id);
+
+  if (!adminUser) {
+    await send(env, chatId, "Admin መለያ አልተገኘም።");
+    return;
+  }
+
+  const resultId = newId();
+  const snapshot = JSON.stringify(eligible);
+
+  const statements = [
+    db.prepare(`
+      INSERT INTO draw_results (
+        id, draw_id, eligible_entry_count,
+        eligible_entry_snapshot, random_seed_hash,
+        executed_at, executed_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      resultId,
+      drawId,
+      eligible.length,
+      snapshot,
+      seedHash,
+      timestamp,
+      adminUser.id
+    ),
+
+    db.prepare(`
+      INSERT INTO draw_seed_commits (
+        draw_id, seed_hex, seed_hash,
+        committed_at, revealed_at
+      ) VALUES (?, ?, ?, ?, ?)
+    `).bind(
+      drawId,
+      seedHex,
+      seedHash,
+      timestamp,
+      timestamp
+    ),
+
+    db.prepare(`
+      INSERT INTO draw_result_audits (
+        id, draw_id, algorithm, seed_hash,
+        revealed_seed, eligible_count,
+        winner_snapshot_json, created_at, revealed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      newId(),
+      drawId,
+      "sha256-seeded-fisher-yates-v1",
+      seedHash,
+      seedHex,
+      eligible.length,
+      "[]",
+      timestamp,
+      timestamp
+    )
+  ];
+
+  const selected = [];
+
+  for (let i = 0; i < Number(draw.winner_count); i++) {
+    const entry = pool[i];
+    const prize = prizes[i];
+    const winnerId = newId();
+
+    selected.push({
+      winnerId,
+      userId: entry.user_id,
+      entryId: entry.id,
+      number: entry.number,
+      rank: prize.rank,
+      prizeAmountCents: prize.amount_cents
+    });
+
+    statements.push(db.prepare(`
+      INSERT INTO winners (
+        id, draw_id, entry_id, user_id,
+        rank, prize_amount_cents, selected_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      winnerId,
+      drawId,
+      entry.id,
+      entry.user_id,
+      prize.rank,
+      prize.amount_cents,
+      timestamp
+    ));
+
+    if (draw.prize_type === "cash") {
+      const amount = Number(prize.amount_cents);
+      const operationId = newId();
+      const transactionId = newId();
+      const reference = `winner-payout:${winnerId}`;
+
+      statements.push(db.prepare(`
+        INSERT OR IGNORE INTO wallets (
+          id, user_id, balance_cents, created_at, updated_at
+        ) VALUES (?, ?, 0, ?, ?)
+      `).bind(
+        newId(),
+        entry.user_id,
+        timestamp,
+        timestamp
+      ));
+
+      statements.push(db.prepare(`
+        UPDATE wallets
+        SET balance_cents = balance_cents + ?,
+            updated_at = ?,
+            last_operation_id = ?
+        WHERE user_id = ?
+          AND balance_cents + ? <= 9007199254740991
+          AND NOT EXISTS (
+            SELECT 1 FROM wallet_transactions
+            WHERE reference = ?
+          )
+      `).bind(
+        amount,
+        timestamp,
+        operationId,
+        entry.user_id,
+        amount,
+        reference
+      ));
+
+      statements.push(db.prepare(`
+        INSERT INTO wallet_transactions (
+          id, user_id, type, amount_cents,
+          balance_after_cents, reference,
+          description, created_at
+        )
+        SELECT
+          ?,
+          user_id,
+          'payout_credit',
+          ?,
+          balance_cents,
+          ?,
+          ?,
+          ?
+        FROM wallets
+        WHERE user_id = ?
+          AND last_operation_id = ?
+      `).bind(
+        transactionId,
+        amount,
+        reference,
+        `Cash prize for draw ${draw.name}`,
+        timestamp,
+        entry.user_id,
+        operationId
+      ));
+
+      // If the wallet credit did not happen and no matching
+      // previous credit exists, force the whole D1 batch to roll back.
+      statements.push(db.prepare(`
+        INSERT INTO wallet_transactions (
+          id, user_id, type, amount_cents,
+          balance_after_cents, reference, created_at
+        )
+        SELECT ?, ?, 'INVALID', 1, 0, ?, ?
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM wallet_transactions
+          WHERE reference = ?
+            AND user_id = ?
+            AND type = 'payout_credit'
+            AND amount_cents = ?
+        )
+      `).bind(
+        newId(),
+        entry.user_id,
+        reference,
+        timestamp,
+        reference,
+        entry.user_id,
+        amount
+      ));
+    }
+
+    statements.push(db.prepare(`
+      INSERT INTO winner_payouts (
+        id, winner_id, user_id, prize_type,
+        status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      newId(),
+      winnerId,
+      entry.user_id,
+      draw.prize_type,
+      draw.prize_type === "cash" ? "paid" : "pending",
+      timestamp,
+      timestamp
+    ));
+  }
+
+  statements.push(db.prepare(`
+    UPDATE draw_result_audits
+    SET winner_snapshot_json = ?
+    WHERE draw_id = ?
+  `).bind(
+    JSON.stringify(selected),
+    drawId
+  ));
+
+  statements.push(db.prepare(`
+    UPDATE draws
+    SET status = 'completed',
+        updated_at = ?
+    WHERE id = ?
+      AND status IN ('closed', 'full')
+  `).bind(timestamp, drawId));
+
+  try {
+    await db.batch(statements);
+  } catch (error) {
+    console.error("Draw execution failed", error);
+
+    await send(
+      env,
+      chatId,
+      "⚠️ የዕጣ ሂደቱ አልተሳካም። ውጤትና Wallet ለውጦች እንዳይቀሩ የDB ስህተቱን ይፈትሹ።"
+    );
+    return;
+  }
+
+  await audit(db, adminUser.id, "draw_executed", "draw", drawId, {
+    eligibleCount: eligible.length,
+    seedHash,
+    winnerCount: selected.length,
+    cashWalletCredits: draw.prize_type === "cash"
+  });
+
+  await send(
+    env,
+    chatId,
+    `✅ <b>የዕጣ ውጤት ተፈጥሯል።</b>\n\n` +
+    `Draw: ${escapeHtml(draw.name)}\n` +
+    `ተሳታፊዎች: ${eligible.length}\n` +
+    `አሸናፊዎች: ${selected.length}\n` +
+    `Seed Hash: <code>${seedHash}</code>\n\n` +
+    `Seed Reveal: <code>${seedHex}</code>\n\n` +
+    `ውጤቱን ለማተም፦\n/draw_publish ${drawId}`
+  );
+}
+
 ‎
 ‎async function publishDraw(env, db, admin, chatId, drawId) {
 ‎  if (!isAdmin(env, admin.id)) return;
