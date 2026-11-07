@@ -2357,7 +2357,7 @@ async function runDraw(env, db, admin, chatId, drawId) {
 
   if (
     !draw ||
-    !["closed", "full"].includes(draw.status) ||
+    draw.status !== "closed" ||
     !["cash", "physical"].includes(draw.prize_type)
   ) {
     await send(env, chatId, "Draw መዘጋትና ትክክለኛ የሽልማት አይነት መኖር አለበት።");
@@ -2637,7 +2637,7 @@ async function runDraw(env, db, admin, chatId, drawId) {
     SET status = 'completed',
         updated_at = ?
     WHERE id = ?
-      AND status IN ('closed', 'full')
+  AND status = 'closed'
   `).bind(timestamp, drawId));
 
   try {
