@@ -2094,7 +2094,8 @@ async function markPayoutPaid(env, db, admin, winnerId) {
 ‎    `/draw_create NAME|TYPE|PRIZE|TOTAL|FEE_ETB|WINNERS\n` +
 ‎    `/prize_set DRAW_ID RANK AMOUNT_ETB\n` +
 ‎    `/draw_open DRAW_ID\n` +
-‎    `/draw_close DRAW_ID\n` +
+‎    `/draw_hash DRAW_ID\n` +
+    `/draw_close DRAW_ID\n` +
 ‎    `/draw_run DRAW_ID\n` +
 ‎    `/draw_publish DRAW_ID\n` +
 ‎    `/payouts`
@@ -2258,6 +2259,15 @@ async function markPayoutPaid(env, db, admin, winnerId) {
 
   const timestamp = now();
 
+  const seed = new Uint8Array(32);
+  crypto.getRandomValues(seed);
+
+  const seedHex = Array.from(seed)
+    .map(x => x.toString(16).padStart(2, "0"))
+    .join("");
+
+  const seedHash = await sha256Hex(seedHex);
+
   const results = await db.batch([
     db.prepare(`
       UPDATE draws
@@ -2285,10 +2295,40 @@ async function markPayoutPaid(env, db, admin, winnerId) {
           WHERE id = ?
             AND status = 'closed'
         )
-    `).bind(timestamp, drawId, drawId)
+    `).bind(timestamp, drawId, drawId),
+
+    db.prepare(`
+      INSERT OR IGNORE INTO draw_seed_commits (
+        draw_id, seed_hex, seed_hash,
+        committed_at, revealed_at
+      )
+      SELECT ?, ?, ?, ?, NULL
+      WHERE EXISTS (
+        SELECT 1 FROM draws
+        WHERE id = ? AND status = 'closed'
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM entries
+        WHERE draw_id = ?
+          AND status = 'pending_payment'
+      )
+    `).bind(
+      drawId,
+      seedHex,
+      seedHash,
+      timestamp,
+      drawId,
+      drawId
+    )
   ]);
 
-  if (Number(results?.[0]?.meta?.changes || 0) !== 1) {
+  const commitment = await db.prepare(`
+    SELECT seed_hash, committed_at
+    FROM draw_seed_commits
+    WHERE draw_id = ?
+  `).bind(drawId).first();
+
+  if (!commitment) {
     const pending = await db.prepare(`
       SELECT COUNT(*) AS total
       FROM entries
@@ -2300,13 +2340,13 @@ async function markPayoutPaid(env, db, admin, winnerId) {
       await send(
         env,
         chatId,
-        "⚠️ Draw ከመዝጋትዎ በፊት የሚጠባበቁ Payment ጥያቄዎችን ሁሉ Approve ወይም Reject ያድርጉ።"
+        "⚠️ Draw ከመዝጋትዎ በፊት የሚጠባበቁ Payment ጥያቄዎችን Approve ወይም Reject ያድርጉ።"
       );
     } else {
       await send(
         env,
         chatId,
-        "Draw መዝጋት አልተቻለም። Draw ID እና Status ይፈትሹ።"
+        "⚠️ Draw መዝጋት ወይም Seed Commitment መፍጠር አልተቻለም። Draw ID እና Status ይፈትሹ።"
       );
     }
     return;
@@ -2315,11 +2355,66 @@ async function markPayoutPaid(env, db, admin, winnerId) {
   await send(
     env,
     chatId,
-    "🔒 Draw ተዘግቷል። አዲስ ቁጥር መያዝና ክፍያ ማስገባት ተቋርጧል።"
+    "🔒 <b>Draw ተዘግቷል።</b>\n\n" +
+    "የSeed Hash ከውጤቱ በፊት ተመዝግቧል።\n\n" +
+    `🔐 Seed Hash:\n<code>${commitment.seed_hash}</code>\n\n` +
+    `ማንኛውም ተሳታፊ ይህን በሚከተለው ማየት ይችላል፦\n` +
+    `/draw_hash ${drawId}\n\n` +
+    "አሁን /draw_run ማድረግ ይችላሉ።"
   );
-}
+} 
 ‎/* Seeded shuffle: the revealed seed and eligible snapshot are saved
 ‎   so the draw selection can be independently reproduced. */
+async function showDrawHash(env, db, chatId, drawId) {
+  const row = await db.prepare(`
+    SELECT
+      d.name AS draw_name,
+      d.status,
+      c.seed_hash,
+      c.seed_hex,
+      c.committed_at,
+      c.revealed_at
+    FROM draws d
+    LEFT JOIN draw_seed_commits c ON c.draw_id = d.id
+    WHERE d.id = ?
+  `).bind(drawId).first();
+
+  if (!row) {
+    await send(env, chatId, "ይህ Draw ID አልተገኘም።");
+    return;
+  }
+
+  if (!row.seed_hash) {
+    await send(
+      env,
+      chatId,
+      "የዚህ Draw Seed Commitment ገና አልተመዘገበም።"
+    );
+    return;
+  }
+
+  let message =
+    `🎟️ <b>${escapeHtml(row.draw_name)}</b>\n` +
+    `Status: ${escapeHtml(row.status)}\n\n` +
+    `🔐 Seed Hash:\n<code>${row.seed_hash}</code>\n` +
+    `📅 Commitment: ${escapeHtml(row.committed_at)}\n`;
+
+  if (row.revealed_at && row.seed_hex) {
+    const verified =
+      await sha256Hex(row.seed_hex) === row.seed_hash;
+
+    message +=
+      `\n🔓 Revealed Seed:\n<code>${row.seed_hex}</code>\n` +
+      `\n${verified
+        ? "✅ Seed Hash በትክክል ተረጋግጧል።"
+        : "⚠️ Seed Hash አልተመሳሰለም። ውጤቱን ይመርምሩ።"
+      }`;
+  } else {
+    message += "\n⏳ Seed ከዕጣው ውጤት ጋር ይገለጣል።";
+  }
+
+  await send(env, chatId, message);
+}
 ‎async function seededShuffle(items, seedHex) {
 ‎  const result = [...items];
 ‎  let counter = 0;
@@ -2414,15 +2509,41 @@ async function runDraw(env, db, admin, chatId, drawId) {
     }
   }
 
-  const seed = new Uint8Array(32);
-  crypto.getRandomValues(seed);
+  const commitment = await db.prepare(`
+  SELECT seed_hex, seed_hash, revealed_at
+  FROM draw_seed_commits
+  WHERE draw_id = ?
+`).bind(drawId).first();
 
-  const seedHex = Array.from(seed)
-    .map(x => x.toString(16).padStart(2, "0"))
-    .join("");
+if (
+  !commitment ||
+  commitment.revealed_at ||
+  !/^[0-9a-f]{64}$/.test(commitment.seed_hex || "") ||
+  !/^[0-9a-f]{64}$/.test(commitment.seed_hash || "")
+) {
+  await send(
+    env,
+    chatId,
+    "⚠️ ይህ Draw ትክክለኛ ያልተገለጠ Seed Commitment የለውም። ዕጣው አይወጣም።"
+  );
+  return;
+}
 
-  const seedHash = await sha256Hex(seedHex);
-  const pool = await seededShuffle(eligible, seedHex);
+const seedHex = commitment.seed_hex;
+const seedHash = commitment.seed_hash;
+
+const verifiedHash = await sha256Hex(seedHex);
+
+if (verifiedHash !== seedHash) {
+  await send(
+    env,
+    chatId,
+    "🚨 Seed Hash አልተረጋገጠም። ዕጣው ተቋርጧል።"
+  );
+  return;
+}
+
+const pool = await seededShuffle(eligible, seedHex);
 
   const timestamp = now();
   const adminUser = await userByTelegram(db, admin.id);
@@ -2453,17 +2574,16 @@ async function runDraw(env, db, admin, chatId, drawId) {
     ),
 
     db.prepare(`
-      INSERT INTO draw_seed_commits (
-        draw_id, seed_hex, seed_hash,
-        committed_at, revealed_at
-      ) VALUES (?, ?, ?, ?, ?)
-    `).bind(
-      drawId,
-      seedHex,
-      seedHash,
-      timestamp,
-      timestamp
-    ),
+  UPDATE draw_seed_commits
+  SET revealed_at = ?
+  WHERE draw_id = ?
+    AND seed_hash = ?
+    AND revealed_at IS NULL
+`).bind(
+  timestamp,
+  drawId,
+  seedHash
+),
 
     db.prepare(`
       INSERT INTO draw_result_audits (
@@ -2920,7 +3040,10 @@ async function runDraw(env, db, admin, chatId, drawId) {
 ‎    await openDraw(env, db, from, chatId, text.slice(11).trim());
 ‎    return;
 ‎  }
-‎
+‎if (text.startsWith("/draw_hash ")) {
+  await showDrawHash(env, db, chatId, text.slice(11).trim());
+  return;
+}
 ‎  if (text.startsWith("/draw_close ")) {
 ‎    await closeDraw(env, db, from, chatId, text.slice(12).trim());
 ‎    return;
