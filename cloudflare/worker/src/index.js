@@ -556,6 +556,7 @@ async function releaseUpdate(db, updateId, leaseToken) {
       AND e.user_id = ?
       AND e.status = 'reserved'
       AND e.reserved_until > ?
+      AND d.status = 'open'
   `).bind(entryId, user.id, timestamp).first();
 
   if (!entry) {
@@ -580,6 +581,12 @@ async function releaseUpdate(db, updateId, leaseToken) {
           AND user_id = ?
           AND status = 'reserved'
           AND reserved_until > ?
+          AND EXISTS (
+  SELECT 1
+  FROM draws d
+  WHERE d.id = entries.draw_id
+    AND d.status = 'open'
+)
       `).bind(
         timestamp,
         entryId,
@@ -614,6 +621,12 @@ async function releaseUpdate(db, updateId, leaseToken) {
           AND e.user_id = ?
           AND e.status = 'pending_payment'
           AND e.updated_at = ?
+        AND EXISTS (
+  SELECT 1
+  FROM draws d
+  WHERE d.id = e.draw_id
+    AND d.status = 'open'
+)
           AND NOT EXISTS (
             SELECT 1
             FROM payments p
@@ -750,11 +763,13 @@ async function reviewPayment(env, db, admin, paymentId, approve) {
         WHERE id = ?
           AND status = 'pending'
           AND EXISTS (
-            SELECT 1
-            FROM entries
-            WHERE entries.id = payments.entry_id
-              AND entries.status = 'pending_payment'
-          )
+  SELECT 1
+  FROM entries
+  JOIN draws ON draws.id = entries.draw_id
+  WHERE entries.id = payments.entry_id
+    AND entries.status = 'pending_payment'
+    AND draws.status = 'open'
+)
       `).bind(
         adminUser.id,
         timestamp,
@@ -2238,19 +2253,71 @@ async function markPayoutPaid(env, db, admin, winnerId) {
 ‎    : "Draw መክፈት አልተቻለም።");
 ‎}
 ‎
-‎async function closeDraw(env, db, admin, chatId, drawId) {
-‎  if (!isAdmin(env, admin.id)) return;
-‎
-‎  const result = await db.prepare(`
-‎    UPDATE draws SET status = 'closed', updated_at = ?
-‎    WHERE id = ? AND status IN ('open', 'full')
-‎  `).bind(now(), drawId).run();
-‎
-‎  await send(env, chatId, result.meta?.changes
-‎    ? "🔒 Draw ተዘግቷል።"
-‎    : "Draw መዝጋት አልተቻለም።");
-‎}
-‎
+‎‎async function closeDraw(env, db, admin, chatId, drawId) {
+  if (!isAdmin(env, admin.id)) return;
+
+  const timestamp = now();
+
+  const results = await db.batch([
+    db.prepare(`
+      UPDATE draws
+      SET status = 'closed',
+          updated_at = ?
+      WHERE id = ?
+        AND status IN ('open', 'full')
+        AND NOT EXISTS (
+          SELECT 1
+          FROM entries e
+          WHERE e.draw_id = draws.id
+            AND e.status = 'pending_payment'
+        )
+    `).bind(timestamp, drawId),
+
+    db.prepare(`
+      UPDATE entries
+      SET status = 'expired',
+          updated_at = ?
+      WHERE draw_id = ?
+        AND status = 'reserved'
+        AND EXISTS (
+          SELECT 1
+          FROM draws
+          WHERE id = ?
+            AND status = 'closed'
+        )
+    `).bind(timestamp, drawId, drawId)
+  ]);
+
+  if (Number(results?.[0]?.meta?.changes || 0) !== 1) {
+    const pending = await db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM entries
+      WHERE draw_id = ?
+        AND status = 'pending_payment'
+    `).bind(drawId).first();
+
+    if (Number(pending?.total || 0) > 0) {
+      await send(
+        env,
+        chatId,
+        "⚠️ Draw ከመዝጋትዎ በፊት የሚጠባበቁ Payment ጥያቄዎችን ሁሉ Approve ወይም Reject ያድርጉ።"
+      );
+    } else {
+      await send(
+        env,
+        chatId,
+        "Draw መዝጋት አልተቻለም። Draw ID እና Status ይፈትሹ።"
+      );
+    }
+    return;
+  }
+
+  await send(
+    env,
+    chatId,
+    "🔒 Draw ተዘግቷል። አዲስ ቁጥር መያዝና ክፍያ ማስገባት ተቋርጧል።"
+  );
+}
 ‎/* Seeded shuffle: the revealed seed and eligible snapshot are saved
 ‎   so the draw selection can be independently reproduced. */
 ‎async function seededShuffle(items, seedHex) {
