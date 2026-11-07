@@ -556,7 +556,7 @@ async function releaseUpdate(db, updateId, leaseToken) {
       AND e.user_id = ?
       AND e.status = 'reserved'
       AND e.reserved_until > ?
-      AND d.status = 'open'
+      AND d.status IN ('open', 'full')
   `).bind(entryId, user.id, timestamp).first();
 
   if (!entry) {
@@ -585,7 +585,7 @@ async function releaseUpdate(db, updateId, leaseToken) {
   SELECT 1
   FROM draws d
   WHERE d.id = entries.draw_id
-    AND d.status = 'open'
+    AND d.status IN ('open', 'full')
 )
       `).bind(
         timestamp,
@@ -625,7 +625,7 @@ async function releaseUpdate(db, updateId, leaseToken) {
   SELECT 1
   FROM draws d
   WHERE d.id = e.draw_id
-    AND d.status = 'open'
+    AND d.status IN ('open', 'full')
 )
           AND NOT EXISTS (
             SELECT 1
@@ -768,7 +768,7 @@ async function reviewPayment(env, db, admin, paymentId, approve) {
   JOIN draws ON draws.id = entries.draw_id
   WHERE entries.id = payments.entry_id
     AND entries.status = 'pending_payment'
-    AND draws.status = 'open'
+    AND draws.status IN ('open', 'full')
 )
       `).bind(
         adminUser.id,
@@ -788,7 +788,7 @@ async function reviewPayment(env, db, admin, paymentId, approve) {
   SELECT 1
   FROM draws
   WHERE draws.id = entries.draw_id
-    AND draws.status = 'open'
+    AND draws.status IN ('open', 'full')
 )
           AND EXISTS (
             SELECT 1
