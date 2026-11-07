@@ -769,6 +769,12 @@ async function reviewPayment(env, db, admin, paymentId, approve) {
             updated_at = ?
         WHERE id = ?
           AND status = 'pending_payment'
+       AND EXISTS (
+  SELECT 1
+  FROM draws
+  WHERE draws.id = entries.draw_id
+    AND draws.status = 'open'
+)
           AND EXISTS (
             SELECT 1
             FROM payments
