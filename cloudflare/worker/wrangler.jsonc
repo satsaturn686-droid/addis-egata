@@ -1,7 +1,6 @@
-
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "addis-egata-bot-api",
+  "name": "addis-egata-bot-api-staging",
   "main": "src/index.js",
   "compatibility_date": "2026-11-04",
   "workers_dev": true,
@@ -11,8 +10,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "addis-egata-db",
-      "database_id": "aeb019c8-40b8-403c-ad89-912dd892f388",
+      "database_name": "addis-egata-db-staging",
+      "database_id": "a2e813d7-e1c1-491d-ab5c-f8a78d7d3a4f",
       "migrations_dir": "migrations"
     }
   ]
