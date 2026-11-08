@@ -2,10 +2,22 @@
 name: Apply Cloudflare D1 migrations
 
 on:
+  push:
+    branches:
+      - cloudflare-bot-staging
+    paths:
+      - ".github/workflows/cloudflare-d1-migrations.yml"
+      - "cloudflare/worker/migrations/**"
+      - "cloudflare/worker/wrangler.jsonc"
+      - "cloudflare/worker/package.json"
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: addis-egata-d1-migrations-staging
+  cancel-in-progress: false
 
 jobs:
   migrate:
