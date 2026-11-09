@@ -54,7 +54,8 @@ jobs:
           }
           console.log('Staging Worker and D1 identifiers verified.');
           NODE
-
+      - name: Remove invisible direction marks
+        run: perl -pi -e 's/\x{200E}//g' src/index.js
       - name: Check JavaScript syntax
         run: node --check src/index.js
 
