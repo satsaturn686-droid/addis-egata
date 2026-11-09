@@ -544,44 +544,6 @@ async function submitReference(env, db, chatId, user, reference) {
 }
 
 ‎async function submitReference(env, db, chatId, user, reference) {
-‎  const state = await getState(db, user.id);
-‎  if (!state || state.state !== "entry_reference") return false;
-‎
-‎  const clean = String(reference || "").trim();
-‎  if (clean.length < 5 || clean.length > 100) {
-‎    await send(env, chatId, "Transaction Reference ትክክል አይደለም።");
-‎    return true;
-‎  }
-‎
-‎  await setState(db, user.id, "entry_receipt", {
-‎    ...state.data, reference: clean
-‎  });
-‎
-‎  await send(env, chatId, "📷 እባክዎ የTelebirr ክፍያ Screenshot ይላኩ።");
-‎  return true;
-‎}
-
-  const settings = await getPaymentSettings(db);
-  const settings = await getPaymentSettings(db);
-
-  if (!paymentServiceOpen(settings)) {
-    await send(
-      env,
-      chatId,
-      "⏰ የክፍያ ማስረጃ መላኪያ ሰዓት አሁን ዝግ ነው።\n\n" +
-      "ከጠዋቱ 3 እስከ ምሽቱ 12 ብቻ ይላኩ።"
-    );
-    return true;
-  }
-  if (!paymentServiceOpen(settings)) {
-    await send(
-      env,
-      chatId,
-      "⏰ የክፍያ ማስረጃ መላኪያ ሰዓት አሁን ዝግ ነው።\n\n" +
-      "ከጠዋቱ 3 እስከ ምሽቱ 12 ብቻ ይላኩ።"
-    );
-    return true;
-  }
 
 ‎async function submitReceipt(env, db, chatId, user, fileId) {
   const state = await getState(db, user.id);
