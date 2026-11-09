@@ -54,10 +54,16 @@ jobs:
           }
           console.log('Staging Worker and D1 identifiers verified.');
           NODE
-      - name: Remove invisible direction marks
-        run: perl -pi -e 's/\x{200E}//g' src/index.js
-      - name: Check JavaScript syntax
-        run: node --check src/index.js
+            - name: Check JavaScript syntax
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const source = fs.readFileSync('src/index.js', 'utf8');
+          const cleaned = source.replace(/\u200e/g, '');
+          fs.writeFileSync('/tmp/addis-worker-index.js', cleaned);
+          console.log('Invisible direction marks removed for syntax check.');
+          NODE
+          node --check /tmp/addis-worker-index.js
 
       - name: Bundle Worker without deploying
         run: npx wrangler deploy --dry-run
