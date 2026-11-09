@@ -55,41 +55,42 @@ jobs:
           );
 
           if (config.name !== 'addis-egata-bot-api-staging') {
-            throw new Error(
-              'Unexpected Worker name; refusing validation.'
-            );
+            throw new Error('Unexpected Worker name.');
           }
 
           if (
             db?.database_name !== 'addis-egata-db-staging' ||
             db?.database_id !== 'a2e813d7-e1c1-491d-ab5c-f8a78d7d3a4f'
           ) {
-            throw new Error(
-              'Staging D1 binding mismatch; refusing validation.'
-            );
+            throw new Error('Staging D1 binding mismatch.');
           }
 
-          console.log(
-            'Staging Worker and D1 identifiers verified.'
-          );
+          console.log('Staging Worker and D1 verified.');
           NODE
 
-      - name: Check JavaScript syntax
+      - name: Remove invisible marks in temporary checkout
+        shell: bash
         run: |
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
 
-          const source = fs.readFileSync('src/index.js', 'utf8');
+          const file = 'src/index.js';
+          const source = fs.readFileSync(file, 'utf8');
           const cleaned = source.replace(/\u200e/g, '');
 
-          fs.writeFileSync('/tmp/addis-worker-index.js', cleaned);
+          fs.writeFileSync(file, cleaned, 'utf8');
 
-          console.log(
-            'Invisible direction marks removed for syntax check.'
-          );
+          const remaining = (cleaned.match(/\u200e/g) || []).length;
+
+          if (remaining !== 0) {
+            throw new Error('Invisible direction marks remain.');
+          }
+
+          console.log('Temporary checkout cleaned successfully.');
           NODE
 
-          node --check /tmp/addis-worker-index.js
+      - name: Check JavaScript syntax
+        run: node --check src/index.js
 
       - name: Bundle Worker without deploying
         run: npx wrangler deploy --dry-run
