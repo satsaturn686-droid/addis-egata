@@ -448,6 +448,13 @@ function paymentServiceOpen(settings, date = new Date()) {
 ‎  );
 ‎}
 ‎
+
+async function reserveNumber(env, db, chatId, user, drawId, number) {
+  if (!Number.isInteger(number) || number < 1) {
+    await send(env, chatId, "የቁጥር ምርጫው ትክክል አይደለም።");
+    return;
+  }
+
   const settings = await getPaymentSettings(db);
 
   if (!paymentServiceOpen(settings)) {
@@ -461,88 +468,80 @@ function paymentServiceOpen(settings, date = new Date()) {
     return;
   }
 
-‎async function reserveNumber(env, db, chatId, user, drawId, number) {
-‎  if (!Number.isInteger(number) || number < 1) {
-‎    await send(env, chatId, "የቁጥር ምርጫው ትክክል አይደለም።");
-‎    return;
-‎  }
-‎  const settings = await getPaymentSettings(db);
+  const draw = await db.prepare(`
+    SELECT * FROM draws WHERE id = ? AND status = 'open'
+  `).bind(drawId).first();
 
-  if (!paymentServiceOpen(settings)) {
-    await send(
-      env,
-      chatId,
-      "⏰ የዕጣ መግዣ ሰዓት አሁን ዝግ ነው።\n\n" +
-      "የዕጣ መግዣ እና የክፍያ ማስረጃ መላኪያ ሰዓት " +
-      "ከጠዋቱ 3 እስከ ምሽቱ 12 ብቻ ነው።"
-    );
+  if (!draw || number > Number(draw.total_numbers)) {
+    await send(env, chatId, "ዕጣው ወይም ቁጥሩ አልተገኘም።");
     return;
   }
-‎  const draw = await db.prepare(`
-‎    SELECT * FROM draws WHERE id = ? AND status = 'open'
-‎  `).bind(drawId).first();
-‎
-‎  if (!draw || number > Number(draw.total_numbers)) {
-‎    await send(env, chatId, "ዕጣው ወይም ቁጥሩ አልተገኘም።");
-‎    return;
-‎  }
-‎
-‎  const timestamp = now();
-‎  const expiry = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-‎
-‎  await db.prepare(`
-‎    UPDATE entries SET status = 'expired', updated_at = ?
-‎    WHERE draw_id = ? AND number = ?
-‎      AND status = 'reserved' AND reserved_until <= ?
-‎  `).bind(timestamp, drawId, number, timestamp).run();
-‎
-‎  const entryId = newId();
-‎
-‎  try {
-‎    await db.prepare(`
-‎      INSERT INTO entries (
-‎        id, draw_id, user_id, number, status,
-‎        reserved_until, created_at, updated_at
-‎      ) VALUES (?, ?, ?, ?, 'reserved', ?, ?, ?)
-‎    `).bind(
-‎      entryId, drawId, user.id, number,
-‎      expiry, timestamp, timestamp
-‎    ).run();
-‎  } catch {
-‎    await send(env, chatId, "ይቅርታ፣ ይህ ቁጥር ተይዟል። ሌላ ይምረጡ።");
-‎    return;
-‎  }
-‎
-‎  const settings = await getPaymentSettings(db);
-‎  const telebirr = env.TELEBIRR_NUMBER ||
-‎    settings?.telebirr_number || "Admin ገና አላስገባም";
-‎
-‎  await setState(db, user.id, "entry_reference", {
-‎    entryId, drawId, number
-‎  });
-‎
-‎  await send(
-‎    env, chatId,
-‎    `✅ <b>ቁጥር ${number} ተይዟል።</b>\n\n` +
-‎    `💵 ክፍያ፦ ${(draw.entry_fee_cents / 100).toFixed(2)} ብር\n` +
-‎    `📱 Telebirr፦ <code>${escapeHtml(telebirr)}</code>\n\n` +
-‎    "ክፍያውን ከፈጸሙ በኋላ Transaction Reference ይላኩ።\n" +
-‎    "⚠️ ቁጥሩ ለ30 ደቂቃ ብቻ ይያዛል።"
-‎  );
-‎}
-‎
-‎// -------------------- PAYMENT REFERENCE AND RECEIPT --------------------
-‎
 
-  if (!paymentServiceOpen(settings)) {
-    await send(
-      env,
-      chatId,
-      "⏰ የክፍያ ማስረጃ መላኪያ ሰዓት አሁን ዝግ ነው።\n\n" +
-      "ከጠዋቱ 3 እስከ ምሽቱ 12 ብቻ ይላኩ።"
-    );
+  const timestamp = now();
+  const expiry = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+
+  await db.prepare(`
+    UPDATE entries SET status = 'expired', updated_at = ?
+    WHERE draw_id = ? AND number = ?
+      AND status = 'reserved' AND reserved_until <= ?
+  `).bind(timestamp, drawId, number, timestamp).run();
+
+  const entryId = newId();
+
+  try {
+    await db.prepare(`
+      INSERT INTO entries (
+        id, draw_id, user_id, number, status,
+        reserved_until, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 'reserved', ?, ?, ?)
+    `).bind(
+      entryId, drawId, user.id, number,
+      expiry, timestamp, timestamp
+    ).run();
+  } catch {
+    await send(env, chatId, "ይቅርታ፣ ይህ ቁጥር ተይዟል። ሌላ ይምረጡ።");
+    return;
+  }
+
+  const telebirr = env.TELEBIRR_NUMBER ||
+    settings?.telebirr_number || "Admin ገና አላስገባም";
+
+  await setState(db, user.id, "entry_reference", {
+    entryId, drawId, number
+  });
+
+  await send(
+    env,
+    chatId,
+    `✅ <b>ቁጥር ${number} ተይዟል።</b>\n\n` +
+    `💵 ክፍያ፦ ${(draw.entry_fee_cents / 100).toFixed(2)} ብር\n` +
+    `📱 Telebirr፦ <code>${escapeHtml(telebirr)}</code>\n\n` +
+    "ክፍያውን ከፈጸሙ በኋላ Transaction Reference ይላኩ።\n" +
+    "⚠️ ቁጥሩ ለ30 ደቂቃ ብቻ ይያዛል።"
+  );
+}
+
+// -------------------- PAYMENT REFERENCE AND RECEIPT --------------------
+
+async function submitReference(env, db, chatId, user, reference) {
+  const state = await getState(db, user.id);
+  if (!state || state.state !== "entry_reference") return false;
+
+  const clean = String(reference || "").trim();
+
+  if (clean.length < 5 || clean.length > 100) {
+    await send(env, chatId, "Transaction Reference ትክክል አይደለም።");
     return true;
   }
+
+  await setState(db, user.id, "entry_receipt", {
+    ...state.data,
+    reference: clean
+  });
+
+  await send(env, chatId, "📷 እባክዎ የTelebirr ክፍያ Screenshot ይላኩ።");
+  return true;
+}
 
 ‎async function submitReference(env, db, chatId, user, reference) {
 ‎  const state = await getState(db, user.id);
@@ -588,6 +587,18 @@ function paymentServiceOpen(settings, date = new Date()) {
   const state = await getState(db, user.id);
   if (!state || state.state !== "entry_receipt") return false;
 
+    const settings = await getPaymentSettings(db);
+
+  if (!paymentServiceOpen(settings)) {
+    await send(
+      env,
+      chatId,
+      "⏰ የክፍያ ማስረጃ መላኪያ ሰዓት አሁን ዝግ ነው።\n\n" +
+      "ከጠዋቱ 3 እስከ ምሽቱ 12 ብቻ ይላኩ።"
+    );
+    return true;
+  }
+  
   const { entryId, reference } = state.data;
   const cleanReference = String(reference || "").trim();
 
