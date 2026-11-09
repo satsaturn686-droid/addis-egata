@@ -54,7 +54,7 @@ jobs:
           }
           console.log('Staging Worker and D1 identifiers verified.');
           NODE
-            - name: Check JavaScript syntax
+                  - name: Check JavaScript syntax
         run: |
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
