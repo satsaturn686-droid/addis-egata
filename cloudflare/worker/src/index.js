@@ -271,38 +271,38 @@ async function releaseUpdate(db, updateId, leaseToken) {
 ‎  `).first();
 ‎}
 ‎
-‎function paymentServiceOpen(settings, date = new Date()) {
-‎  if (!settings || Number(settings.service_enabled) !== 1) return false;
 ‎
-‎  const timezone = settings.timezone || "Africa/Addis_Ababa";
-‎  const parts = new Intl.DateTimeFormat("en-GB", {
-‎    timeZone: timezone,
-‎    hour: "2-digit",
-‎    minute: "2-digit",
-‎    hourCycle: "h23"
-‎  }).formatToParts(date);
-‎
-‎  const hour = Number(parts.find(x => x.type === "hour")?.value);
-‎  const minute = Number(parts.find(x => x.type === "minute")?.value);
-‎  const current = hour * 60 + minute;
-‎
-‎  const parse = value => {
-‎    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(value))) {
-‎      throw new Error("Invalid service time");
-‎    }
-‎    const [h, m] = value.split(":").map(Number);
-‎    return h * 60 + m;
-‎  };
-‎
-‎  const open = parse(settings.service_open_time || "03:00");
-‎  const close = parse(settings.service_close_time || "12:00");
-‎
-‎  if (open === close) return false;
-‎  return open < close
-‎    ? current >= open && current < close
-‎    : current >= open || current < close;
-‎}
-‎
+function paymentServiceOpen(settings, date = new Date()) {
+  if (!settings || Number(settings.service_enabled) !== 1) {
+    return false;
+  }
+
+  const timezone = "Africa/Addis_Ababa";
+
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(date);
+
+  const hour = Number(
+    parts.find(x => x.type === "hour")?.value
+  );
+  const minute = Number(
+    parts.find(x => x.type === "minute")?.value
+  );
+
+  const current = hour * 60 + minute;
+
+  // Ethiopian clock: ከጠዋቱ 3 እስከ ምሽቱ 12
+  // International clock: 09:00–18:00
+  const open = 9 * 60;
+  const close = 18 * 60;
+
+  return current >= open && current < close;
+}
+
 ‎function homeKeyboard() {
 ‎  return {
 ‎    keyboard: [
@@ -448,6 +448,19 @@ async function releaseUpdate(db, updateId, leaseToken) {
 ‎  );
 ‎}
 ‎
+  const settings = await getPaymentSettings(db);
+
+  if (!paymentServiceOpen(settings)) {
+    await send(
+      env,
+      chatId,
+      "⏰ የዕጣ መግዣ ሰዓት አሁን ዝግ ነው።\n\n" +
+      "የዕጣ መግዣ እና የክፍያ ማስረጃ መላኪያ ሰዓት " +
+      "ከጠዋቱ 3 እስከ ምሽቱ 12 ብቻ ነው።"
+    );
+    return;
+  }
+
 ‎async function reserveNumber(env, db, chatId, user, drawId, number) {
 ‎  if (!Number.isInteger(number) || number < 1) {
 ‎    await send(env, chatId, "የቁጥር ምርጫው ትክክል አይደለም።");
@@ -509,6 +522,18 @@ async function releaseUpdate(db, updateId, leaseToken) {
 ‎
 ‎// -------------------- PAYMENT REFERENCE AND RECEIPT --------------------
 ‎
+  const settings = await getPaymentSettings(db);
+
+  if (!paymentServiceOpen(settings)) {
+    await send(
+      env,
+      chatId,
+      "⏰ የክፍያ ማስረጃ መላኪያ ሰዓት አሁን ዝግ ነው።\n\n" +
+      "ከጠዋቱ 3 እስከ ምሽቱ 12 ብቻ ይላኩ።"
+    );
+    return true;
+  }
+
 ‎async function submitReference(env, db, chatId, user, reference) {
 ‎  const state = await getState(db, user.id);
 ‎  if (!state || state.state !== "entry_reference") return false;
@@ -526,6 +551,19 @@ async function releaseUpdate(db, updateId, leaseToken) {
 ‎  await send(env, chatId, "📷 እባክዎ የTelebirr ክፍያ Screenshot ይላኩ።");
 ‎  return true;
 ‎}
+
+  const settings = await getPaymentSettings(db);
+
+  if (!paymentServiceOpen(settings)) {
+    await send(
+      env,
+      chatId,
+      "⏰ የክፍያ ማስረጃ መላኪያ ሰዓት አሁን ዝግ ነው።\n\n" +
+      "ከጠዋቱ 3 እስከ ምሽቱ 12 ብቻ ይላኩ።"
+    );
+    return true;
+  }
+
 ‎async function submitReceipt(env, db, chatId, user, fileId) {
   const state = await getState(db, user.id);
   if (!state || state.state !== "entry_receipt") return false;
