@@ -3494,10 +3494,11 @@ try {
     }
   }
 
-  return json(
+    return json(
     { ok: false, error: "Update processing failed" },
     500
-   );
+  );
+  }
   }
 };
 ‎
