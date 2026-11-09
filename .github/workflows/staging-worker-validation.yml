@@ -1,0 +1,62 @@
+
+name: Staging Worker Validation
+
+on:
+  push:
+    branches:
+      - addis-egata-worker-staging
+    paths:
+      - "cloudflare/worker/**"
+      - ".github/workflows/staging-worker-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: addis-egata-worker-staging-validation
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/addis-egata-worker-staging'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloudflare/worker
+    steps:
+      - name: Check out staging branch
+        uses: actions/checkout@v4
+        with:
+          ref: addis-egata-worker-staging
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Worker dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Verify staging-only configuration
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const config = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'));
+          const db = config.d1_databases?.find((item) => item.binding === 'DB');
+          if (config.name !== 'addis-egata-bot-api-staging') {
+            throw new Error('Unexpected Worker name; refusing validation.');
+          }
+          if (db?.database_name !== 'addis-egata-db-staging' ||
+              db?.database_id !== 'a2e813d7-e1c1-491d-ab5c-f8a78d7d3a4f') {
+            throw new Error('Staging D1 binding mismatch; refusing validation.');
+          }
+          console.log('Staging Worker and D1 identifiers verified.');
+          NODE
+
+      - name: Check JavaScript syntax
+        run: node --check src/index.js
+
+      - name: Bundle Worker without deploying
+        run: npx wrangler deploy --dry-run
