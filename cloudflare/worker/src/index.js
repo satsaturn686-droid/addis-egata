@@ -466,7 +466,18 @@ function paymentServiceOpen(settings, date = new Date()) {
 ‎    await send(env, chatId, "የቁጥር ምርጫው ትክክል አይደለም።");
 ‎    return;
 ‎  }
-‎
+‎  const settings = await getPaymentSettings(db);
+
+  if (!paymentServiceOpen(settings)) {
+    await send(
+      env,
+      chatId,
+      "⏰ የዕጣ መግዣ ሰዓት አሁን ዝግ ነው።\n\n" +
+      "የዕጣ መግዣ እና የክፍያ ማስረጃ መላኪያ ሰዓት " +
+      "ከጠዋቱ 3 እስከ ምሽቱ 12 ብቻ ነው።"
+    );
+    return;
+  }
 ‎  const draw = await db.prepare(`
 ‎    SELECT * FROM draws WHERE id = ? AND status = 'open'
 ‎  `).bind(drawId).first();
@@ -522,7 +533,6 @@ function paymentServiceOpen(settings, date = new Date()) {
 ‎
 ‎// -------------------- PAYMENT REFERENCE AND RECEIPT --------------------
 ‎
-  const settings = await getPaymentSettings(db);
 
   if (!paymentServiceOpen(settings)) {
     await send(
@@ -553,7 +563,17 @@ function paymentServiceOpen(settings, date = new Date()) {
 ‎}
 
   const settings = await getPaymentSettings(db);
+  const settings = await getPaymentSettings(db);
 
+  if (!paymentServiceOpen(settings)) {
+    await send(
+      env,
+      chatId,
+      "⏰ የክፍያ ማስረጃ መላኪያ ሰዓት አሁን ዝግ ነው።\n\n" +
+      "ከጠዋቱ 3 እስከ ምሽቱ 12 ብቻ ይላኩ።"
+    );
+    return true;
+  }
   if (!paymentServiceOpen(settings)) {
     await send(
       env,
