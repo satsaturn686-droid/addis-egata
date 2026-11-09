@@ -1773,59 +1773,292 @@ async function reviewPayment(env, db, admin, paymentId, approve) {
 ‎// -------------------- WINNER PAYOUT WORKFLOW --------------------
 ‎
 ‎‎
-async function notifyWinners(env, db, drawId) {
+async function enqueueWinnerNotifications(db, drawId) {
   const winners = await db.prepare(`
-    SELECT
-      w.id AS winner_id,
-      w.user_id,
-      w.rank,
-      w.prize_amount_cents,
-      u.telegram_id,
-      d.prize_type,
-      d.prize_name
-    FROM winners w
-    JOIN users u ON u.id = w.user_id
-    JOIN draws d ON d.id = w.draw_id
-    WHERE w.draw_id = ?
+    SELECT id FROM winners WHERE draw_id = ?
   `).bind(drawId).all();
 
   for (const winner of winners.results || []) {
+    const timestamp = now();
+
+    await db.prepare(`
+      INSERT OR IGNORE INTO winner_notifications (
+        id,
+        winner_id,
+        status,
+        attempts,
+        next_attempt_at,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, 'pending', 0, ?, ?, ?)
+    `).bind(
+      newId(),
+      winner.id,
+      timestamp,
+      timestamp,
+      timestamp
+    ).run();
+  }
+}
+
+async function processWinnerNotifications(env, db, drawId = null) {
+  let sent = 0;
+  let failed = 0;
+
+  for (let i = 0; i < 50; i++) {
+    const timestamp = now();
+
+    const candidate = drawId
+      ? await db.prepare(`
+          SELECT wn.id, wn.attempts
+          FROM winner_notifications wn
+          JOIN winners w ON w.id = wn.winner_id
+          WHERE w.draw_id = ?
+            AND wn.attempts < 8
+            AND (
+              (wn.status = 'pending' AND wn.next_attempt_at <= ?)
+              OR
+              (wn.status = 'sending' AND wn.lease_until <= ?)
+            )
+          ORDER BY wn.next_attempt_at
+          LIMIT 1
+        `).bind(drawId, timestamp, timestamp).first()
+      : await db.prepare(`
+          SELECT id, attempts
+          FROM winner_notifications
+          WHERE attempts < 8
+            AND (
+              (status = 'pending' AND next_attempt_at <= ?)
+              OR
+              (status = 'sending' AND lease_until <= ?)
+            )
+          ORDER BY next_attempt_at
+          LIMIT 1
+        `).bind(timestamp, timestamp).first();
+
+    if (!candidate) break;
+
+    const leaseToken = newId();
+    const leaseUntil = new Date(
+      Date.now() + 120000
+    ).toISOString();
+
+    const claim = await db.prepare(`
+      UPDATE winner_notifications
+      SET status = 'sending',
+          attempts = attempts + 1,
+          lease_until = ?,
+          lease_token = ?,
+          updated_at = ?
+      WHERE id = ?
+        AND attempts < 8
+        AND (
+          (status = 'pending' AND next_attempt_at <= ?)
+          OR
+          (status = 'sending' AND lease_until <= ?)
+        )
+    `).bind(
+      leaseUntil,
+      leaseToken,
+      timestamp,
+      candidate.id,
+      timestamp,
+      timestamp
+    ).run();
+
+    if (Number(claim?.meta?.changes || 0) !== 1) {
+      continue;
+    }
+
+    const notification = await db.prepare(`
+      SELECT
+        wn.id AS notification_id,
+        wn.attempts,
+        wn.lease_token,
+        w.id AS winner_id,
+        w.user_id,
+        w.rank,
+        w.prize_amount_cents,
+        u.telegram_id,
+        d.prize_type,
+        d.prize_name
+      FROM winner_notifications wn
+      JOIN winners w ON w.id = wn.winner_id
+      JOIN users u ON u.id = w.user_id
+      JOIN draws d ON d.id = w.draw_id
+      WHERE wn.id = ?
+        AND wn.lease_token = ?
+        AND wn.status = 'sending'
+    `).bind(candidate.id, leaseToken).first();
+
+    if (!notification) continue;
+
     try {
       let message;
 
-      if (winner.prize_type === "cash") {
+      if (notification.prize_type === "cash") {
         message =
           `🏆 <b>እንኳን ደስ አለዎት!</b>\n\n` +
           `የዕጣ አሸናፊ ሆነዋል።\n` +
-          `ደረጃ፦ ${winner.rank}\n` +
-          `የሽልማት መጠን፦ ${(winner.prize_amount_cents / 100).toFixed(2)} ብር\n\n` +
+          `ደረጃ፦ ${notification.rank}\n` +
+          `የሽልማት መጠን፦ ${(notification.prize_amount_cents / 100).toFixed(2)} ብር\n\n` +
           `💰 የሽልማት ገንዘብዎ ወደ Wallet ሂሳብዎ ገብቷል።\n` +
           `Wallet እና History ይመልከቱ።`;
-
       } else {
         message =
           `🏆 <b>እንኳን ደስ አለዎት!</b>\n\n` +
-          `የ${escapeHtml(winner.prize_name)} አሸናፊ ሆነዋል።\n` +
+          `የ${escapeHtml(notification.prize_name)} አሸናፊ ሆነዋል።\n` +
           `ሙሉ ስምዎን እና ስልክ ቁጥርዎን ይላኩ።`;
+      }
 
-        await setState(
-          db,
-          winner.user_id,
-          "winner_name",
-          { winnerId: winner.winner_id }
+      await send(env, notification.telegram_id, message);
+
+      const completedAt = now();
+
+      const statements = [];
+
+      if (notification.prize_type !== "cash") {
+        statements.push(
+          db.prepare(`
+            INSERT INTO user_states (
+              user_id, state, data_json, updated_at
+            ) VALUES (?, 'winner_name', ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+              state = excluded.state,
+              data_json = excluded.data_json,
+              updated_at = excluded.updated_at
+          `).bind(
+            notification.user_id,
+            JSON.stringify({
+              winnerId: notification.winner_id
+            }),
+            completedAt
+          )
         );
       }
 
-      await send(env, winner.telegram_id, message);
+      statements.push(
+        db.prepare(`
+          UPDATE winner_notifications
+          SET status = 'sent',
+              sent_at = ?,
+              lease_until = NULL,
+              lease_token = NULL,
+              last_error = NULL,
+              updated_at = ?
+          WHERE id = ?
+            AND status = 'sending'
+            AND lease_token = ?
+        `).bind(
+          completedAt,
+          completedAt,
+          notification.notification_id,
+          leaseToken
+        )
+      );
+
+      await db.batch(statements);
+      sent++;
 
     } catch (error) {
+      const errorMessage = String(
+        error?.message || error
+      ).slice(0, 500);
+
+      const attempts = Number(notification.attempts || 1);
+
+      const delaySeconds = Math.min(
+        3600,
+        30 * Math.pow(2, Math.max(0, attempts - 1))
+      );
+
+      const nextAttempt = new Date(
+        Date.now() + delaySeconds * 1000
+      ).toISOString();
+
+      await db.prepare(`
+        UPDATE winner_notifications
+        SET status = CASE
+              WHEN attempts >= 8 THEN 'failed'
+              ELSE 'pending'
+            END,
+            next_attempt_at = ?,
+            lease_until = NULL,
+            lease_token = NULL,
+            last_error = ?,
+            updated_at = ?
+        WHERE id = ?
+          AND status = 'sending'
+          AND lease_token = ?
+      `).bind(
+        nextAttempt,
+        errorMessage,
+        now(),
+        notification.notification_id,
+        leaseToken
+      ).run();
+
+      failed++;
+
       console.error(
         "Winner notification failed:",
-        winner.winner_id,
-        error
+        notification.winner_id,
+        errorMessage
       );
     }
   }
+
+  const counts = await db.prepare(`
+    SELECT
+      SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS sent,
+      SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+      SUM(CASE
+        WHEN status IN ('pending', 'sending') THEN 1
+        ELSE 0
+      END) AS pending
+    FROM winner_notifications
+    ${drawId ? "WHERE winner_id IN (SELECT id FROM winners WHERE draw_id = ?)" : ""}
+  `)
+    .bind(...(drawId ? [drawId] : []))
+    .first();
+
+  return {
+    sent: Number(counts?.sent || 0),
+    failed: Number(counts?.failed || 0),
+    pending: Number(counts?.pending || 0)
+  };
+}
+
+async function notifyWinners(env, db, drawId) {
+  await enqueueWinnerNotifications(db, drawId);
+  return await processWinnerNotifications(env, db, drawId);
+}
+
+async function retryWinnerNotifications(env, db, admin, chatId) {
+  if (!isAdmin(env, admin.id)) return;
+
+  await db.prepare(`
+    UPDATE winner_notifications
+    SET status = 'pending',
+        attempts = 0,
+        next_attempt_at = ?,
+        lease_until = NULL,
+        lease_token = NULL,
+        last_error = NULL,
+        updated_at = ?
+    WHERE status = 'failed'
+  `).bind(now(), now()).run();
+
+  const result = await processWinnerNotifications(env, db);
+
+  await send(
+    env,
+    chatId,
+    `🔄 የማሳወቂያ ዳግም ሙከራ ተጠናቋል።\n` +
+    `የተላኩ፦ ${result.sent}\n` +
+    `ያልተሳኩ፦ ${result.failed}\n` +
+    `በመጠባበቅ ላይ፦ ${result.pending}`
+  );
 }
 
 ‎
@@ -2795,21 +3028,36 @@ const pool = await seededShuffle(eligible, seedHex);
 
 ‎
 ‎async function publishDraw(env, db, admin, chatId, drawId) {
-‎  if (!isAdmin(env, admin.id)) return;
-‎
-‎  const result = await db.prepare(`
-‎    UPDATE draw_results SET published_at = ?
-‎    WHERE draw_id = ? AND published_at IS NULL
-‎  `).bind(now(), drawId).run();
-‎
-‎  if (!result.meta?.changes) {
-‎    await send(env, chatId, "ውጤቱ አልተገኘም ወይም ቀድሞ ታትሟል።");
-‎    return;
-‎  }
-‎
-‎  await notifyWinners(env, db, drawId);
-‎  await send(env, chatId, "🏆 የዕጣ ውጤቱ ታትሟል። አሸናፊዎች ማሳወቂያ ተልኳል።");
-‎}
+  if (!isAdmin(env, admin.id)) return;
+
+  const drawResult = await db.prepare(`
+    SELECT draw_id FROM draw_results WHERE draw_id = ?
+  `).bind(drawId).first();
+
+  if (!drawResult) {
+    await send(env, chatId, "የዕጣው ውጤት አልተገኘም።");
+    return;
+  }
+
+  await db.prepare(`
+    UPDATE draw_results
+    SET published_at = COALESCE(published_at, ?)
+    WHERE draw_id = ?
+  `).bind(now(), drawId).run();
+
+  await enqueueWinnerNotifications(db, drawId);
+
+  const result = await processWinnerNotifications(env, db, drawId);
+
+  await send(
+    env,
+    chatId,
+    `🏆 የዕጣ ውጤቱ ታትሟል።\n` +
+    `የተላኩ ማሳወቂያዎች፦ ${result.sent}\n` +
+    `ያልተሳኩ፦ ${result.failed}\n` +
+    `በመጠባበቅ ላይ፦ ${result.pending}`
+  );
+}
 ‎
 ‎// -------------------- ADMIN QUEUES --------------------
 ‎
@@ -3015,7 +3263,12 @@ const pool = await seededShuffle(eligible, seedHex);
 ‎    await showPayouts(env, db, chatId);
 ‎    return;
 ‎  }
-‎
+  
+‎  if (text === "/winner_notifications_retry") {
+    await retryWinnerNotifications(env, db, from, chatId);
+    return;
+  }
+  
 ‎  if (text.startsWith("/set_telebirr ")) {
 ‎    await setTelebirr(env, db, from, chatId, text.slice(14));
 ‎    return;
