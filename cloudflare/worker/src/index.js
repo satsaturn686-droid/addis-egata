@@ -3497,7 +3497,7 @@ try {
   return json(
     { ok: false, error: "Update processing failed" },
     500
-  );
-}
-‎};
+   );
+  }
+};
 ‎
