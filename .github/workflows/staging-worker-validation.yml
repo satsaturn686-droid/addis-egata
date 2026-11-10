@@ -40,6 +40,10 @@ jobs:
       - name: Install Worker dependencies
         run: npm install --no-audit --no-fund
 
+
+      - name: Validate D1 migrations locally
+        run: npx wrangler d1 migrations apply DB --local
+
       - name: Verify staging-only configuration
         shell: bash
         run: |
