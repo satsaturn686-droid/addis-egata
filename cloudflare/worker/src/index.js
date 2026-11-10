@@ -3204,6 +3204,15 @@ const pool = await seededShuffle(eligible, seedHex);
 ‎  const chatId = query.message?.chat?.id;
 ‎  const from = query.from;
 ‎
+    if (query.message?.chat?.type !== "private") {
+    await callbackAnswer(
+      env,
+      query.id,
+      "እባክዎ ይህን አገልግሎት በግል ውይይት ብቻ ይጠቀሙ።"
+    );
+    return;
+  }
+  
 ‎  await callbackAnswer(env, query.id);
 ‎
 ‎  if (data === "occupied") {
@@ -3248,8 +3257,9 @@ const pool = await seededShuffle(eligible, seedHex);
 ‎async function handleMessage(env, db, message) {
 ‎  const from = message.from;
 ‎  if (!from || from.is_bot) return;
-‎
-‎  const chatId = message.chat.id;
+‎  if (message.chat?.type !== "private") return;
+‎ 
+  const chatId = message.chat.id;
 ‎  const text = String(message.text || "").trim();
 ‎  const user = await register(db, env, from);
 ‎
