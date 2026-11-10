@@ -2963,7 +2963,34 @@ if (verifiedHash !== seedHash) {
   return;
 }
 
+
 const pool = await seededShuffle(eligible, seedHex);
+
+const winnerPool = [];
+const seenUsers = new Set();
+
+for (const entry of pool) {
+  if (Number(draw.unique_winners) === 1) {
+    if (seenUsers.has(entry.user_id)) continue;
+    seenUsers.add(entry.user_id);
+  }
+
+  winnerPool.push(entry);
+
+  if (winnerPool.length >= Number(draw.winner_count)) {
+    break;
+  }
+}
+
+if (winnerPool.length < Number(draw.winner_count)) {
+  await send(
+    env,
+    chatId,
+    "⚠️ በቂ የተለያዩ ተሳታፊዎች የሉም። ይህ Draw በዚህ የአሸናፊ ብዛት መውጣት አይችልም።"
+  );
+  return;
+}
+
 
   const timestamp = now();
   const adminUser = await userByTelegram(db, admin.id);
@@ -3027,7 +3054,7 @@ const pool = await seededShuffle(eligible, seedHex);
   const selected = [];
 
   for (let i = 0; i < Number(draw.winner_count); i++) {
-    const entry = pool[i];
+    const entry = winnerPool[i];
     const prize = prizes[i];
     const winnerId = newId();
 
@@ -3096,7 +3123,7 @@ const pool = await seededShuffle(eligible, seedHex);
     await send(
       env,
       chatId,
-      "⚠️ የዕጣ ሂደቱ አልተሳካም። ውጤትና Wallet ለውጦች እንዳይቀሩ የDB ስህተቱን ይፈትሹ።"
+      "⚠️ የዕጣ ሂደቱ አልተሳካም። የውጤትና የሽልማት መዝገቦችን የDB ስህተት ያረጋግጡ።"
     );
     return;
   }
@@ -3105,7 +3132,7 @@ const pool = await seededShuffle(eligible, seedHex);
     eligibleCount: eligible.length,
     seedHash,
     winnerCount: selected.length,
-    cashWalletCredits: draw.prize_type === "cash"
+    payoutMethod: "manual_telebirr"
   });
 
   await send(
