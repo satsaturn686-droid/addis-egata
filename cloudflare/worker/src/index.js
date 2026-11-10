@@ -778,6 +778,151 @@ async function submitReference(env, db, chatId, user, reference) {
 ‎‎// -------------------- PAYMENT REVIEW AND WALLET LEDGER --------------------
 ‎
 ‎
+async function processBusinessNotifications(env, db) {
+  let sent = 0;
+  let failed = 0;
+
+  for (let i = 0; i < 50; i++) {
+    const timestamp = now();
+
+    const candidate = await db.prepare(`
+      SELECT id, attempts
+      FROM business_notifications
+      WHERE attempts < 8
+        AND (
+          (status = 'pending' AND next_attempt_at <= ?)
+          OR
+          (status = 'sending' AND lease_until <= ?)
+        )
+      ORDER BY next_attempt_at
+      LIMIT 1
+    `).bind(timestamp, timestamp).first();
+
+    if (!candidate) break;
+
+    const leaseToken = newId();
+    const leaseUntil = new Date(
+      Date.now() + 120000
+    ).toISOString();
+
+    const claim = await db.prepare(`
+      UPDATE business_notifications
+      SET status = 'sending',
+          attempts = attempts + 1,
+          lease_until = ?,
+          lease_token = ?,
+          updated_at = ?
+      WHERE id = ?
+        AND attempts < 8
+        AND (
+          (status = 'pending' AND next_attempt_at <= ?)
+          OR
+          (status = 'sending' AND lease_until <= ?)
+        )
+    `).bind(
+      leaseUntil,
+      leaseToken,
+      timestamp,
+      candidate.id,
+      timestamp,
+      timestamp
+    ).run();
+
+    if (Number(claim?.meta?.changes || 0) !== 1) {
+      continue;
+    }
+
+    const notification = await db.prepare(`
+      SELECT id, recipient_telegram_id, message_text
+      FROM business_notifications
+      WHERE id = ?
+        AND status = 'sending'
+        AND lease_token = ?
+    `).bind(candidate.id, leaseToken).first();
+
+    if (!notification) continue;
+
+    try {
+      await send(
+        env,
+        notification.recipient_telegram_id,
+        notification.message_text
+      );
+
+      const completedAt = now();
+
+      const result = await db.prepare(`
+        UPDATE business_notifications
+        SET status = 'sent',
+            sent_at = ?,
+            lease_until = NULL,
+            lease_token = NULL,
+            last_error = NULL,
+            updated_at = ?
+        WHERE id = ?
+          AND status = 'sending'
+          AND lease_token = ?
+      `).bind(
+        completedAt,
+        completedAt,
+        notification.id,
+        leaseToken
+      ).run();
+
+      if (Number(result?.meta?.changes || 0) === 1) {
+        sent++;
+      }
+    } catch (error) {
+      const failedAt = now();
+      const attempts = Number(candidate.attempts || 0) + 1;
+      const permanentlyFailed = attempts >= 8;
+      const delaySeconds = Math.min(
+        3600,
+        30 * (2 ** Math.max(0, attempts - 1))
+      );
+      const nextAttempt = new Date(
+        Date.now() + delaySeconds * 1000
+      ).toISOString();
+
+      await db.prepare(`
+        UPDATE business_notifications
+        SET status = ?,
+            next_attempt_at = ?,
+            lease_until = NULL,
+            lease_token = NULL,
+            last_error = ?,
+            updated_at = ?
+        WHERE id = ?
+          AND status = 'sending'
+          AND lease_token = ?
+      `).bind(
+        permanentlyFailed ? 'failed' : 'pending',
+        nextAttempt,
+        String(error?.message || error).slice(0, 1000),
+        failedAt,
+        notification.id,
+        leaseToken
+      ).run();
+
+      if (permanentlyFailed) failed++;
+    }
+  }
+
+  const counts = await db.prepare(`
+    SELECT
+      SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS sent,
+      SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+      SUM(CASE WHEN status IN ('pending', 'sending') THEN 1 ELSE 0 END) AS pending
+    FROM business_notifications
+  `).first();
+
+  return {
+    sent,
+    failed,
+    pending: Number(counts?.pending || 0)
+  };
+}
+
 async function reviewPayment(env, db, admin, paymentId, approve) {
   if (!isAdmin(env, admin.id)) return;
 
