@@ -3499,6 +3499,35 @@ if (winnerPool.length < Number(draw.winner_count)) {
 ‎// -------------------- WORKER ENTRY POINT --------------------
 ‎
 ‎export default {
+  
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(
+      (async () => {
+        try {
+          if (!env.DB) {
+            throw new Error("D1 binding DB is missing");
+          }
+
+          const result = await processWinnerNotifications(
+            env,
+            env.DB
+          );
+
+          console.log(
+            "Scheduled winner notification retry:",
+            result
+          );
+        } catch (error) {
+          console.error(
+            "Scheduled notification retry failed:",
+            error?.stack || error
+          );
+          throw error;
+        }
+      })()
+    );
+  },
+
 ‎  async fetch(request, env) {
 ‎    const url = new URL(request.url);
 ‎
