@@ -72,36 +72,28 @@
 ‎}
 ‎
 ‎async function register(db, env, from) {
-‎  const timestamp = now();
-‎
-‎  await db.prepare(`
-‎    INSERT INTO users (
-‎      id, telegram_id, username, first_name,
-‎      last_name, is_admin, created_at, updated_at
-‎    )
-‎    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-‎    ON CONFLICT(telegram_id) DO UPDATE SET
-‎      username = excluded.username,
-‎      first_name = excluded.first_name,
-‎      last_name = excluded.last_name,
-‎      is_admin = MAX(users.is_admin, excluded.is_admin),
-‎      updated_at = excluded.updated_at
-‎  `).bind(
-‎    newId(), String(from.id), from.username || null,
-‎    from.first_name || null, from.last_name || null,
-‎    isAdmin(env, from.id) ? 1 : 0, timestamp, timestamp
-‎  ).run();
-‎
-‎  const user = await userByTelegram(db, from.id);
-‎
-‎  await db.prepare(`
-‎    INSERT OR IGNORE INTO wallets (
-‎      id, user_id, balance_cents, created_at, updated_at
-‎    ) VALUES (?, ?, 0, ?, ?)
-‎  `).bind(newId(), user.id, timestamp, timestamp).run();
-‎
-‎  return user;
-‎}
+  const timestamp = now();
+
+  await db.prepare(`
+    INSERT INTO users (
+      id, telegram_id, username, first_name,
+      last_name, is_admin, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(telegram_id) DO UPDATE SET
+      username = excluded.username,
+      first_name = excluded.first_name,
+      last_name = excluded.last_name,
+      is_admin = MAX(users.is_admin, excluded.is_admin),
+      updated_at = excluded.updated_at
+  `).bind(
+    newId(), String(from.id), from.username || null,
+    from.first_name || null, from.last_name || null,
+    isAdmin(env, from.id) ? 1 : 0, timestamp, timestamp
+  ).run();
+
+  return await userByTelegram(db, from.id);
+}
 ‎
 ‎async function setState(db, userId, state, data = {}) {
 ‎  await db.prepare(`
@@ -304,16 +296,15 @@ function paymentServiceOpen(settings, date = new Date()) {
 }
 
 ‎function homeKeyboard() {
-‎  return {
-‎    keyboard: [
-‎      [{ text: "🎟️ ዕጣዎች" }, { text: "💰 Wallet" }],
-‎      [{ text: "📥 Deposit" }, { text: "📤 Withdrawal" }],
-‎      [{ text: "📜 የእኔ ቁጥሮች" }, { text: "🏆 ውጤቶች" }],
-‎      [{ text: "ℹ️ እገዛ" }]
-‎    ],
-‎    resize_keyboard: true
-‎  };
-‎}
+  return {
+    keyboard: [
+      [{ text: "🎟️ ዕጣዎች" }],
+      [{ text: "📜 የእኔ ቁጥሮች" }, { text: "🏆 ውጤቶች" }],
+      [{ text: "ℹ️ እገዛ" }]
+    ],
+    resize_keyboard: true
+  };
+}
 ‎
 ‎async function home(env, chatId, firstName) {
 ‎  await send(
@@ -2358,34 +2349,34 @@ async function markPayoutPaid(env, db, admin, winnerId) {
 ‎‎// -------------------- ADMIN PANEL AND DRAW MANAGEMENT --------------------
 ‎
 ‎async function adminPanel(env, db, chatId) {
-‎  const [payments, deposits, withdrawals, payouts] = await Promise.all([
-‎    db.prepare("SELECT COUNT(*) AS n FROM payments WHERE status='pending'").first(),
-‎    db.prepare("SELECT COUNT(*) AS n FROM wallet_deposits WHERE status='pending'").first(),
-‎    db.prepare("SELECT COUNT(*) AS n FROM withdrawals WHERE status='pending'").first(),
-‎    db.prepare("SELECT COUNT(*) AS n FROM winner_payouts WHERE status='submitted'").first()
-‎  ]);
-‎
-‎  await send(
-‎    env, chatId,
-‎    `🛡️ <b>ADDIS ዕጣ Admin</b>\n\n` +
-‎    `⏳ Pending Payments: ${payments?.n || 0}\n` +
-‎    `📥 Pending Deposits: ${deposits?.n || 0}\n` +
-‎    `📤 Pending Withdrawals: ${withdrawals?.n || 0}\n` +
-‎    `🏆 Winner Payouts: ${payouts?.n || 0}\n\n` +
-‎    `<b>Commands</b>\n` +
-‎    `/pending\n` +
-‎    `/set_telebirr NUMBER\n` +
-‎    `/service on ወይም /service off\n` +
-‎    `/draw_create NAME|TYPE|PRIZE|TOTAL|FEE_ETB|WINNERS\n` +
-‎    `/prize_set DRAW_ID RANK AMOUNT_ETB\n` +
-‎    `/draw_open DRAW_ID\n` +
-‎    `/draw_hash DRAW_ID\n` +
+  const [payments, payouts] = await Promise.all([
+    db.prepare(
+      "SELECT COUNT(*) AS n FROM payments WHERE status='pending'"
+    ).first(),
+    db.prepare(
+      "SELECT COUNT(*) AS n FROM winner_payouts WHERE status='submitted'"
+    ).first()
+  ]);
+
+  await send(
+    env, chatId,
+    `🛡️ <b>ADDIS ዕጣ Admin</b>\n\n` +
+    `⏳ Pending Payments: ${payments?.n || 0}\n` +
+    `🏆 Winner Payouts: ${payouts?.n || 0}\n\n` +
+    `<b>Commands</b>\n` +
+    `/pending\n` +
+    `/set_telebirr NUMBER\n` +
+    `/service on ወይም /service off\n` +
+    `/draw_create NAME|TYPE|PRIZE|TOTAL|FEE_ETB|WINNERS\n` +
+    `/prize_set DRAW_ID RANK AMOUNT_ETB\n` +
+    `/draw_open DRAW_ID\n` +
+    `/draw_hash DRAW_ID\n` +
     `/draw_close DRAW_ID\n` +
-‎    `/draw_run DRAW_ID\n` +
-‎    `/draw_publish DRAW_ID\n` +
-‎    `/payouts`
-‎  );
-‎}
+    `/draw_run DRAW_ID\n` +
+    `/draw_publish DRAW_ID\n` +
+    `/payouts`
+  );
+}
 ‎
 ‎async function setTelebirr(env, db, admin, chatId, number) {
 ‎  if (!isAdmin(env, admin.id)) return;
@@ -3269,35 +3260,20 @@ const pool = await seededShuffle(eligible, seedHex);
 ‎    return;
 ‎  }
 ‎
-‎  if (text === "/help" || text === "ℹ️ እገዛ") {
-‎    await send(env, chatId,
-‎      "ℹ️ <b>ADDIS ዕጣ እገዛ</b>\n\n" +
-‎      "🎟️ ዕጣዎች — ክፍት ዕጣዎች\n" +
-‎      "💰 Wallet — ቀሪ ሂሳብ\n" +
-‎      "📥 Deposit — Wallet ገንዘብ ማስገባት\n" +
-‎      "📤 Withdrawal — Wallet ገንዘብ ማውጣት\n" +
-‎      "📜 የእኔ ቁጥሮች — የገዙት ቁጥሮች\n" +
-‎      "🏆 ውጤቶች — የታተሙ ውጤቶች");
-‎    return;
-‎  }
+‎    if (text === "/help" || text === "ℹ️ እገዛ") {
+    await send(env, chatId,
+      "ℹ️ <b>ADDIS ዕጣ እገዛ</b>\n\n" +
+      "🎟️ ዕጣዎች — ክፍት ዕጣዎችን ማየትና ቁጥር መምረጥ\n" +
+      "💳 ክፍያ — በTelebirr በቀጥታ መክፈልና ማስረጃ መላክ\n" +
+      "📜 የእኔ ቁጥሮች — የገዙትን ቁጥሮች ማየት\n" +
+      "🏆 ውጤቶች — የታተሙ የዕጣ ውጤቶችን ማየት\n\n" +
+      "የዕጣ መግዣ እና የክፍያ ማስረጃ መላኪያ ሰዓት፦\n" +
+      "ከጠዋቱ 3 እስከ ምሽቱ 12 ብቻ ነው።");
+    return;
+  }
 ‎
 ‎  if (text === "🎟️ ዕጣዎች" || text === "/draws") {
 ‎    await showDraws(env, db, chatId);
-‎    return;
-‎  }
-‎
-‎  if (text === "💰 Wallet" || text === "/wallet") {
-‎    await showWallet(env, db, chatId, user);
-‎    return;
-‎  }
-‎
-‎  if (text === "📥 Deposit" || text === "/deposit") {
-‎    await startDeposit(env, db, chatId, user);
-‎    return;
-‎  }
-‎
-‎  if (text === "📤 Withdrawal" || text === "/withdraw") {
-‎    await startWithdrawal(env, db, chatId, user);
 ‎    return;
 ‎  }
 ‎
