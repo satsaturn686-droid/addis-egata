@@ -3131,22 +3131,6 @@ const pool = await seededShuffle(eligible, seedHex);
 ‎    );
 ‎  }
 ‎
-‎  const deposits = await db.prepare(`
-‎    SELECT id, amount_cents, transaction_reference, user_id
-‎    FROM wallet_deposits WHERE status = 'pending' LIMIT 15
-‎  `).all();
-‎
-‎  for (const d of deposits.results || []) {
-‎    await send(env, chatId,
-‎      `📥 <b>Deposit</b>\n${(d.amount_cents / 100).toFixed(2)} ETB\n` +
-‎      `Reference: <code>${escapeHtml(d.transaction_reference)}</code>`,
-‎      { inline_keyboard: [[
-‎        { text: "✅ Approve", callback_data: `deposit_approve:${d.id}` },
-‎        { text: "❌ Reject", callback_data: `deposit_reject:${d.id}` }
-‎      ]] }
-‎    );
-‎  }
-‎}
 ‎
 ‎async function showPayouts(env, db, chatId) {
 ‎  if (!isAdmin(env, chatId)) return;
