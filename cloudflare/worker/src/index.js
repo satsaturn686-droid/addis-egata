@@ -923,6 +923,7 @@ async function processBusinessNotifications(env, db) {
   };
 }
 
+‎
 async function reviewPayment(env, db, admin, paymentId, approve) {
   if (!isAdmin(env, admin.id)) return;
 
@@ -939,7 +940,72 @@ async function reviewPayment(env, db, admin, paymentId, approve) {
 
   if (!payment || payment.status !== "pending") return;
 
+  if (!payment.telegram_id) {
+    await send(
+      env,
+      admin.id,
+      "⚠️ የደንበኛው Telegram ID አልተገኘም። Payment አልተቀየረም።"
+    );
+    return;
+  }
+
   const timestamp = now();
+  const targetStatus = approve ? "approved" : "rejected";
+  const eventType = approve
+    ? "payment_approved"
+    : "payment_rejected";
+
+  const notificationKey = `payment:${paymentId}:${targetStatus}`;
+
+  const notificationMessage = approve
+    ? `🎉 <b>ክፍያዎ ተረጋግጧል!</b>\n\n` +
+      `የዕጣ ቁጥርዎ፦ ${payment.number}\n` +
+      `መልካም ዕድል!`
+    : `❌ የክፍያ ማስረጃዎ ውድቅ ተደርጓል።\n` +
+      `ቁጥር፦ ${payment.number}\n` +
+      `Admin ያነጋግሩ።`;
+
+  const notificationStatement = db.prepare(`
+    INSERT INTO business_notifications (
+      id,
+      notification_key,
+      event_type,
+      recipient_telegram_id,
+      message_text,
+      status,
+      attempts,
+      next_attempt_at,
+      created_at,
+      updated_at
+    )
+    SELECT
+      ?, ?, ?, ?, ?,
+      'pending',
+      0,
+      ?, ?, ?
+    WHERE EXISTS (
+      SELECT 1
+      FROM payments
+      WHERE id = ?
+        AND status = ?
+        AND verified_by = ?
+        AND verified_at = ?
+    )
+    ON CONFLICT(notification_key) DO NOTHING
+  `).bind(
+    newId(),
+    notificationKey,
+    eventType,
+    String(payment.telegram_id),
+    notificationMessage,
+    timestamp,
+    timestamp,
+    timestamp,
+    paymentId,
+    targetStatus,
+    adminUser.id,
+    timestamp
+  );
 
   let results;
 
@@ -954,13 +1020,13 @@ async function reviewPayment(env, db, admin, paymentId, approve) {
         WHERE id = ?
           AND status = 'pending'
           AND EXISTS (
-  SELECT 1
-  FROM entries
-  JOIN draws ON draws.id = entries.draw_id
-  WHERE entries.id = payments.entry_id
-    AND entries.status = 'pending_payment'
-    AND draws.status IN ('open', 'full')
-)
+            SELECT 1
+            FROM entries
+            JOIN draws ON draws.id = entries.draw_id
+            WHERE entries.id = payments.entry_id
+              AND entries.status = 'pending_payment'
+              AND draws.status IN ('open', 'full')
+          )
       `).bind(
         adminUser.id,
         timestamp,
@@ -975,12 +1041,12 @@ async function reviewPayment(env, db, admin, paymentId, approve) {
             updated_at = ?
         WHERE id = ?
           AND status = 'pending_payment'
-       AND EXISTS (
-  SELECT 1
-  FROM draws
-  WHERE draws.id = entries.draw_id
-    AND draws.status IN ('open', 'full')
-)
+          AND EXISTS (
+            SELECT 1
+            FROM draws
+            WHERE draws.id = entries.draw_id
+              AND draws.status IN ('open', 'full')
+          )
           AND EXISTS (
             SELECT 1
             FROM payments
@@ -991,7 +1057,9 @@ async function reviewPayment(env, db, admin, paymentId, approve) {
         timestamp,
         timestamp,
         payment.entry_id
-      )
+      ),
+
+      notificationStatement
     ]);
   } else {
     results = await db.batch([
@@ -1031,7 +1099,9 @@ async function reviewPayment(env, db, admin, paymentId, approve) {
       `).bind(
         timestamp,
         payment.entry_id
-      )
+      ),
+
+      notificationStatement
     ]);
   }
 
@@ -1045,7 +1115,7 @@ async function reviewPayment(env, db, admin, paymentId, approve) {
 
   if (
     !results ||
-    results.length !== 2 ||
+    results.length !== 3 ||
     paymentChanges !== 1 ||
     entryChanges !== 1
   ) {
@@ -1082,22 +1152,23 @@ async function reviewPayment(env, db, admin, paymentId, approve) {
     return;
   }
 
-  if (approve) {
-    await send(
-      env,
-      payment.telegram_id,
-      `🎉 <b>ክፍያዎ ተረጋግጧል!</b>\n\n` +
-      `የዕጣ ቁጥርዎ፦ ${payment.number}\n` +
-      `መልካም ዕድል!`
-    );
-  } else {
-    await send(
-      env,
-      payment.telegram_id,
-      `❌ የክፍያ ማስረጃዎ ውድቅ ተደርጓል።\n` +
-      `ቁጥር፦ ${payment.number}\n` +
-      `Admin ያነጋግሩ።`
-    );
+  const notificationChanges = Number(
+    results?.[2]?.meta?.changes || 0
+  );
+
+  if (notificationChanges !== 1) {
+    const existingNotification = await db.prepare(`
+      SELECT id
+      FROM business_notifications
+      WHERE notification_key = ?
+    `).bind(notificationKey).first();
+
+    if (!existingNotification) {
+      console.error(
+        "Payment notification was not enqueued:",
+        paymentId
+      );
+    }
   }
 
   await audit(
@@ -1108,9 +1179,18 @@ async function reviewPayment(env, db, admin, paymentId, approve) {
     paymentId,
     { entryId: payment.entry_id }
   );
+
+  try {
+    await processBusinessNotifications(env, db);
+  } catch (error) {
+    console.error(
+      "Payment notification processing failed:",
+      paymentId,
+      error?.stack || error
+    );
+  }
 }
 
-‎
 ‎async function walletBalance(db, userId) {
 ‎  const row = await db.prepare(`
 ‎    SELECT balance_cents FROM wallets WHERE user_id = ?
