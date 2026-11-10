@@ -3212,7 +3212,7 @@ if (winnerPool.length < Number(draw.winner_count)) {
 ‎      ]] }
 ‎    );
 ‎  }
-‎
+‎}
 ‎
 ‎async function showPayouts(env, db, chatId) {
 ‎  if (!isAdmin(env, chatId)) return;
