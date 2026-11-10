@@ -3207,17 +3207,6 @@ const pool = await seededShuffle(eligible, seedHex);
 ‎  } else if (action === "approve" || action === "reject") {
 ‎    if (!isAdmin(env, from.id)) return;
 ‎    await reviewPayment(env, db, from, parts[0], action === "approve");
-‎  } else if (action === "wallet_deposit") {
-‎    await startDeposit(env, db, chatId, user);
-‎  } else if (action === "wallet_withdraw") {
-‎    await startWithdrawal(env, db, chatId, user);
-‎  } else if (action === "deposit_approve" || action === "deposit_reject") {
-‎    if (!isAdmin(env, from.id)) return;
-‎    await reviewDeposit(env, db, from, parts[0], action === "deposit_approve");
-‎  } else if (action === "withdraw_paid" || action === "withdraw_reject") {
-‎    if (!isAdmin(env, from.id)) return;
-‎    await reviewWithdrawal(env, db, from, parts[0],
-‎      action === "withdraw_paid" ? "paid" : "reject");
 ‎  } else if (action === "payout_approve") {
 ‎    if (!isAdmin(env, from.id)) return;
 ‎    await approvePayout(env, db, from, parts[0]);
