@@ -2642,35 +2642,83 @@ async function completePayoutPaid(
       AND wp.status = 'approved'
   `).bind(winnerId).first();
 
-  if (!payout) {
+  if (!payout || !payout.telegram_id) {
     await clearState(db, adminUser.id);
     await send(
       env,
       admin.id,
-      "⚠️ የሽልማት መረጃው አልተገኘም ወይም ቀድሞ ተከፍሏል።"
+      "⚠️ የሽልማት መረጃው ወይም Telegram ID አልተገኘም።"
     );
     return;
   }
 
-  try {
-    const result = await db.prepare(`
-      UPDATE winner_payouts
-      SET status = 'paid',
-          transfer_reference = ?,
-          paid_by = ?,
-          paid_at = ?,
-          updated_at = ?
-      WHERE winner_id = ?
-        AND status = 'approved'
-    `).bind(
-      cleanReference,
-      adminUser.id,
-      now(),
-      now(),
-      winnerId
-    ).run();
+  const timestamp = now();
+  const notificationKey = `payout:${winnerId}:paid`;
+  const notificationMessage =
+    "🎉 ሽልማትዎ በTelebirr ተከፍሏል። እንኳን ደስ አለዎት!";
 
-    if (Number(result?.meta?.changes || 0) !== 1) {
+  try {
+    const results = await db.batch([
+      db.prepare(`
+        UPDATE winner_payouts
+        SET status = 'paid',
+            transfer_reference = ?,
+            paid_by = ?,
+            paid_at = ?,
+            updated_at = ?
+        WHERE winner_id = ?
+          AND status = 'approved'
+      `).bind(
+        cleanReference,
+        adminUser.id,
+        timestamp,
+        timestamp,
+        winnerId
+      ),
+
+      db.prepare(`
+        INSERT INTO business_notifications (
+          id,
+          notification_key,
+          event_type,
+          recipient_telegram_id,
+          message_text,
+          status,
+          attempts,
+          next_attempt_at,
+          created_at,
+          updated_at
+        )
+        SELECT
+          ?, ?, 'winner_payout_paid', ?,
+          ?, 'pending', 0, ?, ?, ?
+        FROM winner_payouts
+        WHERE winner_id = ?
+          AND status = 'paid'
+          AND transfer_reference = ?
+          AND paid_by = ?
+          AND paid_at = ?
+        ON CONFLICT(notification_key) DO NOTHING
+      `).bind(
+        newId(),
+        notificationKey,
+        String(payout.telegram_id),
+        notificationMessage,
+        timestamp,
+        timestamp,
+        timestamp,
+        winnerId,
+        cleanReference,
+        adminUser.id,
+        timestamp
+      )
+    ]);
+
+    if (
+      !results ||
+      results.length !== 2 ||
+      Number(results[0]?.meta?.changes || 0) !== 1
+    ) {
       await send(
         env,
         admin.id,
@@ -2678,13 +2726,30 @@ async function completePayoutPaid(
       );
       return;
     }
+
+    const notification = await db.prepare(`
+      SELECT id
+      FROM business_notifications
+      WHERE notification_key = ?
+    `).bind(notificationKey).first();
+
+    if (!notification) {
+      console.error(
+        "Winner payout notification was not enqueued:",
+        winnerId
+      );
+    }
   } catch (error) {
-    console.error("Payout payment update failed", winnerId, error);
+    console.error(
+      "Payout payment and notification batch failed:",
+      winnerId,
+      error?.stack || error
+    );
 
     await send(
       env,
       admin.id,
-      "⚠️ Reference ቀድሞ ተጠቅሞ ሊሆን ይችላል። የክፍያ መዝገቡን ያረጋግጡ።"
+      "⚠️ ክፍያው ወይም የማሳወቂያ መዝገቡ አልተሳካም። DB ያረጋግጡ።"
     );
     return;
   }
@@ -2701,13 +2766,13 @@ async function completePayoutPaid(
   );
 
   try {
-    await send(
-      env,
-      payout.telegram_id,
-      "🎉 ሽልማትዎ በTelebirr ተከፍሏል። እንኳን ደስ አለዎት!"
-    );
+    await processBusinessNotifications(env, db);
   } catch (error) {
-    console.error("Winner paid notification failed", winnerId, error);
+    console.error(
+      "Winner payout notification processing failed:",
+      winnerId,
+      error?.stack || error
+    );
   }
 
   await send(
