@@ -1937,7 +1937,9 @@ async function processWinnerNotifications(env, db, drawId = null) {
     if (!notification) continue;
 
     try {
+      
       let message;
+      let replyMarkup;
 
       if (notification.prize_type === "cash") {
         message =
@@ -1945,63 +1947,53 @@ async function processWinnerNotifications(env, db, drawId = null) {
           `የዕጣ አሸናፊ ሆነዋል።\n` +
           `ደረጃ፦ ${notification.rank}\n` +
           `የሽልማት መጠን፦ ${(notification.prize_amount_cents / 100).toFixed(2)} ብር\n\n` +
-          `💰 የሽልማት ገንዘብዎ ወደ Wallet ሂሳብዎ ገብቷል።\n` +
-          `Wallet እና History ይመልከቱ።`;
+          `💵 የሽልማት ገንዘብዎ በቀጥታ በTelebirr ይላክልዎታል።\n` +
+          `የTelebirr ቁጥርዎን ለማስገባት ከታች ያለውን ይጫኑ።`;
       } else {
         message =
           `🏆 <b>እንኳን ደስ አለዎት!</b>\n\n` +
           `የ${escapeHtml(notification.prize_name)} አሸናፊ ሆነዋል።\n` +
-          `ሙሉ ስምዎን እና ስልክ ቁጥርዎን ይላኩ።`;
+          `ሙሉ ስምዎን እና ስልክ ቁጥርዎን ለማስገባት ከታች ያለውን ይጫኑ።`;
       }
 
-      await send(env, notification.telegram_id, message);
+      replyMarkup = {
+        inline_keyboard: [[
+          {
+            text: "🎁 የሽልማት መረጃ ማስገቢያ",
+            callback_data: `winner_claim:${notification.winner_id}`
+          }
+        ]]
+      };
+
+      await send(
+        env,
+        notification.telegram_id,
+        message,
+        replyMarkup
+      );
 
       const completedAt = now();
 
-      const statements = [];
+      await db.prepare(`
+        UPDATE winner_notifications
+        SET status = 'sent',
+            sent_at = ?,
+            lease_until = NULL,
+            lease_token = NULL,
+            last_error = NULL,
+            updated_at = ?
+        WHERE id = ?
+          AND status = 'sending'
+          AND lease_token = ?
+      `).bind(
+        completedAt,
+        completedAt,
+        notification.notification_id,
+        leaseToken
+      ).run();
 
-      if (notification.prize_type !== "cash") {
-        statements.push(
-          db.prepare(`
-            INSERT INTO user_states (
-              user_id, state, data_json, updated_at
-            ) VALUES (?, 'winner_name', ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET
-              state = excluded.state,
-              data_json = excluded.data_json,
-              updated_at = excluded.updated_at
-          `).bind(
-            notification.user_id,
-            JSON.stringify({
-              winnerId: notification.winner_id
-            }),
-            completedAt
-          )
-        );
-      }
-
-      statements.push(
-        db.prepare(`
-          UPDATE winner_notifications
-          SET status = 'sent',
-              sent_at = ?,
-              lease_until = NULL,
-              lease_token = NULL,
-              last_error = NULL,
-              updated_at = ?
-          WHERE id = ?
-            AND status = 'sending'
-            AND lease_token = ?
-        `).bind(
-          completedAt,
-          completedAt,
-          notification.notification_id,
-          leaseToken
-        )
-      );
-
-      await db.batch(statements);
       sent++;
+
 
     } catch (error) {
       const errorMessage = String(
@@ -2105,6 +2097,48 @@ async function retryWinnerNotifications(env, db, admin, chatId) {
 }
 
 ‎
+async function startWinnerClaim(env, db, chatId, user, winnerId) {
+  const payout = await db.prepare(`
+    SELECT prize_type, status
+    FROM winner_payouts
+    WHERE winner_id = ?
+      AND user_id = ?
+  `).bind(winnerId, user.id).first();
+
+  if (!payout || payout.status !== "pending") {
+    await send(
+      env,
+      chatId,
+      "⚠️ ይህ የሽልማት መረጃ ቀድሞ ተልኳል ወይም አይገኝም።"
+    );
+    return;
+  }
+
+  if (payout.prize_type === "cash") {
+    await setState(db, user.id, "winner_telebirr", {
+      winnerId
+    });
+
+    await send(
+      env,
+      chatId,
+      "📱 የሽልማት ገንዘብዎ የሚላክበትን የTelebirr ቁጥር ያስገቡ።"
+    );
+    return;
+  }
+
+  await setState(db, user.id, "winner_name", {
+    winnerId
+  });
+
+  await send(
+    env,
+    chatId,
+    "🎁 ለሽልማት ርክክብ ሙሉ ስምዎን ያስገቡ።"
+  );
+}
+
+
 async function submitWinnerDetails(env, db, chatId, user, value) {
   const state = await getState(db, user.id);
   if (!state) return false;
@@ -2296,55 +2330,165 @@ async function approvePayout(env, db, admin, winnerId) {
   }
 }
 
+
 async function markPayoutPaid(env, db, admin, winnerId) {
   if (!isAdmin(env, admin.id)) return;
 
+  const payout = await db.prepare(`
+    SELECT status
+    FROM winner_payouts
+    WHERE winner_id = ?
+  `).bind(winnerId).first();
+
+  if (!payout || payout.status !== "approved") {
+    await send(
+      env,
+      admin.id,
+      "⚠️ ይህ ሽልማት ለክፍያ ዝግጁ አይደለም።"
+    );
+    return;
+  }
+
   const adminUser = await userByTelegram(db, admin.id);
+
+  if (!adminUser) return;
+
+  await setState(db, adminUser.id, "payout_transfer_reference", {
+    winnerId
+  });
+
+  await send(
+    env,
+    admin.id,
+    "📱 የTelebirr ክፍያውን ከፈጸሙ በኋላ Transaction Reference ያስገቡ።"
+  );
+}
+
+
+async function completePayoutPaid(
+  env,
+  db,
+  admin,
+  adminUser,
+  winnerId,
+  reference
+) {
+  if (!isAdmin(env, admin.id)) return;
+
+  const cleanReference = String(reference || "").trim();
+
+  if (
+    cleanReference.length < 4 ||
+    cleanReference.length > 100 ||
+    /[\r\n<>]/.test(cleanReference)
+  ) {
+    await send(
+      env,
+      admin.id,
+      "⚠️ ትክክለኛ Transaction Reference ያስገቡ።"
+    );
+    return;
+  }
+
+  const existingReference = await db.prepare(`
+    SELECT winner_id
+    FROM winner_payouts
+    WHERE transfer_reference = ?
+      AND winner_id <> ?
+  `).bind(cleanReference, winnerId).first();
+
+  if (existingReference) {
+    await send(
+      env,
+      admin.id,
+      "⚠️ ይህ Transaction Reference ቀድሞ ተጠቅሟል።"
+    );
+    return;
+  }
 
   const payout = await db.prepare(`
     SELECT wp.*, u.telegram_id
     FROM winner_payouts wp
     JOIN users u ON u.id = wp.user_id
     WHERE wp.winner_id = ?
+      AND wp.status = 'approved'
   `).bind(winnerId).first();
 
-  if (!payout || payout.status !== "approved") return;
-
-  const result = await db.prepare(`
-    UPDATE winner_payouts
-    SET status = 'paid',
-        updated_at = ?
-    WHERE winner_id = ?
-      AND status = 'approved'
-  `).bind(now(), winnerId).run();
-
-  if (Number(result?.meta?.changes || 0) !== 1) {
+  if (!payout) {
+    await clearState(db, adminUser.id);
     await send(
       env,
       admin.id,
-      "⚠️ የክፍያ ማረጋገጫው አልተሳካም። እባክዎ ደግመው ያረጋግጡ።"
+      "⚠️ የሽልማት መረጃው አልተገኘም ወይም ቀድሞ ተከፍሏል።"
     );
     return;
   }
+
+  try {
+    const result = await db.prepare(`
+      UPDATE winner_payouts
+      SET status = 'paid',
+          transfer_reference = ?,
+          paid_by = ?,
+          paid_at = ?,
+          updated_at = ?
+      WHERE winner_id = ?
+        AND status = 'approved'
+    `).bind(
+      cleanReference,
+      adminUser.id,
+      now(),
+      now(),
+      winnerId
+    ).run();
+
+    if (Number(result?.meta?.changes || 0) !== 1) {
+      await send(
+        env,
+        admin.id,
+        "⚠️ ክፍያው አልተመዘገበም። ደግመው ያረጋግጡ።"
+      );
+      return;
+    }
+  } catch (error) {
+    console.error("Payout payment update failed", winnerId, error);
+
+    await send(
+      env,
+      admin.id,
+      "⚠️ Reference ቀድሞ ተጠቅሞ ሊሆን ይችላል። የክፍያ መዝገቡን ያረጋግጡ።"
+    );
+    return;
+  }
+
+  await clearState(db, adminUser.id);
 
   await audit(
     db,
     adminUser.id,
     "winner_payout_paid",
     "winner_payout",
-    winnerId
+    winnerId,
+    { transferReference: cleanReference }
   );
 
   try {
     await send(
       env,
       payout.telegram_id,
-      "🎉 ሽልማትዎ ተከፍሏል/ተረክበዋል። እንኳን ደስ አለዎት!"
+      "🎉 ሽልማትዎ በTelebirr ተከፍሏል። እንኳን ደስ አለዎት!"
     );
   } catch (error) {
     console.error("Winner paid notification failed", winnerId, error);
   }
+
+  await send(
+    env,
+    admin.id,
+    "✅ ክፍያው ከReference ጋር በትክክል ተመዝግቧል።"
+  );
 }
+
 
 ‎‎// -------------------- ADMIN PANEL AND DRAW MANAGEMENT --------------------
 ‎
@@ -3110,9 +3254,11 @@ const pool = await seededShuffle(eligible, seedHex);
 ‎    await showDraw(env, db, chatId, parts[0]);
 ‎  } else if (action === "numbers") {
 ‎    await showNumbers(env, db, chatId, parts[0], Number(parts[1]));
-‎  } else if (action === "reserve") {
-‎    await reserveNumber(env, db, chatId, user, parts[0], Number(parts[1]));
-‎  } else if (action === "approve" || action === "reject") {
+  } else if (action === "reserve") {
+    await reserveNumber(env, db, chatId, user, parts[0], Number(parts[1]));
+  } else if (action === "winner_claim") {
+    await startWinnerClaim(env, db, chatId, user, parts[0]);
+  } else if (action === "approve" || action === "reject") {
 ‎    if (!isAdmin(env, from.id)) return;
 ‎    await reviewPayment(env, db, from, parts[0], action === "approve");
 ‎  } else if (action === "payout_approve") {
@@ -3233,6 +3379,27 @@ const pool = await seededShuffle(eligible, seedHex);
 ‎
 ‎  const state = await getState(db, user.id);
 ‎
+  
+  if (state?.state === "payout_transfer_reference") {
+    if (!isAdmin(env, from.id)) {
+      await clearState(db, user.id);
+      return;
+    }
+
+    if (text) {
+      await completePayoutPaid(
+        env,
+        db,
+        from,
+        user,
+        state.data.winnerId,
+        text
+      );
+    }
+
+    return;
+  }
+
 ‎  if (state?.state === "entry_reference" && text) {
 ‎    await submitReference(env, db, chatId, user, text);
 ‎    return;
@@ -3262,54 +3429,26 @@ const pool = await seededShuffle(eligible, seedHex);
     return;
   }
 ‎
-‎  if (state?.state === "deposit_amount" && text) {
-‎    const amount = Number(text);
-‎    const cents = Math.round(amount * 100);
-‎    if (!Number.isSafeInteger(cents) || cents < 100 || cents > 100000000) {
-‎      await send(env, chatId, "ትክክለኛ መጠን ያስገቡ። ዝቅተኛው 1 ብር ነው።");
-‎      return;
-‎    }
-‎
-‎    const settings = await getPaymentSettings(db);
-‎    if (!paymentServiceOpen(settings)) {
-‎      await clearState(db, user.id);
-‎      await send(env, chatId, "⏰ የክፍያ አገልግሎት አሁን ዝግ ነው።");
-‎      return;
-‎    }
-‎
-‎    await setState(db, user.id, "deposit_reference", { amountCents: cents });
-‎    await send(env, chatId,
-‎      `📱 Telebirr፦ <code>${escapeHtml(settings?.telebirr_number || env.TELEBIRR_NUMBER || "Admin ያነጋግሩ")}</code>\n` +
-‎      `መጠን፦ ${(cents / 100).toFixed(2)} ብር\n\n` +
-‎      "ክፍያውን ከፈጸሙ በኋላ Transaction Reference ይላኩ።");
-‎    return;
-‎  }
-‎
-‎  if (state?.state === "deposit_reference" && text) {
-‎    await submitDepositReference(env, db, chatId, user, text);
-‎    return;
-‎  }
-‎
-‎  if (state?.state === "deposit_receipt" && message.photo?.length) {
-‎    await submitDepositReceipt(env, db, chatId, user,
-‎      message.photo[message.photo.length - 1].file_id);
-‎    return;
-‎  }
-‎
-‎  if (state?.state === "deposit_receipt" && message.document) {
-‎    await submitDepositReceipt(env, db, chatId, user, message.document.file_id);
-‎    return;
-‎  }
-‎
-‎  if (state?.state === "withdraw_amount" && text) {
-‎    await submitWithdrawalAmount(env, db, chatId, user, text);
-‎    return;
-‎  }
-‎
-‎  if (state?.state === "withdraw_number" && text) {
-‎    await submitWithdrawalNumber(env, db, chatId, user, text);
-‎    return;
-‎  }
+‎  
+  if (
+    [
+      "deposit_amount",
+      "deposit_reference",
+      "deposit_receipt",
+      "withdraw_amount",
+      "withdraw_number"
+    ].includes(state?.state)
+  ) {
+    await clearState(db, user.id);
+
+    await send(
+      env,
+      chatId,
+      "ℹ️ Wallet, Deposit እና Withdraw አገልግሎቶች አይገኙም። የዕጣ ግዢ በቀጥታ Telebirr ነው።"
+    );
+    return;
+  }
+
 ‎
 ‎  if (
 ‎    state?.state === "winner_telebirr" ||
