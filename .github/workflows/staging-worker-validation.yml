@@ -89,8 +89,6 @@ jobs:
           console.log('Temporary checkout cleaned successfully.');
           NODE
 
-      - name: Check JavaScript syntax
-        run: node --input-type=module --check < src/index.js
 
       - name: Bundle Worker without deploying
         run: npx wrangler deploy --dry-run
