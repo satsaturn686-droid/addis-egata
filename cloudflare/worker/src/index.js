@@ -622,6 +622,7 @@ async function submitReference(env, db, chatId, user, reference) {
           amount_cents,
           transaction_reference,
           receipt_file_id,
+          receipt_file_type,
           status,
           created_at,
           updated_at
@@ -630,6 +631,7 @@ async function submitReference(env, db, chatId, user, reference) {
           ?,
           e.id,
           e.user_id,
+          ?,
           ?,
           ?,
           ?,
@@ -642,11 +644,11 @@ async function submitReference(env, db, chatId, user, reference) {
           AND e.status = 'pending_payment'
           AND e.updated_at = ?
         AND EXISTS (
-  SELECT 1
-  FROM draws d
-  WHERE d.id = e.draw_id
-    AND d.status IN ('open', 'full')
-)
+          SELECT 1
+          FROM draws d
+          WHERE d.id = e.draw_id
+            AND d.status IN ('open', 'full')
+        )
           AND NOT EXISTS (
             SELECT 1
             FROM payments p
@@ -658,6 +660,7 @@ async function submitReference(env, db, chatId, user, reference) {
         entry.entry_fee_cents,
         cleanReference,
         fileId,
+        fileType,
         timestamp,
         timestamp,
         entryId,
