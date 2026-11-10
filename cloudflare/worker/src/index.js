@@ -2921,7 +2921,7 @@ const pool = await seededShuffle(eligible, seedHex);
       winnerId,
       entry.user_id,
       draw.prize_type,
-      draw.prize_type === "cash" ? "paid" : "pending",
+      "pending",
       timestamp,
       timestamp
     ));
