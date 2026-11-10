@@ -3370,17 +3370,30 @@ const pool = await seededShuffle(eligible, seedHex);
 ‎    await submitReference(env, db, chatId, user, text);
 ‎    return;
 ‎  }
+
+‎    if (state?.state === "entry_receipt" && message.photo?.length) {
+    await submitReceipt(
+      env,
+      db,
+      chatId,
+      user,
+      message.photo[message.photo.length - 1].file_id,
+      "photo"
+    );
+    return;
+  }
 ‎
-‎  if (state?.state === "entry_receipt" && message.photo?.length) {
-‎    await submitReceipt(env, db, chatId, user,
-‎      message.photo[message.photo.length - 1].file_id);
-‎    return;
-‎  }
-‎
-‎  if (state?.state === "entry_receipt" && message.document) {
-‎    await submitReceipt(env, db, chatId, user, message.document.file_id);
-‎    return;
-‎  }
+‎    if (state?.state === "entry_receipt" && message.document) {
+    await submitReceipt(
+      env,
+      db,
+      chatId,
+      user,
+      message.document.file_id,
+      "document"
+    );
+    return;
+  }
 ‎
 ‎  if (state?.state === "deposit_amount" && text) {
 ‎    const amount = Number(text);
