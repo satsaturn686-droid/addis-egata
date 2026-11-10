@@ -543,8 +543,6 @@ async function submitReference(env, db, chatId, user, reference) {
   return true;
 }
 
-‎async function submitReference(env, db, chatId, user, reference) {
-
 ‎async function submitReceipt(env, db, chatId, user, fileId) {
   const state = await getState(db, user.id);
   if (!state || state.state !== "entry_receipt") return false;
