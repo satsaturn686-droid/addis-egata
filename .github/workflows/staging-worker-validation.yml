@@ -90,7 +90,7 @@ jobs:
           NODE
 
       - name: Check JavaScript syntax
-        run: node --check src/index.js
+        run: node --input-type=module --check < src/index.js
 
       - name: Bundle Worker without deploying
         run: npx wrangler deploy --dry-run
