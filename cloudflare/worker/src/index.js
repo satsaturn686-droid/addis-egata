@@ -3790,33 +3790,58 @@ if (winnerPool.length < Number(draw.winner_count)) {
 ‎
 ‎export default {
   
+  
   async scheduled(controller, env, ctx) {
     ctx.waitUntil(
       (async () => {
-        try {
-          if (!env.DB) {
-            throw new Error("D1 binding DB is missing");
-          }
+        if (!env.DB) {
+          throw new Error("D1 binding DB is missing");
+        }
 
-          const result = await processWinnerNotifications(
-            env,
-            env.DB
-          );
+        const results = await Promise.allSettled([
+          processWinnerNotifications(env, env.DB),
+          processBusinessNotifications(env, env.DB)
+        ]);
 
+        const [winnerResult, businessResult] = results;
+
+        if (winnerResult.status === "fulfilled") {
           console.log(
             "Scheduled winner notification retry:",
-            result
+            winnerResult.value
           );
-        } catch (error) {
+        } else {
           console.error(
-            "Scheduled notification retry failed:",
-            error?.stack || error
+            "Scheduled winner notification retry failed:",
+            winnerResult.reason?.stack || winnerResult.reason
           );
-          throw error;
+        }
+
+        if (businessResult.status === "fulfilled") {
+          console.log(
+            "Scheduled business notification retry:",
+            businessResult.value
+          );
+        } else {
+          console.error(
+            "Scheduled business notification retry failed:",
+            businessResult.reason?.stack || businessResult.reason
+          );
+        }
+
+        const failures = results.filter(
+          result => result.status === "rejected"
+        );
+
+        if (failures.length > 0) {
+          throw new Error(
+            `${failures.length} scheduled notification processor(s) failed`
+          );
         }
       })()
     );
   },
+
 
 ‎  async fetch(request, env) {
 ‎    const url = new URL(request.url);
