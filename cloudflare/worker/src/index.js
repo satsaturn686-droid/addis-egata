@@ -543,7 +543,7 @@ async function submitReference(env, db, chatId, user, reference) {
   return true;
 }
 
-‎async function submitReceipt(env, db, chatId, user, fileId) {
+‎async function submitReceipt(env, db, chatId, user, fileId, fileType) {
   const state = await getState(db, user.id);
   if (!state || state.state !== "entry_receipt") return false;
 
@@ -727,34 +727,57 @@ async function submitReference(env, db, chatId, user, reference) {
     "📨 ማስረጃዎ ደርሷል። Admin እስኪያረጋግጥ ይጠብቁ።"
   );
 
+  
   for (const adminId of admins(env)) {
-    try {
-      await send(
-        env,
-        adminId,
-        `🔔 <b>አዲስ ክፍያ</b>\n\n` +
-        `User: <code>${escapeHtml(user.telegram_id)}</code>\n` +
-        `ዕጣ: ${escapeHtml(entry.draw_name)}\n` +
-        `ቁጥር: ${entry.number}\n` +
-        `መጠን: ${(entry.entry_fee_cents / 100).toFixed(2)} ETB\n` +
-        `Reference: <code>${escapeHtml(cleanReference)}</code>`,
+    const caption =
+      `🔔 <b>አዲስ ክፍያ</b>\n\n` +
+      `User: <code>${escapeHtml(user.telegram_id)}</code>\n` +
+      `ዕጣ: ${escapeHtml(entry.draw_name)}\n` +
+      `ቁጥር: ${entry.number}\n` +
+      `መጠን: ${(entry.entry_fee_cents / 100).toFixed(2)} ETB\n` +
+      `Reference: <code>${escapeHtml(cleanReference)}</code>`;
+
+    const keyboard = {
+      inline_keyboard: [[
         {
-          inline_keyboard: [[
-            {
-              text: "✅ Approve",
-              callback_data: `approve:${paymentId}`
-            },
-            {
-              text: "❌ Reject",
-              callback_data: `reject:${paymentId}`
-            }
-          ]]
+          text: "✅ Approve",
+          callback_data: `approve:${paymentId}`
+        },
+        {
+          text: "❌ Reject",
+          callback_data: `reject:${paymentId}`
+        }
+      ]]
+    };
+
+    try {
+      await tg(
+        env,
+        fileType === "photo" ? "sendPhoto" : "sendDocument",
+        {
+          chat_id: adminId,
+          [fileType === "photo" ? "photo" : "document"]: fileId,
+          caption,
+          parse_mode: "HTML",
+          reply_markup: keyboard
         }
       );
     } catch (error) {
-      console.error("Payment admin notification failed:", error);
+      console.error("Payment receipt notification failed:", error);
+
+      try {
+        await send(
+          env,
+          adminId,
+          caption + "\n\n⚠️ Screenshot መላክ አልተሳካም።",
+          keyboard
+        );
+      } catch (fallbackError) {
+        console.error("Payment fallback notification failed:", fallbackError);
+      }
     }
   }
+
 
   return true;
 }
