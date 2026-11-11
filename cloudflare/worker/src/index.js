@@ -892,6 +892,7 @@ async function processBusinessNotifications(env, db) {
         sent++;
       }
       
+    
     } catch (error) {
       const failedAt = now();
       const attempts = Number(candidate.attempts || 0) + 1;
@@ -938,7 +939,7 @@ async function processBusinessNotifications(env, db) {
       ).run();
 
       if (permanentlyFailed) failed++;
-   }
+    }
   }
 
   const counts = await db.prepare(`
