@@ -861,38 +861,13 @@ async function processBusinessNotifications(env, db) {
 
     if (!notification) continue;
 
+    
     try {
       await send(
         env,
         notification.recipient_telegram_id,
         notification.message_text
       );
-
-      const completedAt = now();
-
-      const result = await db.prepare(`
-        UPDATE business_notifications
-        SET status = 'sent',
-            sent_at = ?,
-            lease_until = NULL,
-            lease_token = NULL,
-            last_error = NULL,
-            updated_at = ?
-        WHERE id = ?
-          AND status = 'sending'
-          AND lease_token = ?
-      `).bind(
-        completedAt,
-        completedAt,
-        notification.id,
-        leaseToken
-      ).run();
-
-      if (Number(result?.meta?.changes || 0) === 1) {
-        sent++;
-      }
-      
-    
     } catch (error) {
       const failedAt = now();
       const attempts = Number(candidate.attempts || 0) + 1;
@@ -939,6 +914,36 @@ async function processBusinessNotifications(env, db) {
       ).run();
 
       if (permanentlyFailed) failed++;
+      continue;
+    }
+
+    const completedAt = now();
+
+    const result = await db.prepare(`
+      UPDATE business_notifications
+      SET status = 'sent',
+          sent_at = ?,
+          lease_until = NULL,
+          lease_token = NULL,
+          last_error = NULL,
+          updated_at = ?
+      WHERE id = ?
+        AND status = 'sending'
+        AND lease_token = ?
+    `).bind(
+      completedAt,
+      completedAt,
+      notification.id,
+      leaseToken
+    ).run();
+
+    if (Number(result?.meta?.changes || 0) !== 1) {
+      throw new Error(
+        "Business notification sent but completion was not confirmed"
+      );
+    }
+
+    sent++;
     }
   }
 
