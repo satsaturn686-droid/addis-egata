@@ -2325,6 +2325,36 @@ async function retryWinnerNotifications(env, db, admin, chatId) {
 }
 
 ‎
+async function retryBusinessNotifications(env, db, admin, chatId) {
+  if (!isAdmin(env, admin.id)) return;
+
+  const timestamp = now();
+
+  await db.prepare(`
+    UPDATE business_notifications
+    SET status = 'pending',
+        attempts = 0,
+        next_attempt_at = ?,
+        lease_until = NULL,
+        lease_token = NULL,
+        last_error = NULL,
+        sent_at = NULL,
+        updated_at = ?
+    WHERE status = 'failed'
+  `).bind(timestamp, timestamp).run();
+
+  const result = await processBusinessNotifications(env, db);
+
+  await send(
+    env,
+    chatId,
+    `🔄 <b>Business Notifications Retry</b>\n\n` +
+    `የተላኩ፦ ${result.sent}\n` +
+    `ያልተሳኩ፦ ${result.failed}\n` +
+    `በመጠባበቅ ላይ፦ ${result.pending}`
+  );
+}
+
 async function startWinnerClaim(env, db, chatId, user, winnerId) {
   const payout = await db.prepare(`
     SELECT prize_type, status
