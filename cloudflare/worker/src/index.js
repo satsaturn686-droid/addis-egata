@@ -891,6 +891,12 @@ async function processBusinessNotifications(env, db) {
       if (Number(result?.meta?.changes || 0) === 1) {
         sent++;
       }
+      
+    } catch (error) {
+      const failedAt = now();
+      const attempts = Number(candidate.attempts || 0) + 1;
+      const permanentlyFailed = attempts >= 8;
+
       const retryAfter = Number(error?.retryAfterSeconds);
       const retryAfterSeconds =
         Number.isFinite(retryAfter) && retryAfter > 0
@@ -906,6 +912,10 @@ async function processBusinessNotifications(env, db) {
         retryAfterSeconds,
         exponentialDelaySeconds
       );
+
+      const nextAttempt = new Date(
+        Date.now() + delaySeconds * 1000
+      ).toISOString();
 
       await db.prepare(`
         UPDATE business_notifications
@@ -928,7 +938,7 @@ async function processBusinessNotifications(env, db) {
       ).run();
 
       if (permanentlyFailed) failed++;
-    }
+   }
   }
 
   const counts = await db.prepare(`
