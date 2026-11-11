@@ -944,7 +944,6 @@ async function processBusinessNotifications(env, db) {
     }
 
     sent++;
-    }
   }
 
   const counts = await db.prepare(`
