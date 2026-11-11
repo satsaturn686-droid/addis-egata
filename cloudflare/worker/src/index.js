@@ -2841,7 +2841,9 @@ async function completePayoutPaid(
     `/draw_close DRAW_ID\n` +
     `/draw_run DRAW_ID\n` +
     `/draw_publish DRAW_ID\n` +
-    `/payouts`
+    `/payouts\n` +
+    `/winner_notifications_retry\n` +
+    `/business_notifications_retry`
   );
 }
 ‎
@@ -3681,6 +3683,11 @@ if (winnerPool.length < Number(draw.winner_count)) {
   
 ‎  if (text === "/winner_notifications_retry") {
     await retryWinnerNotifications(env, db, from, chatId);
+    return;
+  }
+
+  if (text === "/business_notifications_retry") {
+    await retryBusinessNotifications(env, db, from, chatId);
     return;
   }
   
