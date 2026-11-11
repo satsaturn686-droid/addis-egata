@@ -28,27 +28,46 @@
 ‎  return admins(env).has(String(id));
 ‎}
 ‎
-‎async function tg(env, method, body) {
-‎  if (!env.TELEGRAM_BOT_TOKEN) {
-‎    throw new Error("TELEGRAM_BOT_TOKEN is missing");
-‎  }
 ‎
-‎  const response = await fetch(
-‎    `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/${method}`,
-‎    {
-‎      method: "POST",
-‎      headers: { "content-type": "application/json" },
-‎      body: JSON.stringify(body)
-‎    }
-‎  );
 ‎
-‎  const result = await response.json();
-‎  if (!response.ok || !result.ok) {
-‎    throw new Error(result.description || "Telegram API error");
-‎  }
-‎  return result.result;
-‎}
-‎
+async function tg(env, method, body) {
+  if (!env.TELEGRAM_BOT_TOKEN) {
+    throw new Error("TELEGRAM_BOT_TOKEN is missing");
+  }
+
+  const response = await fetch(
+    `${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/${method}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    }
+  );
+
+  const result = await response.json();
+
+  if (!response.ok || !result.ok) {
+    const error = new Error(
+      result.description || "Telegram API error"
+    );
+
+    const retryAfter = Number(
+      result.parameters?.retry_after
+    );
+
+    if (
+      Number.isFinite(retryAfter) &&
+      retryAfter > 0
+    ) {
+      error.retryAfterSeconds = retryAfter;
+    }
+
+    throw error;
+  }
+
+  return result.result;
+}
+
 ‎async function send(env, chatId, text, keyboard) {
 ‎  return tg(env, "sendMessage", {
 ‎    chat_id: chatId,
@@ -872,17 +891,21 @@ async function processBusinessNotifications(env, db) {
       if (Number(result?.meta?.changes || 0) === 1) {
         sent++;
       }
-    } catch (error) {
-      const failedAt = now();
-      const attempts = Number(candidate.attempts || 0) + 1;
-      const permanentlyFailed = attempts >= 8;
-      const delaySeconds = Math.min(
+      const retryAfter = Number(error?.retryAfterSeconds);
+      const retryAfterSeconds =
+        Number.isFinite(retryAfter) && retryAfter > 0
+          ? retryAfter
+          : 0;
+
+      const exponentialDelaySeconds = Math.min(
         3600,
         30 * (2 ** Math.max(0, attempts - 1))
       );
-      const nextAttempt = new Date(
-        Date.now() + delaySeconds * 1000
-      ).toISOString();
+
+      const delaySeconds = Math.max(
+        retryAfterSeconds,
+        exponentialDelaySeconds
+      );
 
       await db.prepare(`
         UPDATE business_notifications
