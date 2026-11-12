@@ -40,6 +40,7 @@ async function tg(env, method, body) {
     {
       method: "POST",
       headers: { "content-type": "application/json" },
+      signal: AbortSignal.timeout(30_000),
       body: JSON.stringify(body)
     }
   );
