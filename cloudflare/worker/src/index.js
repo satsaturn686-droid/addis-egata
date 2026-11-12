@@ -2636,13 +2636,17 @@ async function approvePayout(env, db, admin, winnerId) {
 async function markPayoutPaid(env, db, admin, winnerId) {
   if (!isAdmin(env, admin.id)) return;
 
-  const payout = await db.prepare(`
-    SELECT status
+    const payout = await db.prepare(`
+    SELECT status, prize_type
     FROM winner_payouts
     WHERE winner_id = ?
   `).bind(winnerId).first();
 
-  if (!payout || payout.status !== "approved") {
+    if (
+    !payout ||
+    payout.status !== "approved" ||
+    payout.prize_type === "physical"
+  ) {
     await send(
       env,
       admin.id,
@@ -3813,10 +3817,13 @@ if (winnerPool.length < Number(draw.winner_count)) {
 ‎  } else if (action === "payout_approve") {
 ‎    if (!isAdmin(env, from.id)) return;
 ‎    await approvePayout(env, db, from, parts[0]);
-‎  } else if (action === "payout_paid") {
-‎    if (!isAdmin(env, from.id)) return;
-‎    await markPayoutPaid(env, db, from, parts[0]);
-‎  }
+‎   } else if (action === "payout_paid") {
+    if (!isAdmin(env, from.id)) return;
+    await markPayoutPaid(env, db, from, parts[0]);
+  } else if (action === "payout_delivered") {
+    if (!isAdmin(env, from.id)) return;
+    await completePhysicalPrizeDelivered(env, db, from, parts[0]);
+  }
 ‎}
 ‎
 ‎// -------------------- MESSAGE HANDLER --------------------
