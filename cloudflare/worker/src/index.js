@@ -2718,6 +2718,7 @@ async function completePayoutPaid(
     JOIN users u ON u.id = wp.user_id
     WHERE wp.winner_id = ?
       AND wp.status = 'approved'
+      AND wp.prize_type <> 'physical'
   `).bind(winnerId).first();
 
   if (!payout || !payout.telegram_id) {
@@ -2746,6 +2747,7 @@ async function completePayoutPaid(
             updated_at = ?
         WHERE winner_id = ?
           AND status = 'approved'
+          AND prize_type <> 'physical'
       `).bind(
         cleanReference,
         adminUser.id,
@@ -2773,6 +2775,7 @@ async function completePayoutPaid(
         FROM winner_payouts
         WHERE winner_id = ?
           AND status = 'paid'
+          AND prize_type <> 'physical'
           AND transfer_reference = ?
           AND paid_by = ?
           AND paid_at = ?
