@@ -2202,8 +2202,6 @@ async function processWinnerNotifications(env, db, drawId = null) {
 
     if (!notification) continue;
 
-    try {
-      
       let message;
       let replyMarkup;
 
