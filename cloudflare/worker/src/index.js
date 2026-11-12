@@ -2314,14 +2314,6 @@ async function processWinnerNotifications(env, db, drawId = null) {
       }
 
       sent++;
-
-
-      console.error(
-        "Winner notification failed:",
-        notification.winner_id,
-        errorMessage
-      );
-    }
   }
 
   const counts = await db.prepare(`
