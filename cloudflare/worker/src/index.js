@@ -2856,6 +2856,155 @@ async function completePayoutPaid(
   );
 }
 
+async function completePhysicalPrizeDelivered(
+  env,
+  db,
+  admin,
+  winnerId
+) {
+  if (!isAdmin(env, admin.id)) return;
+
+  const adminUser = await userByTelegram(db, admin.id);
+
+  if (!adminUser) {
+    await send(env, admin.id, "⚠️ Admin መረጃ አልተገኘም።");
+    return;
+  }
+
+  const payout = await db.prepare(`
+    SELECT wp.*, u.telegram_id
+    FROM winner_payouts wp
+    JOIN users u ON u.id = wp.user_id
+    WHERE wp.winner_id = ?
+      AND wp.prize_type = 'physical'
+      AND wp.status = 'approved'
+  `).bind(winnerId).first();
+
+  if (!payout || !payout.telegram_id) {
+    await send(
+      env,
+      admin.id,
+      "⚠️ Physical Prize ርክክቡ ለማረጋገጥ ዝግጁ አይደለም።"
+    );
+    return;
+  }
+
+  const timestamp = now();
+  const notificationKey =
+    `physical_delivery:${winnerId}:delivered`;
+
+  const notificationMessage =
+    "🎁 የአካላዊ ሽልማትዎ ርክክብ ተጠናቋል። " +
+    "እንኳን ደስ አለዎት!";
+
+  try {
+    const results = await db.batch([
+      db.prepare(`
+        UPDATE winner_payouts
+        SET status = 'paid',
+            paid_by = ?,
+            paid_at = ?,
+            updated_at = ?
+        WHERE winner_id = ?
+          AND prize_type = 'physical'
+          AND status = 'approved'
+          AND transfer_reference IS NULL
+      `).bind(
+        adminUser.id,
+        timestamp,
+        timestamp,
+        winnerId
+      ),
+
+      db.prepare(`
+        INSERT INTO business_notifications (
+          id,
+          notification_key,
+          event_type,
+          recipient_telegram_id,
+          message_text,
+          status,
+          attempts,
+          next_attempt_at,
+          created_at,
+          updated_at
+        )
+        SELECT
+          ?, ?, 'physical_prize_delivered', ?,
+          ?, 'pending', 0, ?, ?, ?
+        FROM winner_payouts
+        WHERE winner_id = ?
+          AND prize_type = 'physical'
+          AND status = 'paid'
+          AND paid_by = ?
+          AND paid_at = ?
+          AND transfer_reference IS NULL
+        ON CONFLICT(notification_key) DO NOTHING
+      `).bind(
+        newId(),
+        notificationKey,
+        String(payout.telegram_id),
+        notificationMessage,
+        timestamp,
+        timestamp,
+        timestamp,
+        winnerId,
+        adminUser.id,
+        timestamp
+      )
+    ]);
+
+    if (
+      !results ||
+      results.length !== 2 ||
+      Number(results[0]?.meta?.changes || 0) !== 1
+    ) {
+      await send(
+        env,
+        admin.id,
+        "⚠️ ርክክቡ አልተመዘገበም። ደግመው ያረጋግጡ።"
+      );
+      return;
+    }
+  } catch (error) {
+    console.error(
+      "Physical prize delivery batch failed:",
+      winnerId,
+      error?.stack || error
+    );
+
+    await send(
+      env,
+      admin.id,
+      "⚠️ የPhysical Prize ርክክብ መመዝገብ አልተሳካም።"
+    );
+    return;
+  }
+
+  await audit(
+    db,
+    adminUser.id,
+    "physical_prize_delivered",
+    "winner_payout",
+    winnerId
+  );
+
+  try {
+    await processBusinessNotifications(env, db);
+  } catch (error) {
+    console.error(
+      "Physical prize notification processing failed:",
+      winnerId,
+      error?.stack || error
+    );
+  }
+
+  await send(
+    env,
+    admin.id,
+    "✅ Physical Prize ርክክብ በትክክል ተመዝግቧል።"
+  );
+}
 
 ‎‎// -------------------- ADMIN PANEL AND DRAW MANAGEMENT --------------------
 ‎
