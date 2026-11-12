@@ -2231,16 +2231,65 @@ async function processWinnerNotifications(env, db, drawId = null) {
         ]]
       };
 
-      await send(
-        env,
-        notification.telegram_id,
-        message,
-        replyMarkup
-      );
+      try {
+        await send(
+          env,
+          notification.telegram_id,
+          message,
+          replyMarkup
+        );
+      } catch (error) {
+        const failedAt = now();
+        const attempts = Number(notification.attempts || 1);
+        const permanentlyFailed = attempts >= 8;
+
+        const retryAfter = Number(error?.retryAfterSeconds);
+        const retryAfterSeconds =
+          Number.isFinite(retryAfter) && retryAfter > 0
+            ? retryAfter
+            : 0;
+
+        const exponentialDelaySeconds = Math.min(
+          3600,
+          30 * (2 ** Math.max(0, attempts - 1))
+        );
+
+        const delaySeconds = Math.max(
+          retryAfterSeconds,
+          exponentialDelaySeconds
+        );
+
+        const nextAttempt = new Date(
+          Date.now() + delaySeconds * 1000
+        ).toISOString();
+
+        await db.prepare(`
+          UPDATE winner_notifications
+          SET status = ?,
+              next_attempt_at = ?,
+              lease_until = NULL,
+              lease_token = NULL,
+              last_error = ?,
+              updated_at = ?
+          WHERE id = ?
+            AND status = 'sending'
+            AND lease_token = ?
+        `).bind(
+          permanentlyFailed ? 'failed' : 'pending',
+          nextAttempt,
+          String(error?.message || error).slice(0, 500),
+          failedAt,
+          notification.notification_id,
+          leaseToken
+        ).run();
+
+        if (permanentlyFailed) failed++;
+        continue;
+      }
 
       const completedAt = now();
 
-      await db.prepare(`
+      const result = await db.prepare(`
         UPDATE winner_notifications
         SET status = 'sent',
             sent_at = ?,
@@ -2258,48 +2307,14 @@ async function processWinnerNotifications(env, db, drawId = null) {
         leaseToken
       ).run();
 
+      if (Number(result?.meta?.changes || 0) !== 1) {
+        throw new Error(
+          "Winner notification sent but completion was not confirmed"
+        );
+      }
+
       sent++;
 
-
-    } catch (error) {
-      const errorMessage = String(
-        error?.message || error
-      ).slice(0, 500);
-
-      const attempts = Number(notification.attempts || 1);
-
-      const delaySeconds = Math.min(
-        3600,
-        30 * Math.pow(2, Math.max(0, attempts - 1))
-      );
-
-      const nextAttempt = new Date(
-        Date.now() + delaySeconds * 1000
-      ).toISOString();
-
-      await db.prepare(`
-        UPDATE winner_notifications
-        SET status = CASE
-              WHEN attempts >= 8 THEN 'failed'
-              ELSE 'pending'
-            END,
-            next_attempt_at = ?,
-            lease_until = NULL,
-            lease_token = NULL,
-            last_error = ?,
-            updated_at = ?
-        WHERE id = ?
-          AND status = 'sending'
-          AND lease_token = ?
-      `).bind(
-        nextAttempt,
-        errorMessage,
-        now(),
-        notification.notification_id,
-        leaseToken
-      ).run();
-
-      failed++;
 
       console.error(
         "Winner notification failed:",
