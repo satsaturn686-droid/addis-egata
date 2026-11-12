@@ -3755,16 +3755,20 @@ if (winnerPool.length < Number(draw.winner_count)) {
 ‎      (p.telebirr_number ? `Telebirr: <code>${escapeHtml(p.telebirr_number)}</code>\n` : "") +
 ‎      (p.recipient_full_name ? `Name: ${escapeHtml(p.recipient_full_name)}\n` : "") +
 ‎      (p.recipient_phone ? `Phone: <code>${escapeHtml(p.recipient_phone)}</code>\n` : ""),
-‎      { inline_keyboard: [[
-‎        ...(p.status === "submitted" ? [{
-‎          text: "✅ Approve",
-‎          callback_data: `payout_approve:${p.winner_id}`
-‎        }] : []),
-‎        ...(p.status === "approved" ? [{
-‎          text: "🏁 Mark Paid",
-‎          callback_data: `payout_paid:${p.winner_id}`
-‎        }] : [])
-‎      ]] }
+‎          { inline_keyboard: [[
+        ...(p.status === "submitted" ? [{
+          text: "✅ Approve",
+          callback_data: `payout_approve:${p.winner_id}`
+        }] : []),
+        ...(p.status === "approved" && p.prize_type === "physical" ? [{
+          text: "🎁 Confirm Delivered",
+          callback_data: `payout_delivered:${p.winner_id}`
+        }] : []),
+        ...(p.status === "approved" && p.prize_type !== "physical" ? [{
+          text: "🏁 Mark Paid",
+          callback_data: `payout_paid:${p.winner_id}`
+        }] : [])
+      ]] }
 ‎    );
 ‎  }
 ‎}
