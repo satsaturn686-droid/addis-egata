@@ -35,8 +35,10 @@ jobs:
         with:
           node-version: 22
 
+      
       - name: Install Worker dependencies
-        run: npm ci
+        run: npm install
+
 
       - name: Verify staging-only database binding
         run: |
