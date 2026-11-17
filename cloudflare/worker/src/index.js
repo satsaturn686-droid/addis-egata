@@ -2180,6 +2180,7 @@ async function processWinnerNotifications(env, db, drawId = null) {
       continue;
     }
 
+    
     const notification = await db.prepare(`
       SELECT
         wn.id AS notification_id,
@@ -2190,12 +2191,15 @@ async function processWinnerNotifications(env, db, drawId = null) {
         w.rank,
         w.prize_amount_cents,
         u.telegram_id,
+        d.name AS draw_name,
         d.prize_type,
-        d.prize_name
+        d.prize_name,
+        e.number AS entry_number
       FROM winner_notifications wn
       JOIN winners w ON w.id = wn.winner_id
       JOIN users u ON u.id = w.user_id
       JOIN draws d ON d.id = w.draw_id
+      JOIN entries e ON e.id = w.entry_id
       WHERE wn.id = ?
         AND wn.lease_token = ?
         AND wn.status = 'sending'
@@ -2203,23 +2207,26 @@ async function processWinnerNotifications(env, db, drawId = null) {
 
     if (!notification) continue;
 
+
       let message;
       let replyMarkup;
 
-      if (notification.prize_type === "cash") {
-        message =
-          `🏆 <b>እንኳን ደስ አለዎት!</b>\n\n` +
-          `የዕጣ አሸናፊ ሆነዋል።\n` +
-          `ደረጃ፦ ${notification.rank}\n` +
-          `የሽልማት መጠን፦ ${(notification.prize_amount_cents / 100).toFixed(2)} ብር\n\n` +
-          `💵 የሽልማት ገንዘብዎ በቀጥታ በTelebirr ይላክልዎታል።\n` +
-          `የTelebirr ቁጥርዎን ለማስገባት ከታች ያለውን ይጫኑ።`;
-      } else {
-        message =
-          `🏆 <b>እንኳን ደስ አለዎት!</b>\n\n` +
-          `የ${escapeHtml(notification.prize_name)} አሸናፊ ሆነዋል።\n` +
-          `ሙሉ ስምዎን እና ስልክ ቁጥርዎን ለማስገባት ከታች ያለውን ይጫኑ።`;
-      }
+      const prizeDescription =
+        notification.prize_type === "cash"
+          ? `${(notification.prize_amount_cents / 100).toFixed(2)} ብር`
+          : escapeHtml(notification.prize_name);
+
+      message =
+        `🏆 <b>እንኳን ደስ አለዎት!</b>\n\n` +
+        `የዕጣ ስም፦ ${escapeHtml(notification.draw_name)}\n` +
+        `ያሸነፉት ቁጥር፦ ${notification.entry_number}\n` +
+        `ደረጃ፦ ${notification.rank}\n` +
+        `ሽልማት፦ ${prizeDescription}\n\n` +
+        (notification.prize_type === "cash"
+          ? `💵 የሽልማት ገንዘብዎ በቀጥታ በTelebirr ይላክልዎታል።\n` +
+            `የTelebirr ቁጥርዎን ለማስገባት ከታች ያለውን ይጫኑ።`
+          : `ሙሉ ስምዎን እና ስልክ ቁጥርዎን ለማስገባት ከታች ያለውን ይጫኑ።`);
+
 
       replyMarkup = {
         inline_keyboard: [[
@@ -2569,7 +2576,7 @@ async function submitWinnerDetails(env, db, chatId, user, value) {
           `🎁 የPhysical Winner መረጃ ደርሷል።\n` +
           `Winner ID: <code>${escapeHtml(state.data.winnerId)}</code>\n` +
           `ስም: ${escapeHtml(state.data.fullName)}\n` +
-          `ስልክ: <code>${escapeHtml(phone)}</code>`
+                    `ስልክ: <a href="tel:${escapeHtml(phone)}">${escapeHtml(phone)}</a>`
         );
       } catch (error) {
         console.error("Winner admin notification failed", error);
