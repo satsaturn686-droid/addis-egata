@@ -4100,7 +4100,7 @@ if (winnerPool.length < Number(draw.winner_count)) {
 ‎    if (request.method === "GET" && url.pathname === "/health") {
 ‎      return json({
 ‎        ok: true,
-‎        service: "addis-egata-bot-api",
+‎        service: "addis-egata-bot-api-staging",
 ‎        database_binding: Boolean(env.DB),
 ‎        telegram_configured: Boolean(env.TELEGRAM_BOT_TOKEN)
 ‎      });
