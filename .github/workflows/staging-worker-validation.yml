@@ -96,3 +96,5 @@ jobs:
 
       - name: Bundle Worker without deploying
         run: npx wrangler deploy --dry-run
+
+# Trigger staging validation
