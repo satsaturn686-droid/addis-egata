@@ -2,7 +2,11 @@
 name: Staging Telegram Webhook
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - addis-egata-worker-staging
+    paths:
+      - .github/workflows/staging-telegram-webhook.yml
 
 permissions:
   contents: read
