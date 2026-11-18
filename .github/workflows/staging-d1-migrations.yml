@@ -82,7 +82,7 @@ jobs:
 
           const file = 'src/index.js';
           const source = fs.readFileSync(file, 'utf8');
-          const cleaned = source.replace(/\u200e/g, '');
+          const cleaned = source.replace(/[\u200e\u00a0]/g, ' ');
 
           fs.writeFileSync(file, cleaned, 'utf8');
 
