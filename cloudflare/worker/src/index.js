@@ -337,28 +337,27 @@ function paymentServiceOpen(settings, date = new Date()) {
 ‎  );
 ‎}
 ‎// -------------------- DRAWS AND NUMBER RESERVATION --------------------
-‎
-‎async function showDraws(env, db, chatId) {
-‎  const result = await db.prepare(`
-‎    SELECT id, name, prize_name, entry_fee_cents
-‎    FROM draws WHERE status = 'open'
-‎    ORDER BY created_at DESC LIMIT 20
-‎  `).all();
-‎
-‎  const draws = result.results || [];
-‎  if (!draws.length) {
-‎    await send(env, chatId, "አሁን ክፍት የሆነ ዕጣ የለም።");
-‎    return;
-‎  }
-‎
-‎  await send(env, chatId, "🎟️ <b>ክፍት የሆኑ ዕጣዎች</b>\nዕጣ ይምረጡ።", {
-‎    inline_keyboard: draws.map(d => [{
-‎      text: `${d.name} — ${(d.entry_fee_cents / 100).toFixed(2)} ብር`,
-‎      callback_data: `draw:${d.id}`
-‎    }])
-‎  });
-‎}
-‎
+‎‎
+async function showDraws(env, db, chatId) {
+  const result = await db.prepare(
+    "SELECT id, name, prize_name, entry_fee_cents FROM draws WHERE status = 'open' ORDER BY created_at DESC LIMIT 20"
+  ).all();
+
+  const draws = result.results || [];
+
+  if (!draws.length) {
+    await send(env, chatId, "አሁን ክፍት የሆነ ዕጣ የለም።");
+    return;
+  }
+
+  await send(env, chatId, "🎟️ <b>ክፍት የሆኑ ዕጣዎች</b>\nዕጣ ይምረጡ።", {
+    inline_keyboard: draws.map(d => [{
+      text: `${d.name} — ${(d.entry_fee_cents / 100).toFixed(2)} ብር`,
+      callback_data: `draw:${d.id}`
+    }])
+  });
+}
+
 ‎async function showDraw(env, db, chatId, drawId) {
 ‎  const draw = await db.prepare(`
 ‎    SELECT * FROM draws WHERE id = ? AND status = 'open'
