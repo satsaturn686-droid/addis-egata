@@ -86,9 +86,9 @@ jobs:
 
           fs.writeFileSync(file, cleaned, 'utf8');
 
-          if (/[\u200e\u00a0]/.test(cleaned)) {
-  throw new Error('Invisible Unicode spacing/direction marks remain.');
-}
+                    if (/[\u200e\u00a0]/.test(cleaned)) {
+            throw new Error('Invisible Unicode spacing/direction marks remain.');
+          }
 
           console.log('Temporary checkout cleaned successfully.');
           NODE
