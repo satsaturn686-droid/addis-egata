@@ -3714,18 +3714,27 @@ if (winnerPool.length < Number(draw.winner_count)) {
 ‎
 ‎// -------------------- ADMIN QUEUES --------------------
 ‎‎
+
 async function showPending(env, db, chatId) {
   if (!isAdmin(env, chatId)) return;
 
   const payments = await db.prepare(`
-    SELECT p.id, p.amount_cents, p.transaction_reference,
-      e.number, d.name AS draw_name, u.telegram_id
+    SELECT
+      p.id,
+      p.amount_cents,
+      p.transaction_reference,
+      p.receipt_file_id,
+      p.receipt_file_type,
+      e.number,
+      d.name AS draw_name,
+      u.telegram_id
     FROM payments p
     JOIN entries e ON e.id = p.entry_id
     JOIN draws d ON d.id = e.draw_id
     JOIN users u ON u.id = p.user_id
     WHERE p.status = 'pending'
-    ORDER BY p.created_at LIMIT 15
+    ORDER BY p.created_at
+    LIMIT 15
   `).all();
 
   if (!payments.results?.length) {
@@ -3738,20 +3747,59 @@ async function showPending(env, db, chatId) {
   }
 
   for (const p of payments.results) {
-    await send(
-      env,
-      chatId,
-      `💳 <b>Payment</b>\n${escapeHtml(p.draw_name)} #${p.number}\n` +
+    const caption =
+      `💳 <b>Payment</b>\n` +
+      `${escapeHtml(p.draw_name)} #${p.number}\n` +
       `Amount: ${(p.amount_cents / 100).toFixed(2)} ETB\n` +
       `Reference: <code>${escapeHtml(p.transaction_reference)}</code>\n` +
-      `User: <code>${escapeHtml(p.telegram_id)}</code>`,
-      {
-        inline_keyboard: [[
-          { text: "✅ Approve", callback_data: `approve:${p.id}` },
-          { text: "❌ Reject", callback_data: `reject:${p.id}` }
-        ]]
+      `User: <code>${escapeHtml(p.telegram_id)}</code>`;
+
+    const keyboard = {
+      inline_keyboard: [[
+        {
+          text: "✅ Approve",
+          callback_data: `approve:${p.id}`
+        },
+        {
+          text: "❌ Reject",
+          callback_data: `reject:${p.id}`
+        }
+      ]]
+    };
+
+    if (p.receipt_file_id) {
+      try {
+        const isPhoto = p.receipt_file_type === "photo";
+
+        await tg(
+          env,
+          isPhoto ? "sendPhoto" : "sendDocument",
+          {
+            chat_id: chatId,
+            [isPhoto ? "photo" : "document"]: p.receipt_file_id,
+            caption,
+            parse_mode: "HTML",
+            reply_markup: keyboard
+          }
+        );
+      } catch (error) {
+        console.error("Pending receipt resend failed:", error);
+
+        await send(
+          env,
+          chatId,
+          caption + "\n\n⚠️ Screenshot እንደገና መላክ አልተሳካም።",
+          keyboard
+        );
       }
-    );
+    } else {
+      await send(
+        env,
+        chatId,
+        caption + "\n\n⚠️ Screenshot ፋይል አልተመዘገበም።",
+        keyboard
+      );
+    }
   }
 }
 
