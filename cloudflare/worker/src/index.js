@@ -3713,34 +3713,48 @@ if (winnerPool.length < Number(draw.winner_count)) {
 }
 ‎
 ‎// -------------------- ADMIN QUEUES --------------------
-‎
-‎async function showPending(env, db, chatId) {
-‎  if (!isAdmin(env, chatId)) return;
-‎
-‎  const payments = await db.prepare(`
-‎    SELECT p.id, p.amount_cents, p.transaction_reference,
-‎      e.number, d.name AS draw_name, u.telegram_id
-‎    FROM payments p
-‎    JOIN entries e ON e.id = p.entry_id
-‎    JOIN draws d ON d.id = e.draw_id
-‎    JOIN users u ON u.id = p.user_id
-‎    WHERE p.status = 'pending'
-‎    ORDER BY p.created_at LIMIT 15
-‎  `).all();
-‎
-‎  for (const p of payments.results || []) {
-‎    await send(env, chatId,
-‎      `💳 <b>Payment</b>\n${escapeHtml(p.draw_name)} #${p.number}\n` +
-‎      `Amount: ${(p.amount_cents / 100).toFixed(2)} ETB\n` +
-‎      `Reference: <code>${escapeHtml(p.transaction_reference)}</code>\n` +
-‎      `User: <code>${escapeHtml(p.telegram_id)}</code>`,
-‎      { inline_keyboard: [[
-‎        { text: "✅ Approve", callback_data: `approve:${p.id}` },
-‎        { text: "❌ Reject", callback_data: `reject:${p.id}` }
-‎      ]] }
-‎    );
-‎  }
-‎}
+‎‎
+async function showPending(env, db, chatId) {
+  if (!isAdmin(env, chatId)) return;
+
+  const payments = await db.prepare(`
+    SELECT p.id, p.amount_cents, p.transaction_reference,
+      e.number, d.name AS draw_name, u.telegram_id
+    FROM payments p
+    JOIN entries e ON e.id = p.entry_id
+    JOIN draws d ON d.id = e.draw_id
+    JOIN users u ON u.id = p.user_id
+    WHERE p.status = 'pending'
+    ORDER BY p.created_at LIMIT 15
+  `).all();
+
+  if (!payments.results?.length) {
+    await send(
+      env,
+      chatId,
+      "✅ የሚጠባበቅ የክፍያ ማስረጃ የለም።"
+    );
+    return;
+  }
+
+  for (const p of payments.results) {
+    await send(
+      env,
+      chatId,
+      `💳 <b>Payment</b>\n${escapeHtml(p.draw_name)} #${p.number}\n` +
+      `Amount: ${(p.amount_cents / 100).toFixed(2)} ETB\n` +
+      `Reference: <code>${escapeHtml(p.transaction_reference)}</code>\n` +
+      `User: <code>${escapeHtml(p.telegram_id)}</code>`,
+      {
+        inline_keyboard: [[
+          { text: "✅ Approve", callback_data: `approve:${p.id}` },
+          { text: "❌ Reject", callback_data: `reject:${p.id}` }
+        ]]
+      }
+    );
+  }
+}
+
 ‎
 ‎async function showPayouts(env, db, chatId) {
 ‎  if (!isAdmin(env, chatId)) return;
